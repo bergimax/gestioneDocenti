@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models.functions import Lower
 
@@ -55,7 +56,8 @@ class Class(models.Model):
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="classes")
     name = models.CharField("nome", max_length=50)
     student_count = models.PositiveIntegerField("studenti", default=0)
-    group = models.CharField(
+    # NULL (not "") means "whole school", enforced by a check constraint.
+    group = models.CharField(  # noqa: DJ001
         "gruppo", max_length=10, choices=Group.choices, blank=True, default=""
     )
 
@@ -221,6 +223,109 @@ class ClassPairing(models.Model):
             class_b=self.class_b if self.class_b_id else None,
             subject=self.subject if self.subject_id else None,
             teacher=self.teacher if self.teacher_id else None,
+        )
+        if errors:
+            raise ValidationError(errors)
+
+
+class CalendarEntry(models.Model):
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT, related_name="calendar_entries"
+    )
+    date = models.DateField("data")
+    # NULL (not "") means "whole school", enforced by a check constraint.
+    group = models.CharField(  # noqa: DJ001
+        "gruppo",
+        max_length=10,
+        choices=Group.choices,
+        null=True,
+        blank=True,
+        default=None,
+    )
+    max_hours = models.IntegerField(
+        "ore massime",
+        default=6,
+        validators=[MinValueValidator(0), MaxValueValidator(8)],
+    )
+    is_closure = models.BooleanField("chiusura", default=False)
+    start_hour_min = models.IntegerField(
+        "ora inizio minima",
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(8), MaxValueValidator(13)],
+    )
+    stage_class = models.ForeignKey(
+        Class,
+        on_delete=models.PROTECT,
+        related_name="calendar_stage_entries",
+        null=True,
+        blank=True,
+    )
+    is_group_stage = models.BooleanField("stage di gruppo", default=False)
+
+    class Meta:
+        verbose_name_plural = "calendar entries"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(max_hours__gte=0, max_hours__lte=8),
+                name="school_calendarentry_max_hours_range",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(start_hour_min__isnull=True)
+                | models.Q(start_hour_min__gte=8, start_hour_min__lte=13),
+                name="school_calendarentry_start_hour_range",
+            ),
+            # Only NULL means "whole school": the empty string is not allowed.
+            models.CheckConstraint(
+                condition=models.Q(group__isnull=True)
+                | models.Q(group__in=Group.values),
+                name="school_calendarentry_group_valid",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(is_group_stage=True, group__isnull=True),
+                name="school_calendarentry_group_stage_needs_group",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(is_group_stage=True, stage_class__isnull=False),
+                name="school_calendarentry_stage_class_xor_group_stage",
+            ),
+            # Class-stage rows are excluded: several classes can be on stage
+            # on the same date, next to a whole-school row.
+            models.UniqueConstraint(
+                fields=["school", "date", "group"],
+                condition=models.Q(stage_class__isnull=True, group__isnull=False),
+                name="school_calendarentry_unique_group_per_date",
+            ),
+            models.UniqueConstraint(
+                fields=["school", "date"],
+                condition=models.Q(stage_class__isnull=True, group__isnull=True),
+                name="school_calendarentry_unique_whole_school_per_date",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.date} {self.group or 'tutta la scuola'}"
+
+    def clean(self):
+        """Row shape and same-school checks.
+
+        The stage class must belong to `school`; model-level only, as for
+        Assignment: callers must call full_clean().
+        """
+        errors = {}
+        if self.group == "":
+            errors["group"] = "Usare NULL per tutta la scuola, non una stringa vuota."
+        if self.is_group_stage and self.group is None:
+            errors["is_group_stage"] = "Lo stage di gruppo richiede un gruppo."
+        if self.is_group_stage and self.stage_class_id:
+            errors["stage_class"] = (
+                "Stage di classe e stage di gruppo non possono coesistere."
+            )
+        errors.update(
+            _check_same_school(
+                self,
+                stage_class=self.stage_class if self.stage_class_id else None,
+            )
         )
         if errors:
             raise ValidationError(errors)
