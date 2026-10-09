@@ -3,7 +3,6 @@ from django.views.decorators.http import require_POST
 
 from projects.permissions import (
     can_edit_availability,
-    can_edit_school_data,
     can_run_setup,
     can_view_timetable,
     permission_required,
@@ -32,4 +31,3 @@ def _placeholder(name, predicate):
 availability = _placeholder("Disponibilita", can_edit_availability)
 timetable = _placeholder("Orario", can_view_timetable)
 setup = _placeholder("Setup", can_run_setup)
-school_data = _placeholder("Dati scuola", can_edit_school_data)

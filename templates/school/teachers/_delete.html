@@ -1,0 +1,14 @@
+<div class="form-panel" role="group" aria-labelledby="delete-title">
+  <h2 id="delete-title">Elimina {{ teacher.name }}</h2>
+  {% if blockers %}
+  <p class="form-error">Impossibile eliminare {{ teacher.name }}: {{ blockers }}. Rimuovili prima, oppure disattiva il docente.</p>
+  <p><a href="{% url 'teacher_list' %}">Torna all'elenco</a></p>
+  {% else %}
+  <p>Vuoi eliminare il docente {{ teacher.name }}? L'operazione non si può annullare.</p>
+  <form method="post" action="{% url 'teacher_delete' teacher.pk %}" hx-post="{% url 'teacher_delete' teacher.pk %}" hx-target="#teacher-section" hx-swap="outerHTML">
+    {% csrf_token %}
+    <button type="submit">Elimina</button>
+    <a href="{% url 'teacher_list' %}">Annulla</a>
+  </form>
+  {% endif %}
+</div>

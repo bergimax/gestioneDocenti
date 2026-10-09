@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Elimina docente{% endblock %}
+{% block content %}
+<p><a href="{% url 'teacher_list' %}">&larr; Docenti</a></p>
+{% include "school/teachers/_delete.html" %}
+{% endblock %}

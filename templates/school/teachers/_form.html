@@ -1,0 +1,24 @@
+<form method="post" class="form-panel" novalidate
+      action="{% if creating %}{% url 'teacher_create' %}{% else %}{% url 'teacher_edit' teacher.pk %}{% endif %}"
+      hx-post="{% if creating %}{% url 'teacher_create' %}{% else %}{% url 'teacher_edit' teacher.pk %}{% endif %}"
+      hx-target="#teacher-section" hx-swap="outerHTML">
+  {% csrf_token %}
+  <h2>{% if creating %}Nuovo docente{% else %}Modifica {{ teacher.name }}{% endif %}</h2>
+  {% if form.errors %}<p class="form-error" role="alert">Controlla i campi evidenziati.</p>{% endif %}
+  {% for field in form.visible_fields %}
+  <div class="field{% if field.errors %} has-error{% endif %}">
+    {% if field.widget_type == "checkbox" %}
+    {{ field }} <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {% else %}
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% endif %}
+    {% if field.help_text %}<p class="hint" id="{{ field.id_for_label }}-hint">{{ field.help_text }}</p>{% endif %}
+    {% if field.errors %}<p class="field-error" id="{{ field.id_for_label }}-error">{{ field.errors|join:" " }}</p>{% endif %}
+  </div>
+  {% endfor %}
+  <p>
+    <button type="submit">Salva</button>
+    <a href="{% url 'teacher_list' %}">Annulla</a>
+  </p>
+</form>

@@ -56,3 +56,20 @@ button { padding: .4rem .9rem; cursor: pointer; }
   .main-nav a { border-left: 0; border-bottom: 3px solid transparent; padding: .4rem .75rem; }
   .main-nav a.active { border-bottom-color: var(--accent); }
 }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.button { display: inline-block; padding: .4rem .9rem; background: var(--accent); color: #fff; border-radius: 4px; text-decoration: none; }
+.table-wrap { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; background: var(--surface); }
+.data-table th, .data-table td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--border); }
+.data-table thead th { background: #eef0f4; }
+.data-table .actions a { margin-right: .75rem; }
+.form-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1rem; margin-bottom: 1rem; max-width: 36rem; }
+.form-panel h2 { margin-top: 0; font-size: 1.2rem; }
+.field { margin-bottom: .8rem; }
+.field label { display: inline-block; font-weight: 600; margin-bottom: .2rem; }
+.field input[type=text], .field input[type=email], .field select { display: block; width: 100%; padding: .4rem; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+.field.has-error input, .field.has-error select { border-color: #c62828; }
+.hint { margin: .2rem 0 0; color: var(--muted); font-size: .9rem; }
+.field-error, .form-error { margin: .2rem 0 0; color: #7f1d1d; font-weight: 600; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }

@@ -10,6 +10,6 @@ urlpatterns = [
     path("disponibilita/", views.availability, name="availability"),
     path("orario/", views.timetable, name="timetable"),
     path("setup/", views.setup, name="setup"),
-    path("dati-scuola/", views.school_data, name="school_data"),
+    path("", include("school.urls")),
     path("", include("accounts.urls")),
 ]

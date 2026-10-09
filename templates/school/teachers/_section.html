@@ -1,0 +1,53 @@
+<section id="teacher-section" aria-label="Elenco docenti">
+  {% if flash %}{% if messages %}
+  <div class="messages">
+    {% for message in messages %}
+    <div class="message message-{{ message.level_tag|default:'info' }}" role="status">
+      <span>{{ message }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}{% endif %}
+  {% if not school %}
+  <p>Nessuna scuola configurata: esegui prima il setup.</p>
+  {% else %}
+  {% if can_edit %}
+  <p><a class="button" href="{% url 'teacher_create' %}" hx-get="{% url 'teacher_create' %}" hx-target="#teacher-form-area" hx-swap="innerHTML">Aggiungi docente</a></p>
+  {% endif %}
+  <div id="teacher-form-area" aria-live="polite"></div>
+  {% if teachers %}
+  <div class="table-wrap">
+  <table class="data-table">
+    <caption class="visually-hidden">Docenti della scuola</caption>
+    <thead>
+      <tr>
+        <th scope="col">Cognome e nome</th>
+        <th scope="col">Tipo</th>
+        <th scope="col">Attivo</th>
+        <th scope="col">Assegnazioni</th>
+        {% if can_edit %}<th scope="col">Azioni</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in teachers %}
+      <tr>
+        <th scope="row">{{ t.name }}</th>
+        <td>{{ t.get_type_display }}</td>
+        <td>{% if t.active %}Sì{% else %}No{% endif %}</td>
+        <td>{{ t.assignment_count }}</td>
+        {% if can_edit %}
+        <td class="actions">
+          <a href="{% url 'teacher_edit' t.pk %}" hx-get="{% url 'teacher_edit' t.pk %}" hx-target="#teacher-form-area" hx-swap="innerHTML" aria-label="Modifica {{ t.name }}">Modifica</a>
+          <a href="{% url 'teacher_delete' t.pk %}" hx-get="{% url 'teacher_delete' t.pk %}" hx-target="#teacher-form-area" hx-swap="innerHTML" aria-label="Elimina {{ t.name }}">Elimina</a>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p>Nessun docente presente.</p>
+  {% endif %}
+  {% endif %}
+</section>
