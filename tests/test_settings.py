@@ -1,0 +1,126 @@
+import os
+import subprocess
+import sys
+
+import pytest
+from django.core.exceptions import ImproperlyConfigured
+
+from config.env import (
+    get_bool,
+    get_hosts,
+    get_positive_int,
+    get_required,
+    parse_database_url,
+)
+
+
+def test_missing_required_names_variable():
+    with pytest.raises(ImproperlyConfigured, match="SECRET_KEY"):
+        get_required({}, "SECRET_KEY")
+
+
+def test_empty_required_fails():
+    with pytest.raises(ImproperlyConfigured, match="DATABASE_URL"):
+        get_required({"DATABASE_URL": "  "}, "DATABASE_URL")
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("true", True), ("TRUE", True), ("1", True), ("false", False), ("0", False)],
+)
+def test_bool_accepts(raw, expected):
+    assert get_bool({"DEBUG": raw}, "DEBUG") is expected
+
+
+def test_bool_default_false():
+    assert get_bool({}, "DEBUG") is False
+
+
+def test_bad_bool_fails():
+    with pytest.raises(ImproperlyConfigured, match="DEBUG"):
+        get_bool({"DEBUG": "maybe"}, "DEBUG")
+
+
+def test_hosts_parsing():
+    env = {"ALLOWED_HOSTS": "a.example.com, b.example.com,, "}
+    assert get_hosts(env, "ALLOWED_HOSTS", required=True) == [
+        "a.example.com",
+        "b.example.com",
+    ]
+
+
+@pytest.mark.parametrize("env", [{}, {"ALLOWED_HOSTS": " , "}])
+def test_hosts_required_when_not_debug(env):
+    with pytest.raises(ImproperlyConfigured, match="ALLOWED_HOSTS"):
+        get_hosts(env, "ALLOWED_HOSTS", required=True)
+
+
+def test_hosts_optional_when_debug():
+    assert get_hosts({}, "ALLOWED_HOSTS", required=False) == []
+
+
+def test_timeout_default():
+    assert get_positive_int({}, "SOLVER_TIMEOUT_SECONDS", 60) == 60
+
+
+def test_timeout_value():
+    assert (
+        get_positive_int({"SOLVER_TIMEOUT_SECONDS": "30"}, "SOLVER_TIMEOUT_SECONDS", 60)
+        == 30
+    )
+
+
+@pytest.mark.parametrize("raw", ["0", "-5", "abc", "1.5"])
+def test_bad_timeout_fails(raw):
+    with pytest.raises(ImproperlyConfigured, match="SOLVER_TIMEOUT_SECONDS"):
+        get_positive_int({"SOLVER_TIMEOUT_SECONDS": raw}, "SOLVER_TIMEOUT_SECONDS", 60)
+
+
+def test_database_url_parsing():
+    cfg = parse_database_url("postgres://user:p%40ss@db.example.com:5433/name")
+    assert cfg["ENGINE"] == "django.db.backends.postgresql"
+    assert cfg["NAME"] == "name"
+    assert cfg["USER"] == "user"
+    assert cfg["PASSWORD"] == "p@ss"
+    assert cfg["HOST"] == "db.example.com"
+    assert cfg["PORT"] == "5433"
+
+
+def test_non_postgres_url_fails():
+    with pytest.raises(ImproperlyConfigured, match="DATABASE_URL"):
+        parse_database_url("sqlite:///db.sqlite3")
+
+
+def _check(env_overrides, drop=()):
+    env = {k: v for k, v in os.environ.items() if k not in drop}
+    env.update(
+        SECRET_KEY="x",
+        DEBUG="false",
+        ALLOWED_HOSTS="localhost",
+        DATABASE_URL="postgres://u:p@localhost:5432/d",
+        DJANGO_SETTINGS_MODULE="config.settings",
+    )
+    env.update(env_overrides)
+    for k in drop:
+        env.pop(k, None)
+    return subprocess.run(
+        [sys.executable, "manage.py", "check"], env=env, capture_output=True, text=True
+    )
+
+
+def test_startup_ok():
+    assert _check({}).returncode == 0
+
+
+@pytest.mark.parametrize("name", ["SECRET_KEY", "DATABASE_URL"])
+def test_startup_fails_without_required(name):
+    result = _check({}, drop=(name,))
+    assert result.returncode != 0
+    assert name in result.stderr
+
+
+def test_startup_fails_without_hosts_unless_debug():
+    result = _check({}, drop=("ALLOWED_HOSTS",))
+    assert result.returncode != 0
+    assert "ALLOWED_HOSTS" in result.stderr
+    assert _check({"DEBUG": "true"}, drop=("ALLOWED_HOSTS",)).returncode == 0

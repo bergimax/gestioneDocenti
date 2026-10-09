@@ -5,6 +5,7 @@ description = "Gestione docenti"
 requires-python = ">=3.13"
 dependencies = [
     "Django==5.2.18",
+    "psycopg[binary]==3.3.6",
 ]
 
 [dependency-groups]
@@ -15,7 +16,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings"
+DJANGO_SETTINGS_MODULE = "config.settings_test"
 testpaths = ["tests"]
 
 [tool.uv]

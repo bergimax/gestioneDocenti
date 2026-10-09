@@ -1,11 +1,23 @@
+import os
 from pathlib import Path
+
+from config.env import (
+    DEFAULT_SOLVER_TIMEOUT_SECONDS,
+    get_bool,
+    get_hosts,
+    get_positive_int,
+    get_required,
+    parse_database_url,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Hardcoded for now; task #3 makes settings environment-driven.
-SECRET_KEY = "insecure-dev-key-replaced-by-task-3"
-DEBUG = True
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
+SECRET_KEY = get_required(os.environ, "SECRET_KEY")
+DEBUG = get_bool(os.environ, "DEBUG", default=False)
+ALLOWED_HOSTS = get_hosts(os.environ, "ALLOWED_HOSTS", required=not DEBUG)
+SOLVER_TIMEOUT_SECONDS = get_positive_int(
+    os.environ, "SOLVER_TIMEOUT_SECONDS", DEFAULT_SOLVER_TIMEOUT_SECONDS
+)
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
@@ -30,12 +42,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
-}
+DATABASES = {"default": parse_database_url(get_required(os.environ, "DATABASE_URL"))}
 
 LANGUAGE_CODE = "it"
 TIME_ZONE = "Europe/Rome"
