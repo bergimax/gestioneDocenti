@@ -1,0 +1,49 @@
+{% load static %}<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Gestione docenti{% endblock %}</title>
+<link rel="stylesheet" href="{% static 'css/app.css' %}">
+<script src="{% static 'vendor/htmx-2.0.11.min.js' %}" defer></script>
+<script src="{% static 'vendor/alpine-3.17.4.min.js' %}" defer></script>
+</head>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+<header class="site-header" x-data="{ open: false }">
+  <a class="brand" href="{% url 'home' %}">Gestione docenti</a>
+  {% if nav_items %}
+  <button type="button" class="nav-toggle" @click="open = !open" :aria-expanded="open.toString()" aria-controls="main-nav" aria-expanded="false">Menu</button>
+  <nav id="main-nav" class="main-nav" :class="{ 'is-open': open }" aria-label="Principale">
+    <ul>
+      {% for item in nav_items %}
+      <li><a href="{% url item.url_name %}" class="{% if item.active %}active{% endif %}"{% if item.active %} aria-current="page"{% endif %}>{{ item.label }}</a></li>
+      {% endfor %}
+    </ul>
+  </nav>
+  {% endif %}
+</header>
+<main>
+  {% if messages %}
+  <div class="messages">
+    {% for message in messages %}
+    <div class="message message-{{ message.level_tag|default:'info' }}" role="status" x-data="{ shown: true }" x-show="shown">
+      <span>{{ message }}</span>
+      <button type="button" class="message-close" @click="shown = false" aria-label="Chiudi">&times;</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+{% if user_label %}
+<footer class="site-footer">
+  <span class="user-info">{{ user.email }} &middot; {{ user_label }}</span>
+  <a href="{% url 'password_change' %}">Cambia password</a>
+  <form method="post" action="{% url 'logout' %}">
+    {% csrf_token %}
+    <button type="submit">Esci</button>
+  </form>
+</footer>
+{% endif %}
+</body>
+</html>

@@ -27,7 +27,9 @@ MATRIX = {
 
 
 def make(role, active=True):
-    return User(email=f"{role or 'none'}@example.com", role=role, is_active=active)
+    return User(
+        email=f"{(role or 'none').lower()}@example.com", role=role, is_active=active
+    )
 
 
 def test_matrix_covers_every_predicate():

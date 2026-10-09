@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Panoramica{% endblock %}
+{% block content %}
+<h1>Panoramica</h1>
+<p>Benvenuto, {{ user.email }}.</p>
+<ul class="cards">
+  {% for item in nav_items %}{% if not item.active %}
+  <li><a href="{% url item.url_name %}">{{ item.label }}</a></li>
+  {% endif %}{% endfor %}
+</ul>
+<p>
+  <button type="button" hx-post="{% url 'overview_ping' %}" hx-target="#ping-result" hx-swap="innerHTML">Verifica HTMX</button>
+  <span id="ping-result" aria-live="polite"></span>
+</p>
+{% endblock %}
