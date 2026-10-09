@@ -1,0 +1,21 @@
+[project]
+name = "gestione-docenti"
+version = "0.1.0"
+description = "Gestione docenti"
+requires-python = ">=3.13"
+dependencies = [
+    "Django==5.2.18",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "pytest-django==4.14.0",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+testpaths = ["tests"]
+
+[tool.uv]
+package = false
