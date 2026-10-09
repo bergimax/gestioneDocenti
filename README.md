@@ -29,3 +29,18 @@ nothing needs exporting. Its `DATABASE_URL` defaults to
 `postgres://postgres:postgres@localhost:5432/gestione_docenti`; a `DATABASE_URL`
 exported in the shell overrides it. A local PostgreSQL must be running for tests
 that touch the database (pytest-django creates its own `test_` database).
+
+## Users and passwords
+
+There is no self-registration, no email and no self-service password reset.
+Users are created by an operator, with a role (`ADMIN` or `SEGRETERIA`):
+
+    uv run manage.py create_user mario@example.com --role SEGRETERIA
+
+The password is asked interactively (hidden) unless `--password` is given; it
+must be at least 8 characters. Running it for an existing email resets that
+user's password and role.
+
+A forgotten password is reset by an operator with
+
+    uv run manage.py changepassword <email>

@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="it">
+<meta charset="utf-8">
+<title>{% block title %}Gestione docenti{% endblock %}</title>
+<body>
+{% for message in messages %}<p role="status">{{ message }}</p>{% endfor %}
+{% block content %}{% endblock %}
+</body>
+</html>
