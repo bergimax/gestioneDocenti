@@ -1,5 +1,7 @@
 _docs/specs.md is the scope, _docs/architecture.md the design, _docs/tasks.md the build order — read the relevant task before starting it.
-
+- `_docs/process.md` - how work is organized
+- Before writing tests, read `_docs/testing-guidelines.md`
+- For anything touching the UI, read `_docs/design-system.md`
 Commands
 uv sync - install dependencies
 uv run manage.py runserver - dev server
