@@ -1,0 +1,83 @@
+<section id="calendar-section" aria-label="Calendario annuale">
+  {% if flash %}{% if messages %}
+  <div class="messages">
+    {% for message in messages %}
+    <div class="message message-{{ message.level_tag|default:'info' }}" role="status">
+      <span>{{ message }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}{% endif %}
+  {% if not school %}
+  <p>Nessuna scuola configurata: esegui prima il setup.</p>
+  {% else %}
+  <div class="cal-nav">
+    {% if prev_month %}<a href="{% url 'calendar_month' %}?mese={{ prev_month }}" hx-get="{% url 'calendar_month' %}?mese={{ prev_month }}" hx-target="#calendar-section" hx-swap="outerHTML" hx-push-url="true">&larr; Mese precedente</a>{% endif %}
+    <h2 id="calendar-month-title">{{ title }}</h2>
+    {% if next_month %}<a href="{% url 'calendar_month' %}?mese={{ next_month }}" hx-get="{% url 'calendar_month' %}?mese={{ next_month }}" hx-target="#calendar-section" hx-swap="outerHTML" hx-push-url="true">Mese successivo &rarr;</a>{% endif %}
+  </div>
+  {% if can_edit %}
+  <p><a class="button" href="{% url 'calendar_create' %}" hx-get="{% url 'calendar_create' %}" hx-target="#calendar-form-area" hx-swap="innerHTML">Aggiungi riga</a></p>
+  {% endif %}
+  <div id="calendar-form-area" aria-live="polite"></div>
+  {% if not has_entries %}<p>Nessuna riga di calendario per questo mese.</p>{% endif %}
+  <ul class="cal-legend" aria-label="Legenda">
+    <li><span class="cal-swatch cal-closure" aria-hidden="true"></span> Chiusura</li>
+    <li><span class="cal-swatch cal-stage" aria-hidden="true"></span> Stage</li>
+    <li><span class="cal-swatch cal-short" aria-hidden="true"></span> Giornata corta</li>
+    <li><span class="cal-swatch cal-normal" aria-hidden="true"></span> Giorno normale</li>
+  </ul>
+  <table class="cal-table" aria-labelledby="calendar-month-title">
+    <thead>
+      <tr>{% for name in weekdays %}<th scope="col">{{ name }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for week in weeks %}
+      <tr>
+        {% for cell in week %}
+        {% if cell %}
+        <td class="cal-cell{% if cell.kind %} cal-{{ cell.kind }}{% else %} cal-normal{% endif %}" aria-label="{{ cell.aria_label }}">
+          <p class="cal-day"><span class="cal-weekday">{{ cell.weekday }}</span> <strong>{{ cell.day.day }}</strong>{% for badge in cell.badges %} <span class="cal-badge">{{ badge }}</span>{% endfor %}</p>
+          <ul class="cal-groups">
+            {% for line in cell.lines %}
+            <li>{{ line.label }}: {% if line.hours is None %}-{% else %}{{ line.hours }}{% if line.start %} dalle {{ line.start }}{% endif %}{% endif %}</li>
+            {% endfor %}
+          </ul>
+          {% if cell.stage_classes %}<p class="cal-stage-line">Stage: {{ cell.stage_classes|join:", " }}</p>{% endif %}
+          {% if cell.entries %}
+          <ul class="cal-entries">
+            {% for entry in cell.entries %}
+            <li>{{ entry.scope }}: {{ entry.summary }}
+              {% if can_edit %}
+              <a href="{% url 'calendar_edit' entry.pk %}" hx-get="{% url 'calendar_edit' entry.pk %}" hx-target="#calendar-form-area" hx-swap="innerHTML" aria-label="Modifica {{ entry.action_label }}">Modifica</a>
+              <a href="{% url 'calendar_delete' entry.pk %}" hx-get="{% url 'calendar_delete' entry.pk %}" hx-target="#calendar-form-area" hx-swap="innerHTML" aria-label="Elimina {{ entry.action_label }}">Elimina</a>
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if can_edit %}<p><a href="{% url 'calendar_create' %}?data={{ cell.day|date:'Y-m-d' }}" hx-get="{% url 'calendar_create' %}?data={{ cell.day|date:'Y-m-d' }}" hx-target="#calendar-form-area" hx-swap="innerHTML" aria-label="Aggiungi riga al {{ cell.day.day }}/{{ cell.day.month }}">Aggiungi</a></p>{% endif %}
+        </td>
+        {% else %}
+        <td class="cal-empty" aria-hidden="true"></td>
+        {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if weekend_entries %}
+  <h3>Righe in giorni non lavorativi</h3>
+  <ul class="cal-entries">
+    {% for entry in weekend_entries %}
+    <li>{{ entry.day_text }} - {{ entry.scope }}: {{ entry.summary }}
+      {% if can_edit %}
+      <a href="{% url 'calendar_edit' entry.pk %}" hx-get="{% url 'calendar_edit' entry.pk %}" hx-target="#calendar-form-area" hx-swap="innerHTML" aria-label="Modifica {{ entry.action_label }}">Modifica</a>
+      <a href="{% url 'calendar_delete' entry.pk %}" hx-get="{% url 'calendar_delete' entry.pk %}" hx-target="#calendar-form-area" hx-swap="innerHTML" aria-label="Elimina {{ entry.action_label }}">Elimina</a>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% endif %}
+</section>

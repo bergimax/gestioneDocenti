@@ -5,6 +5,7 @@ from django.db.models.functions import Lower
 
 from .models import (
     Assignment,
+    CalendarEntry,
     Class,
     ClassPairing,
     CognitiveWeight,
@@ -465,4 +466,177 @@ class PairingForm(_AriaForm, forms.ModelForm):
         except IntegrityError:
             self.add_error("subject", self.duplicate_message)
             self._link_errors()
+            return None
+
+
+HOURS_CHOICES = (4, 5, 6)
+START_HOUR_CHOICES = range(8, 14)
+
+
+class CalendarEntryForm(_AriaForm, forms.ModelForm):
+    """Create or edit one calendar row; the school is set by the server.
+
+    Weekend dates, class-stage rows with other fields and duplicate rows are
+    refused here only (the model allows them). `duplicate_of` is the existing
+    row when the error is a duplicate, so the template can link to it.
+    """
+
+    duplicate_of = None
+
+    date = forms.DateField(
+        label="Data",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        error_messages={
+            "required": "Inserisci la data.",
+            "invalid": "Inserisci una data valida (AAAA-MM-GG).",
+        },
+    )
+    group = forms.ChoiceField(
+        label="Gruppo",
+        required=False,
+        choices=[("", "Tutta la scuola")] + list(Group.choices),
+        error_messages={
+            "invalid_choice": "Scegli un gruppo valido: scelta non valida."
+        },
+    )
+    max_hours = forms.ChoiceField(
+        label="Ore massime",
+        required=False,
+        choices=[(h, str(h)) for h in HOURS_CHOICES],
+        initial=6,
+        error_messages={"invalid_choice": "Scegli 4, 5 o 6 ore: scelta non valida."},
+    )
+    is_closure = forms.BooleanField(label="Chiusura", required=False)
+    start_hour_min = forms.ChoiceField(
+        label="Ora minima di inizio",
+        required=False,
+        choices=[("", "Nessun limite")] + [(h, str(h)) for h in START_HOUR_CHOICES],
+        error_messages={
+            "invalid_choice": "Scegli un'ora da 8 a 13: scelta non valida."
+        },
+    )
+    stage_class = forms.ModelChoiceField(
+        label="Stage di una classe",
+        required=False,
+        queryset=Class.objects.none(),
+        empty_label="Nessuna classe",
+        error_messages={
+            "invalid_choice": "Scegli una classe dell'elenco: scelta non valida."
+        },
+    )
+    is_group_stage = forms.BooleanField(label="Stage di gruppo", required=False)
+
+    class Meta:
+        model = CalendarEntry
+        fields = [
+            "date",
+            "group",
+            "max_hours",
+            "is_closure",
+            "start_hour_min",
+            "stage_class",
+            "is_group_stage",
+        ]
+
+    def __init__(self, *args, school, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.school = school
+        self.instance.school = school
+        self.fields["stage_class"].queryset = _by_name(Class, school)
+        stored = self.instance.max_hours if self.instance.pk else None
+        if stored is not None and stored not in HOURS_CHOICES:
+            self.fields["max_hours"].choices = list(
+                self.fields["max_hours"].choices
+            ) + [(stored, f"{stored} (importato)")]
+        self._init_hints()
+
+    def clean_group(self):
+        return self.cleaned_data["group"] or None
+
+    def clean_max_hours(self):
+        value = self.cleaned_data["max_hours"]
+        return int(value) if value != "" else 6
+
+    def clean_start_hour_min(self):
+        value = self.cleaned_data["start_hour_min"]
+        return int(value) if value != "" else None
+
+    def clean_date(self):
+        day = self.cleaned_data["date"]
+        start, end = self.school.year_start, self.school.year_end
+        if not start <= day <= end:
+            raise forms.ValidationError(
+                f"La data deve essere compresa tra il {start:%d/%m/%Y} "
+                f"e il {end:%d/%m/%Y}."
+            )
+        if day.weekday() >= 5:
+            raise forms.ValidationError(
+                "Il calendario riguarda solo i giorni da lunedì a venerdì."
+            )
+        return day
+
+    def clean(self):
+        data = super().clean()
+        group = data.get("group")
+        klass = data.get("stage_class")
+        group_stage = data.get("is_group_stage")
+        if group_stage and "group" not in self.errors and not group:
+            self.add_error("is_group_stage", "Lo stage di gruppo richiede un gruppo.")
+        if group_stage and klass:
+            self.add_error(
+                "is_group_stage",
+                "Stage di classe e stage di gruppo non possono coesistere.",
+            )
+        elif klass and (
+            group or data.get("is_closure") or data.get("start_hour_min") is not None
+        ):
+            self.add_error(
+                "stage_class",
+                "Per lo stage di una classe non indicare gruppo, chiusura "
+                "o ora minima.",
+            )
+        if not self.errors:
+            self._check_duplicate(data)
+        return data
+
+    def _duplicates(self, data):
+        rows = CalendarEntry.objects.filter(
+            school=self.school, date=data["date"]
+        ).exclude(pk=self.instance.pk)
+        if data.get("stage_class"):
+            return rows.filter(stage_class=data["stage_class"])
+        rows = rows.filter(stage_class__isnull=True)
+        if data.get("group"):
+            return rows.filter(group=data["group"])
+        return rows.filter(group__isnull=True)
+
+    def _check_duplicate(self, data):
+        existing = self._duplicates(data).first()
+        if existing is not None:
+            self._report_duplicate(existing, data)
+
+    def _report_duplicate(self, existing, data):
+        self.duplicate_of = existing
+        field = "stage_class" if data.get("stage_class") else "group"
+        what = "per questa classe" if field == "stage_class" else "per questo gruppo"
+        self.add_error(
+            field,
+            f"Esiste già una riga per questa data {what} (modificala).",
+        )
+        self._link_errors()
+
+    def _post_clean(self):
+        # A form that already failed has nothing to validate on the model; this
+        # also avoids a second, generic message for the same duplicate.
+        if not self.errors:
+            super()._post_clean()
+
+    def save_or_report(self):
+        """Save; a lost uniqueness race becomes the same field error."""
+        try:
+            with transaction.atomic():
+                return self.save()
+        except IntegrityError:
+            data = self.cleaned_data
+            self._report_duplicate(self._duplicates(data).first(), data)
             return None

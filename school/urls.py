@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import assignments, classes, hub, pairings, subjects, teachers
+from .views import assignments, calendar, classes, hub, pairings, subjects, teachers
 
 urlpatterns = [
     path("dati-scuola/", hub.school_data, name="school_data"),
@@ -75,5 +75,21 @@ urlpatterns = [
         "dati-scuola/accoppiamenti/<int:pk>/elimina/",
         pairings.pairing_delete,
         name="pairing_delete",
+    ),
+    path("dati-scuola/calendario/", calendar.calendar_month, name="calendar_month"),
+    path(
+        "dati-scuola/calendario/nuova/",
+        calendar.calendar_create,
+        name="calendar_create",
+    ),
+    path(
+        "dati-scuola/calendario/<int:pk>/modifica/",
+        calendar.calendar_edit,
+        name="calendar_edit",
+    ),
+    path(
+        "dati-scuola/calendario/<int:pk>/elimina/",
+        calendar.calendar_delete,
+        name="calendar_delete",
     ),
 ]

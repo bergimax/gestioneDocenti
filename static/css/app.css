@@ -78,3 +78,39 @@ button { padding: .4rem .9rem; cursor: pointer; }
 .readonly dd { margin: 0; }
 .field input[type=number], .field textarea { display: block; width: 100%; padding: .4rem; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
 .field.has-error input[type=number], .field.has-error textarea { border-color: #c62828; }
+
+/* Calendar screens. Every day type has a text badge and its own border style. */
+:root {
+  --cal-closure-bg: #fde8e6; --cal-closure-edge: #b42318;
+  --cal-stage-bg: #e6edfb; --cal-stage-edge: #1f4fb4;
+  --cal-short-bg: #fff3d1; --cal-short-edge: #8a5a00;
+  --cal-normal-bg: #fff; --cal-normal-edge: #5b6577;
+}
+.cal-nav { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.cal-nav h2 { margin: 0; font-size: 1.3rem; flex: 1; text-align: center; }
+.field input[type=date] { display: block; width: 100%; padding: .4rem; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+.field.has-error input[type=date] { border-color: #c62828; }
+.cal-legend { list-style: none; display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; padding: 0; margin: .75rem 0; }
+.cal-swatch { display: inline-block; width: 1.5rem; height: 1rem; vertical-align: middle; border: 1px solid var(--border); border-left-width: 6px; }
+.cal-table { width: 100%; border-collapse: separate; border-spacing: .35rem; table-layout: fixed; }
+.cal-table th { text-align: left; padding: .25rem .4rem; }
+.cal-cell, .cal-swatch { color: var(--fg); }
+.cal-cell { vertical-align: top; padding: .4rem .5rem; border: 1px solid var(--border); border-left-width: 6px; border-radius: 4px; overflow-wrap: anywhere; font-size: .9rem; }
+.cal-closure { background: var(--cal-closure-bg); border-left-color: var(--cal-closure-edge); border-left-style: solid; }
+.cal-stage { background: var(--cal-stage-bg); border-left-color: var(--cal-stage-edge); border-left-style: dashed; }
+.cal-short { background: var(--cal-short-bg); border-left-color: var(--cal-short-edge); border-left-style: dotted; }
+.cal-normal { background: var(--cal-normal-bg); border-left-color: var(--cal-normal-edge); border-left-style: double; }
+.cal-day { margin: 0 0 .25rem; }
+.cal-badge { display: inline-block; padding: 0 .35rem; border: 1px solid currentColor; border-radius: 3px; font-size: .8rem; font-weight: 600; background: #fff; }
+.cal-groups, .cal-entries { list-style: none; margin: 0 0 .25rem; padding: 0; }
+.cal-stage-line { margin: 0 0 .25rem; font-weight: 600; }
+.cal-entries a { margin-left: .4rem; }
+.cal-cell p { margin: 0 0 .25rem; }
+@media (max-width: 47.99rem) {
+  .cal-table, .cal-table tbody, .cal-table tr, .cal-table td { display: block; }
+  .cal-table thead, .cal-empty { display: none !important; }
+  .cal-table { border-spacing: 0; }
+  .cal-cell { margin-bottom: .4rem; }
+}
+.cal-weekday { display: none; }
+@media (max-width: 47.99rem) { .cal-weekday { display: inline; } }

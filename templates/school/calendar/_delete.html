@@ -1,0 +1,9 @@
+<div class="form-panel" role="group" aria-labelledby="delete-title">
+  <h2 id="delete-title">Elimina riga del {{ entry.date|date:"d/m/Y" }}</h2>
+  <p>Eliminare la riga del {{ entry.date|date:"d/m/Y" }} ({% if entry.stage_class %}stage della classe {{ entry.stage_class.name }}{% else %}{{ entry.get_group_display|default:"Tutta la scuola" }}{% endif %})? L'operazione non si può annullare.</p>
+  <form method="post" action="{% url 'calendar_delete' entry.pk %}" hx-post="{% url 'calendar_delete' entry.pk %}" hx-target="#calendar-section" hx-swap="outerHTML">
+    {% csrf_token %}
+    <button type="submit">Conferma</button>
+    <a href="{% url 'calendar_month' %}?mese={{ entry.date|date:'Y-m' }}">Annulla</a>
+  </form>
+</div>

@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{% if creating %}Nuova riga di calendario{% else %}Modifica riga di calendario{% endif %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'calendar_month' %}">&larr; Calendario</a></p>
+{% include "school/calendar/_form.html" %}
+{% endblock %}
