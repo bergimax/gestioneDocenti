@@ -1,0 +1,55 @@
+<section id="pairing-section" aria-label="Elenco accoppiamenti">
+  {% if flash %}{% if messages %}
+  <div class="messages">
+    {% for message in messages %}
+    <div class="message message-{{ message.level_tag|default:'info' }}" role="status">
+      <span>{{ message }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}{% endif %}
+  {% if not school %}
+  <p>Nessuna scuola configurata: esegui prima il setup.</p>
+  {% else %}
+  {% if can_edit %}
+  <p><a class="button" href="{% url 'pairing_create' %}" hx-get="{% url 'pairing_create' %}" hx-target="#pairing-form-area" hx-swap="innerHTML">Aggiungi accoppiamento</a></p>
+  {% endif %}
+  <div id="pairing-form-area" aria-live="polite"></div>
+  {% if pairings %}
+  <div class="table-wrap">
+  <table class="data-table">
+    <caption class="visually-hidden">Accoppiamenti di classi</caption>
+    <thead>
+      <tr>
+        <th scope="col">Classe A</th>
+        <th scope="col">Classe B</th>
+        <th scope="col">Materia</th>
+        <th scope="col">Docente</th>
+        <th scope="col">Note</th>
+        {% if can_edit %}<th scope="col">Azioni</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in pairings %}
+      <tr>
+        <th scope="row">{{ p.class_a.name }}</th>
+        <td>{{ p.class_b.name }}</td>
+        <td>{{ p.subject.name }}</td>
+        <td>{{ p.teacher.name|default:"-" }}</td>
+        <td>{{ p.note|default:"-" }}</td>
+        {% if can_edit %}
+        <td class="actions">
+          <a href="{% url 'pairing_edit' p.pk %}" hx-get="{% url 'pairing_edit' p.pk %}" hx-target="#pairing-form-area" hx-swap="innerHTML" aria-label="Modifica accoppiamento {{ p }}">Modifica</a>
+          <a href="{% url 'pairing_delete' p.pk %}" hx-get="{% url 'pairing_delete' p.pk %}" hx-target="#pairing-form-area" hx-swap="innerHTML" aria-label="Elimina accoppiamento {{ p }}">Elimina</a>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p>Nessun accoppiamento presente.</p>
+  {% endif %}
+  {% endif %}
+</section>

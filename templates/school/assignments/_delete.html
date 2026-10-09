@@ -1,0 +1,22 @@
+<div class="form-panel" role="group" aria-labelledby="delete-title">
+  <h2 id="delete-title">Elimina assegnazione</h2>
+  {% if blockers %}
+  {% if blockers|length == 1 %}
+  <p class="form-error">Impossibile eliminare l'assegnazione {{ assignment }}: è usata dall'accoppiamento {{ blockers.0 }}.</p>
+  {% else %}
+  <p class="form-error">Impossibile eliminare l'assegnazione {{ assignment }}: è usata dagli accoppiamenti:</p>
+  <ul>
+    {% for p in blockers %}<li>{{ p }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <p>Elimina prima {% if blockers|length == 1 %}l'accoppiamento{% else %}gli accoppiamenti{% endif %}.</p>
+  <p><a href="{% url 'assignment_list' %}">Torna all'elenco</a></p>
+  {% else %}
+  <p>Eliminare l'assegnazione {{ assignment }}? L'operazione non si può annullare.</p>
+  <form method="post" action="{% url 'assignment_delete' assignment.pk %}" hx-post="{% url 'assignment_delete' assignment.pk %}" hx-target="#assignment-section" hx-swap="outerHTML">
+    {% csrf_token %}
+    <button type="submit">Conferma</button>
+    <a href="{% url 'assignment_list' %}">Annulla</a>
+  </form>
+  {% endif %}
+</div>

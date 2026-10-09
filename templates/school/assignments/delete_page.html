@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Elimina assegnazione{% endblock %}
+{% block content %}
+<p><a href="{% url 'assignment_list' %}">&larr; Assegnazioni</a></p>
+{% include "school/assignments/_delete.html" %}
+{% endblock %}

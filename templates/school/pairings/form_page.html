@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{% if creating %}Nuovo accoppiamento{% else %}Modifica accoppiamento{% endif %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'pairing_list' %}">&larr; Accoppiamenti</a></p>
+{% include "school/pairings/_form.html" %}
+{% endblock %}

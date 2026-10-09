@@ -1,0 +1,9 @@
+<div class="form-panel" role="group" aria-labelledby="delete-title">
+  <h2 id="delete-title">Elimina accoppiamento</h2>
+  <p>Eliminare l'accoppiamento {{ pairing }}? L'operazione non si può annullare.</p>
+  <form method="post" action="{% url 'pairing_delete' pairing.pk %}" hx-post="{% url 'pairing_delete' pairing.pk %}" hx-target="#pairing-section" hx-swap="outerHTML">
+    {% csrf_token %}
+    <button type="submit">Conferma</button>
+    <a href="{% url 'pairing_list' %}">Annulla</a>
+  </form>
+</div>

@@ -1,0 +1,57 @@
+<section id="assignment-section" aria-label="Elenco assegnazioni">
+  {% if flash %}{% if messages %}
+  <div class="messages">
+    {% for message in messages %}
+    <div class="message message-{{ message.level_tag|default:'info' }}" role="status">
+      <span>{{ message }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}{% endif %}
+  {% if not school %}
+  <p>Nessuna scuola configurata: esegui prima il setup.</p>
+  {% else %}
+  {% if can_edit %}
+  <p><a class="button" href="{% url 'assignment_create' %}" hx-get="{% url 'assignment_create' %}" hx-target="#assignment-form-area" hx-swap="innerHTML">Aggiungi assegnazione</a></p>
+  {% endif %}
+  <div id="assignment-form-area" aria-live="polite"></div>
+  {% if assignments %}
+  <div class="table-wrap">
+  <table class="data-table">
+    <caption class="visually-hidden">Assegnazioni della scuola</caption>
+    <thead>
+      <tr>
+        <th scope="col">Docente</th>
+        <th scope="col">Classe</th>
+        <th scope="col">Materia</th>
+        <th scope="col">Ore totali</th>
+        <th scope="col">Ore erogate</th>
+        <th scope="col">Ore residue</th>
+        {% if can_edit %}<th scope="col">Azioni</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in assignments %}
+      <tr>
+        <th scope="row">{{ a.teacher.name }}</th>
+        <td>{{ a.school_class.name }}</td>
+        <td>{{ a.subject.name }}</td>
+        <td>{{ a.ore_totali }}</td>
+        <td>{{ a.delivered }}</td>
+        <td>{{ a.remaining }}</td>
+        {% if can_edit %}
+        <td class="actions">
+          <a href="{% url 'assignment_edit' a.pk %}" hx-get="{% url 'assignment_edit' a.pk %}" hx-target="#assignment-form-area" hx-swap="innerHTML" aria-label="Modifica assegnazione {{ a }}">Modifica</a>
+          <a href="{% url 'assignment_delete' a.pk %}" hx-get="{% url 'assignment_delete' a.pk %}" hx-target="#assignment-form-area" hx-swap="innerHTML" aria-label="Elimina assegnazione {{ a }}">Elimina</a>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p>Nessuna assegnazione presente.</p>
+  {% endif %}
+  {% endif %}
+</section>

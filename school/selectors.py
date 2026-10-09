@@ -1,7 +1,8 @@
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.db.models.functions import Lower
 
-from .models import Class, School, Subject, Teacher
+from .assignment_hours import delivered_hours_map
+from .models import Assignment, Class, ClassPairing, School, Subject, Teacher
 
 # (related name, singular, plural) of every relation that blocks a delete.
 TEACHER_REFERENCES = (
@@ -96,4 +97,69 @@ def subject_reference_summary(subject):
             (s.class_pairings.count(), ("accoppiamento", "accoppiamenti")),
             (s.slots.count(), ("slot dell'orario", "slot dell'orario")),
         ]
+    )
+
+
+def assignments_of(school):
+    """Assignments of `school` with teacher, class and subject, in one query."""
+    return (
+        Assignment.objects.filter(school=school)
+        .select_related("teacher", "school_class", "subject")
+        .order_by(
+            Lower("teacher__name"),
+            Lower("school_class__name"),
+            Lower("subject__name"),
+            "pk",
+        )
+    )
+
+
+def assignment_rows(school):
+    """The assignments list with delivered and remaining hours (may be < 0)."""
+    delivered = delivered_hours_map(school)
+    rows = []
+    for assignment in assignments_of(school):
+        assignment.delivered = delivered.get(assignment.pk, 0)
+        assignment.remaining = assignment.ore_totali - assignment.delivered
+        rows.append(assignment)
+    return rows
+
+
+def pairings_of(school):
+    """Pairings of `school` with classes, subject and teacher, in one query."""
+    return (
+        ClassPairing.objects.filter(school=school)
+        .select_related("class_a", "class_b", "subject", "teacher")
+        .order_by(
+            Lower("class_a__name"),
+            Lower("class_b__name"),
+            Lower("subject__name"),
+            "pk",
+        )
+    )
+
+
+def pairings_relying_on(assignment):
+    """Pairings that need `assignment` to stay valid (specs 5.4).
+
+    A pairing of the same subject and class relies on it when it names this
+    teacher, or names no teacher and this is the last assignment of the
+    class and subject.
+    """
+    others = (
+        Assignment.objects.filter(
+            school=assignment.school_id,
+            school_class=assignment.school_class_id,
+            subject=assignment.subject_id,
+        )
+        .exclude(pk=assignment.pk)
+        .exists()
+    )
+    reliant = Q(teacher=assignment.teacher_id)
+    if not others:
+        reliant |= Q(teacher__isnull=True)
+    return pairings_of(assignment.school_id).filter(
+        Q(class_a=assignment.school_class_id) | Q(class_b=assignment.school_class_id),
+        reliant,
+        subject=assignment.subject_id,
     )
