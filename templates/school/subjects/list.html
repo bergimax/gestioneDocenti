@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Materie{% endblock %}
+{% block content %}
+{% if can_open_hub %}<p><a href="{% url 'school_data' %}">&larr; Dati scuola</a></p>{% endif %}
+<h1>Materie</h1>
+{% include "school/subjects/_section.html" %}
+{% endblock %}

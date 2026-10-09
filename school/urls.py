@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import hub, teachers
+from .views import classes, hub, subjects, teachers
 
 urlpatterns = [
     path("dati-scuola/", hub.school_data, name="school_data"),
@@ -15,5 +15,29 @@ urlpatterns = [
         "dati-scuola/docenti/<int:pk>/elimina/",
         teachers.teacher_delete,
         name="teacher_delete",
+    ),
+    path("dati-scuola/classi/", classes.class_list, name="class_list"),
+    path("dati-scuola/classi/nuova/", classes.class_create, name="class_create"),
+    path(
+        "dati-scuola/classi/<int:pk>/modifica/",
+        classes.class_edit,
+        name="class_edit",
+    ),
+    path(
+        "dati-scuola/classi/<int:pk>/elimina/",
+        classes.class_delete,
+        name="class_delete",
+    ),
+    path("dati-scuola/materie/", subjects.subject_list, name="subject_list"),
+    path("dati-scuola/materie/nuova/", subjects.subject_create, name="subject_create"),
+    path(
+        "dati-scuola/materie/<int:pk>/modifica/",
+        subjects.subject_edit,
+        name="subject_edit",
+    ),
+    path(
+        "dati-scuola/materie/<int:pk>/elimina/",
+        subjects.subject_delete,
+        name="subject_delete",
     ),
 ]

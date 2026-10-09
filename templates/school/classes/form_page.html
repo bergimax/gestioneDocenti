@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{% if creating %}Nuova classe{% else %}Modifica classe{% endif %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'class_list' %}">&larr; Classi</a></p>
+{% include "school/classes/_form.html" %}
+{% endblock %}

@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{% if creating %}Nuova materia{% else %}Modifica materia{% endif %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'subject_list' %}">&larr; Materie</a></p>
+{% include "school/subjects/_form.html" %}
+{% endblock %}

@@ -1,0 +1,14 @@
+<div class="form-panel" role="group" aria-labelledby="delete-title">
+  <h2 id="delete-title">Elimina {{ class.name }}</h2>
+  {% if blockers %}
+  <p class="form-error">Impossibile eliminare {{ class.name }}: {{ blockers }}. Rimuovili prima dalle rispettive schermate.</p>
+  <p><a href="{% url 'class_list' %}">Torna all'elenco</a></p>
+  {% else %}
+  <p>Eliminare la classe {{ class.name }}? L'operazione non si può annullare.</p>
+  <form method="post" action="{% url 'class_delete' class.pk %}" hx-post="{% url 'class_delete' class.pk %}" hx-target="#class-section" hx-swap="outerHTML">
+    {% csrf_token %}
+    <button type="submit">Conferma</button>
+    <a href="{% url 'class_list' %}">Annulla</a>
+  </form>
+  {% endif %}
+</div>
