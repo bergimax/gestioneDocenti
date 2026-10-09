@@ -1,7 +1,6 @@
 import datetime
 
 import pytest
-from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import Client
@@ -165,19 +164,20 @@ def test_str(school):
     assert str(make_subject(school)) == "Italiano"
 
 
-def test_admin_lists_and_opens_all_models(school, monkeypatch):
-    # User has no is_staff (accounts is out of scope here), so the default
-    # admin permission check cannot pass; superuser role is checked instead.
-    monkeypatch.setattr(
-        admin.site,
-        "has_permission",
-        lambda request: request.user.is_active and request.user.is_superuser,
-    )
-    root = User.objects.create_user("root@example.com", "pw-correct-1", "ADMIN")
-    root.is_superuser = True
-    root.save()
+def test_admin_real_superuser_login_lists_and_opens_all_models(school):
+    User.objects.create_superuser("root@example.com", "pw-correct-1")
     c = Client()
-    c.force_login(root)
+    r = c.post(
+        "/admin/login/?next=/admin/",
+        {"username": "root@example.com", "password": "pw-correct-1"},
+    )
+    assert r.status_code == 302
+    assert r.url == "/admin/"
+    r = c.get("/admin/")
+    assert r.status_code == 200
+    content = r.content.decode()
+    for label in ("Schools", "Classes", "Teachers", "Subjects"):
+        assert label in content
     objs = {
         "school": school,
         "class": Class.objects.create(school=school, name="1A"),
@@ -189,3 +189,31 @@ def test_admin_lists_and_opens_all_models(school, monkeypatch):
     for model, obj in objs.items():
         assert c.get(f"/admin/school/{model}/").status_code == 200
         assert c.get(f"/admin/school/{model}/{obj.pk}/change/").status_code == 200
+
+
+@pytest.mark.parametrize("role", ["SEGRETERIA", "ADMIN"])
+def test_admin_denied_to_non_superuser_roles(db, role):
+    User.objects.create_user("u@example.com", "pw-correct-1", role)
+    c = Client()
+    r = c.post(
+        "/admin/login/", {"username": "u@example.com", "password": "pw-correct-1"}
+    )
+    assert r.status_code == 200
+    assert r.context["form"].errors
+    assert "_auth_user_id" not in c.session
+    user = User.objects.get(email="u@example.com")
+    c.force_login(user)
+    r = c.get("/admin/")
+    assert r.status_code == 302
+    assert "/admin/login/" in r.url
+
+
+def test_is_staff_and_create_superuser(db):
+    root = User.objects.create_superuser("root@example.com", "pw-correct-1")
+    assert root.is_superuser is True
+    assert root.role == "ADMIN"
+    assert root.is_staff is True
+    root.is_active = False
+    assert root.is_staff is False
+    plain = User.objects.create_user("p@example.com", "pw-correct-1", "ADMIN")
+    assert plain.is_staff is False

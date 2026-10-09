@@ -22,7 +22,10 @@ class UserManager(BaseUserManager):
         return user
 
     def create_superuser(self, email, password, role=Role.ADMIN, **extra):
-        return self.create_user(email, password, role)
+        user = self.model(email=email, role=role, is_superuser=True)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
 
 
 class User(AbstractBaseUser, PermissionsMixin):
@@ -42,6 +45,11 @@ class User(AbstractBaseUser, PermissionsMixin):
                 condition=models.Q(role__in=Role.values), name="accounts_user_role"
             ),
         ]
+
+    @property
+    def is_staff(self):
+        # Django admin only reads is_staff; access follows the superuser flag.
+        return self.is_active and self.is_superuser
 
     def save(self, *args, **kwargs):
         self.email = self.email.strip().lower()
