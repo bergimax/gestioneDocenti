@@ -423,3 +423,24 @@ def test_importers_import_only_stdlib_and_siblings():
             for mod in mods:
                 top = mod.split(".")[0]
                 assert top in sys.stdlib_module_names, f"{path.name} imports {mod}"
+
+
+# --- over-long digit strings never raise ------------------------------------
+
+
+@pytest.mark.parametrize("digits", ["9" * 5000, "0" * 5000 + "5"])
+def test_calendar_hours_overlong_digits_is_an_error(digits):
+    res = cal(f"2026-09-14,{digits}")
+    assert res.rows == [] and errs(res)[0].row == 2
+
+
+@pytest.mark.parametrize("digits", ["9" * 5000, "0" * 5000 + "5"])
+def test_class_students_overlong_digits_is_an_error(digits):
+    res = parse_classes(f"nome,n_studenti\n1A,{digits}\n")
+    assert res.rows == [] and errs(res)[0].row == 2
+
+
+@pytest.mark.parametrize("digits", ["9" * 5000, "0" * 5000 + "5"])
+def test_assignment_hours_overlong_digits_is_an_error(digits):
+    res = parse_assignments(A_HEAD + f"a,b,c,{digits}\n")
+    assert res.rows == [] and errs(res)[0].row == 2

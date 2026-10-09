@@ -26,6 +26,17 @@ _DIGITS = re.compile(r"[0-9]+")
 _DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 
+def _to_int(value):
+    """Non-negative integer from ASCII digits, or None. Never raises, even on
+    digit strings past Python's int conversion limit."""
+    if not _DIGITS.fullmatch(value):
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 @dataclass(frozen=True)
 class Message:
     severity: str
@@ -170,12 +181,9 @@ def _build_calendar(raw):
             pass
     if date is None:
         errors.append(f"data '{raw['data']}' is not a valid YYYY-MM-DD date")
-    hours = None
-    if _DIGITS.fullmatch(raw["ore_max_giornata"]) and (
-        int(raw["ore_max_giornata"]) in MAX_HOURS_VALUES
-    ):
-        hours = int(raw["ore_max_giornata"])
-    else:
+    hours = _to_int(raw["ore_max_giornata"])
+    if hours not in MAX_HOURS_VALUES:
+        hours = None
         errors.append(f"ore_max_giornata '{raw['ore_max_giornata']}' must be 4, 5 or 6")
     group = _choice(raw, "gruppo", GROUPS, errors, required=False)
     row = {
@@ -235,8 +243,8 @@ def _build_class(raw):
     students = raw.get("n_studenti", "")
     if students == "":
         students = None
-    elif _DIGITS.fullmatch(students):
-        students = int(students)
+    elif (parsed := _to_int(students)) is not None:
+        students = parsed
     else:
         errors.append(f"n_studenti '{students}' must be an integer >= 0")
     group = _choice(raw, "gruppo", GROUPS, errors, required=False)
@@ -286,8 +294,9 @@ def _build_assignment(raw):
         for col in ("docente_nome", "classe_nome", "materia_nome")
     }
     hours = raw["ore_anno"]
-    if _DIGITS.fullmatch(hours) and int(hours) >= 1:
-        row["ore_anno"] = int(hours)
+    parsed = _to_int(hours)
+    if parsed is not None and parsed >= 1:
+        row["ore_anno"] = parsed
     else:
         errors.append(f"ore_anno '{hours}' must be an integer >= 1")
         row["ore_anno"] = None
