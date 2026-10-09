@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "accounts",
     "school",
     "availability",
+    "scheduling",
 ]
 
 MIDDLEWARE = [
