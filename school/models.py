@@ -56,8 +56,7 @@ class Class(models.Model):
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name="classes")
     name = models.CharField("nome", max_length=50)
     student_count = models.PositiveIntegerField("studenti", default=0)
-    # NULL (not "") means "whole school", enforced by a check constraint.
-    group = models.CharField(  # noqa: DJ001
+    group = models.CharField(
         "gruppo", max_length=10, choices=Group.choices, blank=True, default=""
     )
 
