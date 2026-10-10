@@ -6,6 +6,7 @@ from urllib.parse import unquote, urlsplit
 from django.core.exceptions import ImproperlyConfigured
 
 DEFAULT_SOLVER_TIMEOUT_SECONDS = 60
+DEFAULT_SETUP_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 def get_required(env: Mapping[str, str], name: str) -> str:

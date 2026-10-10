@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Setup completato{% endblock %}
+{% block content %}
+<h1>Setup completato</h1>
+<p>La scuola è stata creata con i dati caricati.</p>
+{% if counts %}
+<dl class="readonly">
+  {% for label, n in counts.items %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}
+</dl>
+{% endif %}
+<p><a class="button" href="{% url 'school_data' %}">Vai a Dati scuola</a></p>
+{% endblock %}

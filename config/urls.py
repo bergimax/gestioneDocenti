@@ -9,7 +9,6 @@ urlpatterns = [
     path("partials/ping/", views.overview_ping, name="overview_ping"),
     path("disponibilita/", views.availability, name="availability"),
     path("orario/", views.timetable, name="timetable"),
-    path("setup/", views.setup, name="setup"),
     path("", include("school.urls")),
     path("", include("accounts.urls")),
 ]

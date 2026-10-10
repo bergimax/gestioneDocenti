@@ -1,0 +1,128 @@
+<div id="setup-wizard">
+  <div id="setup-notices" aria-live="polite">
+    {% for level, text, details in notices %}
+    <div class="message message-{{ level }}" role="{% if level == 'error' %}alert{% else %}status{% endif %}">
+      <div>
+        <span>{{ text }}</span>
+        {% if details %}<ul>{% for d in details %}<li>{{ d }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if school_exists %}
+  <div class="message message-warning" role="status"><span>Esiste già una scuola: il setup non può essere rieseguito.</span></div>
+  {% endif %}
+
+  {% for s in sections %}
+  <section class="form-panel setup-card" id="setup-{{ s.type }}" aria-labelledby="setup-{{ s.type }}-title">
+    <h2 id="setup-{{ s.type }}-title">{{ s.label }}{% if s.type == "calendar" %} (CSV o PDF){% endif %}</h2>
+    <form method="post" enctype="multipart/form-data" action="{% url 'setup_upload' s.type %}"
+          hx-post="{% url 'setup_upload' s.type %}" hx-encoding="multipart/form-data"
+          hx-target="#setup-wizard" hx-swap="outerHTML">
+      {% csrf_token %}
+      <div class="field">
+        <label for="file-{{ s.type }}">File {{ s.label|lower }}</label>
+        <input type="file" id="file-{{ s.type }}" name="file" accept="{{ s.accept }}" required>
+      </div>
+      <button type="submit">Carica</button>
+    </form>
+    {% if s.upload %}
+    <p class="setup-status"><strong>{{ s.upload.filename }}</strong>: {{ s.row_count }} righe</p>
+    {% else %}
+    <p class="hint">Nessun file caricato.</p>
+    {% endif %}
+
+    {% if s.errors %}
+    <div class="setup-issues setup-errors" role="alert">
+      <h3>Errori ({{ s.errors|length }})</h3>
+      <ul>{% for m in s.errors %}<li>{% if m.row %}Riga {{ m.row }}: {% endif %}{{ m.text }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+    {% if s.warnings %}
+    <div class="setup-issues setup-warnings">
+      <h3>Avvisi ({{ s.warnings|length }})</h3>
+      <ul>{% for m in s.warnings %}<li>{% if m.row %}Riga {{ m.row }}: {% endif %}{{ m.text }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% if s.upload %}
+    <div class="table-wrap">
+      <table class="data-table">
+        <caption class="visually-hidden">Anteprima {{ s.label|lower }}</caption>
+        <thead>
+          <tr><th scope="col">Riga</th>{% for field, label in s.columns %}<th scope="col">{{ label }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for r in s.rows %}
+          <tr>
+            <th scope="row">{{ r.row }}{% if r.stage %} <span class="cal-badge">stage</span>{% endif %}</th>
+            {% for c in r.cells %}
+            <td><input type="text" name="value" value="{{ c.value }}" class="setup-cell"
+                       aria-label="{{ s.label }} riga {{ r.row }}, {{ c.field }}"
+                       hx-post="{% url 'setup_correction' %}" hx-trigger="change"
+                       hx-vals='{"file_type": "{{ s.type }}", "row": {{ r.row }}, "field": "{{ c.field }}"}'
+                       hx-target="#setup-wizard" hx-swap="outerHTML"></td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <section class="form-panel" id="setup-add-date" aria-labelledby="setup-add-date-title">
+    <h2 id="setup-add-date-title">Aggiungi una data al calendario</h2>
+    {% if calendar_present %}
+    <form method="post" action="{% url 'setup_add_date' %}" hx-post="{% url 'setup_add_date' %}"
+          hx-target="#setup-wizard" hx-swap="outerHTML">
+      {% csrf_token %}
+      <div class="field">
+        <label for="add-date">Data</label>
+        <input type="date" id="add-date" name="date" required>
+      </div>
+      <div class="field">
+        <label for="add-hours">Ore massime</label>
+        <select id="add-hours" name="max_hours">
+          <option value="6">6</option><option value="5">5</option><option value="4">4</option>
+        </select>
+      </div>
+      <div class="field">
+        <input type="checkbox" id="add-closure" name="is_closure"> <label for="add-closure">Chiusura</label>
+      </div>
+      <div class="field">
+        <label for="add-stage">Classe in stage (facoltativa)</label>
+        <select id="add-stage" name="stage_class">
+          <option value="">Nessuna</option>
+          {% for name in stage_classes %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit">Aggiungi data</button>
+    </form>
+    {% else %}
+    <p class="hint">Carica prima il calendario.</p>
+    {% endif %}
+  </section>
+
+  <section class="form-panel" id="setup-save" aria-labelledby="setup-save-title">
+    <h2 id="setup-save-title">Salva il setup</h2>
+    {% if blockers %}
+    <ul class="setup-blockers">{% for b in blockers %}<li>{{ b }}</li>{% endfor %}</ul>
+    {% endif %}
+    <form method="post" action="{% url 'setup_save' %}" hx-post="{% url 'setup_save' %}"
+          hx-target="#setup-wizard" hx-swap="outerHTML">
+      {% csrf_token %}
+      {% for field in form.visible_fields %}
+      <div class="field{% if field.errors %} has-error{% endif %}">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<p class="hint">{{ field.help_text }}{% if field.name == "year_start" and calendar_low %} ({{ calendar_low|date:"d/m/Y" }}){% elif field.name == "year_end" and calendar_high %} ({{ calendar_high|date:"d/m/Y" }}){% endif %}</p>{% endif %}
+        {% if field.errors %}<p class="field-error">{{ field.errors|join:" " }}</p>{% endif %}
+      </div>
+      {% endfor %}
+      {% if form.non_field_errors %}<p class="form-error">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+      <button type="submit"{% if not can_save %} disabled{% endif %}>Salva</button>
+    </form>
+  </section>
+</div>

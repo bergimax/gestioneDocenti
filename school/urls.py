@@ -1,8 +1,24 @@
 from django.urls import path
 
-from .views import assignments, calendar, classes, hub, pairings, subjects, teachers
+from .views import (
+    assignments,
+    calendar,
+    classes,
+    hub,
+    pairings,
+    setup,
+    subjects,
+    teachers,
+)
 
 urlpatterns = [
+    path("setup/", setup.setup_page, name="setup"),
+    path("setup/upload/<str:file_type>/", setup.setup_upload, name="setup_upload"),
+    path("setup/validate/", setup.setup_validate, name="setup_validate"),
+    path("setup/correction/", setup.setup_correction, name="setup_correction"),
+    path("setup/add-date/", setup.setup_add_date, name="setup_add_date"),
+    path("setup/save/", setup.setup_save, name="setup_save"),
+    path("setup/completato/", setup.setup_done, name="setup_done"),
     path("dati-scuola/", hub.school_data, name="school_data"),
     path("dati-scuola/docenti/", teachers.teacher_list, name="teacher_list"),
     path("dati-scuola/docenti/nuovo/", teachers.teacher_create, name="teacher_create"),

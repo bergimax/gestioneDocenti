@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Setup{% endblock %}
+{% block content %}
+<h1>Setup</h1>
+<p>Carica i sette file, correggi gli errori nell'anteprima e salva. I file caricati restano nel database fino al salvataggio.</p>
+{% include "school/setup/_wizard.html" %}
+<script>
+  /* Let HTMX show the page again after a refused action (HTTP 422). */
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    if (event.detail.xhr.status === 422 || event.detail.xhr.status === 500) {
+      event.detail.shouldSwap = true;
+      event.detail.isError = false;
+    }
+  });
+</script>
+{% endblock %}

@@ -640,3 +640,40 @@ class CalendarEntryForm(_AriaForm, forms.ModelForm):
             data = self.cleaned_data
             self._report_duplicate(self._duplicates(data).first(), data)
             return None
+
+
+class SetupSaveForm(forms.Form):
+    """School data asked at the last step of the setup wizard."""
+
+    school_name = forms.CharField(
+        label="Nome della scuola",
+        max_length=255,
+        error_messages={"required": "Inserisci il nome della scuola."},
+    )
+    school_year = forms.CharField(
+        label="Anno formativo",
+        max_length=20,
+        help_text="Esempio: 2026-2027.",
+        error_messages={"required": "Inserisci l'anno formativo."},
+    )
+    year_start = forms.DateField(
+        label="Inizio anno (facoltativo)",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+        help_text="Se vuoto, la prima data del calendario.",
+        error_messages={"invalid": "Inserisci una data valida."},
+    )
+    year_end = forms.DateField(
+        label="Fine anno (facoltativo)",
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+        help_text="Se vuoto, l'ultima data del calendario.",
+        error_messages={"invalid": "Inserisci una data valida."},
+    )
+
+    def clean(self):
+        data = super().clean()
+        start, end = data.get("year_start"), data.get("year_end")
+        if start and end and end <= start:
+            self.add_error("year_end", "La fine dell'anno deve essere dopo l'inizio.")
+        return data

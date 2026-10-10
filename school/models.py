@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
@@ -328,3 +329,30 @@ class CalendarEntry(models.Model):
         )
         if errors:
             raise ValidationError(errors)
+
+
+class ParkedUpload(models.Model):
+    """A parsed setup file waiting in the database for the setup to be saved.
+
+    One row per file type: a new upload of the same type replaces the old one.
+    `rows` and `messages` are JSON (dates as ISO strings); only
+    `school.setup_service` reads and writes them.
+    """
+
+    file_type = models.CharField(max_length=20, unique=True)
+    source = models.CharField(max_length=10)
+    filename = models.CharField(max_length=255)
+    rows = models.JSONField(default=list)
+    messages = models.JSONField(default=list)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.file_type}: {self.filename}"

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from config.env import (
+    DEFAULT_SETUP_MAX_UPLOAD_BYTES,
     DEFAULT_SOLVER_TIMEOUT_SECONDS,
     get_bool,
     get_hosts,
@@ -17,6 +18,9 @@ DEBUG = get_bool(os.environ, "DEBUG", default=False)
 ALLOWED_HOSTS = get_hosts(os.environ, "ALLOWED_HOSTS", required=not DEBUG)
 SOLVER_TIMEOUT_SECONDS = get_positive_int(
     os.environ, "SOLVER_TIMEOUT_SECONDS", DEFAULT_SOLVER_TIMEOUT_SECONDS
+)
+SETUP_MAX_UPLOAD_BYTES = get_positive_int(
+    os.environ, "SETUP_MAX_UPLOAD_BYTES", DEFAULT_SETUP_MAX_UPLOAD_BYTES
 )
 
 INSTALLED_APPS = [
