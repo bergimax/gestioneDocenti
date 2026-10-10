@@ -58,8 +58,9 @@ AUTHORIZE_EARLY_EXIT = "authorize_early_exit"  # S4
 
 # Repair solving (architecture 7.4): the objective pays this per current lesson
 # that leaves its cell (a moved lesson pays once; capacity is exact, so every
-# added lesson is paid for by a removed one). It stays below one hour of S3 deviation (EXACT_TARGET_WEIGHT) and far below the
-# quasi-hard and fixed penalties.
+# added lesson is paid for by a removed one). It stays below one hour of S3
+# deviation (EXACT_TARGET_WEIGHT) and far below the quasi-hard and fixed
+# penalties.
 CHANGE_WEIGHT = 1_000_000
 
 Id = int | str
