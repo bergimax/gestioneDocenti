@@ -100,9 +100,28 @@ def test_h2b_gap_is_never_accepted():
 
 
 def test_h2c_no_lessons_before_minimum_start():
-    res = solve(ctx([A(1, "T", "A", 9)], day0_only("A", 3), class_min_start={"A": 10}))
+    # Class B (5 lessons) keeps T busy from 09:00 to 12:00 whichever block it
+    # takes, so T is free at 08:00 or at 13:00 only. Class A may not start
+    # before 11:00, so its single lesson must be at 13:00, and B at 08-12.
+    assignments = [A(1, "T", "A", 9), A(2, "T", "B", 9)]
+    capacity = day0_only("A", 1) | day0_only("B", 5)
+    res = solve(ctx(assignments, capacity, class_min_start={"A": 11}))
     assert res.status == SolveStatus.OPTIMAL
-    assert min(le.hour for le in res.lessons) >= 2  # 10:00
+    assert by_assignment(res)[1] == [(0, 5)]
+    assert min(le.hour for le in res.lessons if le.assignment_id == 1) >= 3
+    # Now B is forced to 09:00-13:00, so T is free only at 08:00, which class A
+    # may not use (it starts at 11:00): without H2c this would be feasible.
+    blocked = solve(
+        ctx(
+            assignments,
+            capacity,
+            class_min_start={"A": 11, "B": 9},
+        )
+    )
+    assert blocked.status == SolveStatus.INFEASIBLE
+    allowed = solve(ctx(assignments, capacity, class_min_start={"B": 9}))
+    assert allowed.status == SolveStatus.OPTIMAL
+    assert by_assignment(allowed)[1] == [(0, 0)]
 
 
 def test_h2c_block_that_cannot_fit_after_minimum_start_is_infeasible():
@@ -113,20 +132,58 @@ def test_h2c_block_that_cannot_fit_after_minimum_start_is_infeasible():
 def test_h3_paired_lesson_same_slot_and_residual_once():
     assignments = [A(1, "T", "A", 1), A(2, "T", "B", 1)]
     pair = Pairing("A", "B", "S", "T")
-    # Both classes only have 13:00: only possible if the pair is one lesson.
     res = solve(
         ctx(
             assignments,
             day0_only("AB", 1),
             {"T": ASSUNTO},
             pairings=[pair],
-            class_min_start={"A": 13, "B": 13},
-            weekly_caps={"T": 1},
+            weekly_caps={"T": 1},  # the pair is one hour for the teacher
         )
     )
     assert res.status == SolveStatus.OPTIMAL
     lessons = by_assignment(res)
-    assert lessons[1] == lessons[2] == [(0, 5)]
+    # One lesson per assignment (residual consumed once each), same slot.
+    assert len(lessons[1]) == len(lessons[2]) == 1
+    assert lessons[1] == lessons[2]
+    assert len(res.lessons) == 2
+
+
+def test_h3_pair_must_coincide_in_day_and_hour():
+    # A has its single lesson on Monday, B on Tuesday: without the pairing
+    # link they could be scheduled apart; with it there is no common slot.
+    assignments = [A(1, "T", "A", 1), A(2, "T", "B", 1)]
+    capacity = {
+        "A": {0: 1, 1: 0, 2: 0, 3: 0, 4: 0},
+        "B": {0: 0, 1: 1, 2: 0, 3: 0, 4: 0},
+    }
+    base = dict(teacher_types={"T": ASSUNTO}, timeout_seconds=20)
+    unpaired = ScheduleContext(assignments=assignments, class_capacity=capacity, **base)
+    assert solve(unpaired).status == SolveStatus.OPTIMAL
+    paired = ScheduleContext(
+        assignments=assignments,
+        class_capacity=capacity,
+        pairings=[Pairing("A", "B", "S", "T")],
+        **base,
+    )
+    assert solve(paired).status == SolveStatus.INFEASIBLE
+
+
+def test_h3_pair_hour_follows_the_more_constrained_class():
+    # A can only be at 13:00, B could be anywhere: the pair lands at 13:00 in
+    # both, and the shared teacher is not double-booked by the pair.
+    assignments = [A(1, "T", "A", 1), A(2, "T", "B", 1)]
+    res = solve(
+        ctx(
+            assignments,
+            day0_only("AB", 1),
+            {"T": ASSUNTO},
+            pairings=[Pairing("A", "B", "S", "T")],
+            class_min_start={"A": 13},
+        )
+    )
+    assert res.status == SolveStatus.OPTIMAL
+    assert by_assignment(res)[1] == by_assignment(res)[2] == [(0, 5)]
 
 
 def test_h5_stage_and_closed_days_have_no_lessons():
