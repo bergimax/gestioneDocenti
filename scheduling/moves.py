@@ -89,13 +89,41 @@ def _pins(school_id, slots, moving):
     for s in slots:
         assignment_id = by_key.get((s.teacher_id, s.school_class_id, s.subject_id))
         if assignment_id is None:
-            if s.pk == moving.pk:
+            if moving is not None and s.pk == moving.pk:
                 raise MoveRejected(MSG_NO_ASSIGNMENT)
             continue  # no longer an assignment: nothing to evaluate it against
         pins[assignment_id, s.day, s.start_hour] = Lesson(
             assignment_id, DAYS.index(s.day), s.start_hour - FIRST_HOUR
         )
     return list(pins.values())
+
+
+def reevaluate(locked, ctx, slots, moving=None):
+    """Re-evaluate the whole week with exactly `slots` pinned and store it.
+
+    Forced mode: what the lessons break becomes a conflict. With every teacher
+    capped at the lessons pinned for them the solver cannot add any (filling an
+    empty hour is a separate, explicit action). `moving` is the edited lesson;
+    it must still be an assignment. Stores score, level and conflicts on
+    `locked` (the caller's transaction bumps the version).
+    """
+    pinned = _pins(locked.school_id, slots, moving)
+    ctx = dataclasses.replace(
+        ctx,
+        availability_relaxed=True,
+        weekly_caps={a.teacher_id: 0 for a in ctx.assignments},
+        timeout_seconds=settings.SOLVER_TIMEOUT_SECONDS,
+    )
+    result = solve_exclusive(ctx, pinned=pinned)
+    if result.status not in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE):
+        raise MoveRejected(MSG_NOT_EVALUATED)
+    locked.quality_score = result.quality_score
+    locked.quality_level = result.quality_level
+    locked.soft_conflicts = result.n_soft_conflicts
+    locked.conflicts = result.conflict_items
+    locked.save(
+        update_fields=["quality_score", "quality_level", "soft_conflicts", "conflicts"]
+    )
 
 
 def move_lesson(timetable_id, slot_id, day, hour, version):
@@ -131,31 +159,7 @@ def move_lesson(timetable_id, slot_id, day, hour, version):
         _check_target(ctx, slots, group, class_ids, day, hour)
         for s in group:
             s.day, s.start_hour, s.end_hour = day, hour, hour + 1
-        pinned = _pins(locked.school_id, slots, moving)
-        ctx = dataclasses.replace(
-            ctx,
-            availability_relaxed=True,
-            # Evaluate exactly these lessons: with every teacher capped at the
-            # lessons pinned for them the solver cannot add any (filling an
-            # empty hour is a separate, explicit action).
-            weekly_caps={a.teacher_id: 0 for a in ctx.assignments},
-            timeout_seconds=settings.SOLVER_TIMEOUT_SECONDS,
-        )
-        result = solve_exclusive(ctx, pinned=pinned)
-        if result.status not in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE):
-            raise MoveRejected(MSG_NOT_EVALUATED)
+        reevaluate(locked, ctx, slots, moving)
         Slot.objects.bulk_update(group, ["day", "start_hour", "end_hour"])
-        locked.quality_score = result.quality_score
-        locked.quality_level = result.quality_level
-        locked.soft_conflicts = result.n_soft_conflicts
-        locked.conflicts = result.conflict_items
-        locked.save(
-            update_fields=[
-                "quality_score",
-                "quality_level",
-                "soft_conflicts",
-                "conflicts",
-            ]
-        )
 
     return apply_change(timetable_id, change), True

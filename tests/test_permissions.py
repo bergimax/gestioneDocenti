@@ -21,6 +21,8 @@ MATRIX = {
     p.can_manage_availability_links: (True, True),
     p.can_generate: (True, False),
     p.can_move_lesson: (True, False),
+    p.can_assign_slot: (True, False),
+    p.can_decide_conflicts: (True, False),
     p.can_run_setup: (True, False),
     p.can_edit_school_data: (True, False),
     p.can_edit_teachers: (True, False),

@@ -182,3 +182,11 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-draggable { cursor: grab; touch-action: none; }
 .tt-ghost { opacity: .4; }
 .tt-grid td[data-drop] { min-width: 5.5rem; height: 2.6rem; }
+.tt-inline { display: inline; margin: 0; }
+.tt-assign { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; margin: .75rem 0; }
+.tt-assign h2 { margin: 0 0 .25rem; font-size: 1.1rem; }
+.tt-pairs { list-style: none; margin: 0 0 .5rem; padding: 0; }
+.tt-pairs li { padding: .2rem 0; }
+.tt-pairs form { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; }
+.tt-pair-subject { font-weight: 700; }
+.tt-assign-btn, .tt-approve, .tt-reject { font-size: .75rem; padding: .1rem .4rem; }

@@ -49,6 +49,14 @@ def can_move_lesson(user, obj=None):
     return _allowed(user, ADMIN_ONLY)
 
 
+def can_assign_slot(user, obj=None):
+    return _allowed(user, ADMIN_ONLY)
+
+
+def can_decide_conflicts(user, obj=None):
+    return _allowed(user, ADMIN_ONLY)
+
+
 def can_run_setup(user, obj=None):
     return _allowed(user, ADMIN_ONLY)
 
@@ -72,6 +80,8 @@ PREDICATES = (
     can_manage_availability_links,
     can_generate,
     can_move_lesson,
+    can_assign_slot,
+    can_decide_conflicts,
     can_run_setup,
     can_edit_school_data,
     can_edit_teachers,

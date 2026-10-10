@@ -7,19 +7,26 @@ from django.views.decorators.http import require_GET, require_POST
 
 from availability.services import school_weeks
 from projects.permissions import (
+    can_assign_slot,
+    can_decide_conflicts,
     can_generate,
     can_move_lesson,
     can_view_timetable,
     permission_required,
 )
+from school.models import Class
 from school.selectors import current_school, today
 
+from .assign import assign_lesson, assignable_pairs
 from .board import (
+    DAY_LABELS,
     NO_COMPLETE_MESSAGE,
     build_board,
-    conflict_descriptions,
+    conflict_rows,
     is_best_effort,
+    visible_conflicts,
 )
+from .decisions import approve_conflicts, reject_lesson
 from .jobs import GenerationRefused, enqueue_generation
 from .models import (
     ACTIVE_JOB_STATUSES,
@@ -72,7 +79,7 @@ def _version_token(timetable):
     return NO_TIMETABLE_TOKEN if timetable is None else str(timetable.version)
 
 
-def _body_context(school, week, user, oob=False, move_error=None):
+def _body_context(school, week, user, oob=False, move_error=None, clear_panel=False):
     timetable = _timetable(school, week)
     context = {
         "week": week,
@@ -82,14 +89,20 @@ def _body_context(school, week, user, oob=False, move_error=None):
         "can_generate": can_generate(user),
         "move_error": move_error,
         "can_move": False,
+        "can_assign": False,
+        "can_decide": False,
+        "clear_panel": clear_panel,
     }
     if timetable is not None:
         approved = timetable.state == TimetableState.APPROVATO
+        visible = visible_conflicts(timetable)
         context.update(
             can_move=can_move_lesson(user) and not approved,
+            can_assign=can_assign_slot(user) and not approved,
+            can_decide=can_decide_conflicts(user) and not approved,
             days=build_board(school, week["start"], timetable),
-            conflict_list=conflict_descriptions(timetable.conflicts),
-            best_effort=is_best_effort(timetable.conflicts),
+            conflict_list=conflict_rows(visible),
+            best_effort=is_best_effort(visible),
             no_complete_message=NO_COMPLETE_MESSAGE,
             approved=approved,
         )
@@ -207,10 +220,13 @@ def _parse_move(post):
     return slot_id, day, hour, version
 
 
-@permission_required(can_move_lesson)
-@require_POST
-def timetable_move(request, week):
-    """Move one lesson; always answers with the full, current grid."""
+def _edit_response(request, week, edit):
+    """Run `edit(timetable)` on the week and answer with the full, current grid.
+
+    The edit may raise MoveRejected (its status and message are shown above
+    the grid; 400 for bad input, 409 for a refused or stale change). An
+    approved week is refused before anything is parsed.
+    """
     school = _school_or_404()
     week = _parse_week(school, week)
     timetable = _timetable(school, week)
@@ -220,11 +236,111 @@ def timetable_move(request, week):
     try:
         if timetable.state == TimetableState.APPROVATO:
             raise TimetableLocked(timetable.pk)
-        slot_id, day, hour, version = _parse_move(request.POST)
-        move_lesson(timetable.pk, slot_id, day, hour, version)
+        edit(timetable)
     except MoveRejected as exc:
         status, error = exc.status, exc.message
     except TimetableLocked:
         status, error = 409, MSG_APPROVED
-    context = _body_context(school, week, request.user, move_error=error)
+    context = _body_context(
+        school, week, request.user, move_error=error, clear_panel=True
+    )
     return render(request, TPL + "_body.html", context, status=status)
+
+
+@permission_required(can_move_lesson)
+@require_POST
+def timetable_move(request, week):
+    """Move one lesson; always answers with the full, current grid."""
+
+    def edit(timetable):
+        slot_id, day, hour, version = _parse_move(request.POST)
+        move_lesson(timetable.pk, slot_id, day, hour, version)
+
+    return _edit_response(request, week, edit)
+
+
+def _parse_cell(data):
+    """(class id, day, hour) of a grid cell, or InvalidMove."""
+    class_id = _int_field(data, "classe")
+    hour = _int_field(data, "ora_inizio")
+    if not 8 <= hour <= 13:
+        raise InvalidMove("L'ora di inizio deve essere compresa tra 8 e 13.")
+    day = data.get("giorno", "")
+    if day not in Day.values:
+        raise InvalidMove("Giorno non valido: sono ammessi solo i giorni feriali.")
+    return class_id, day, hour
+
+
+@permission_required(can_assign_slot)
+@require_GET
+def timetable_assignable(request, week, class_id):
+    """The assignable teacher-subject pairs of a class, for one empty cell."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    timetable = _timetable(school, week)
+    if timetable is None:
+        raise Http404("Nessun orario per questa settimana.")
+    school_class = Class.objects.filter(school=school, pk=class_id).first()
+    if school_class is None:
+        raise Http404("Classe non trovata.")
+    context = {"week": week, "school_class": school_class, "error": None}
+    status = 200
+    try:
+        if timetable.state == TimetableState.APPROVATO:
+            raise TimetableLocked(timetable.pk)
+        _, day, hour = _parse_cell({**request.GET.dict(), "classe": str(class_id)})
+    except TimetableLocked:
+        status, context["error"] = 409, MSG_APPROVED
+    except InvalidMove as exc:
+        status, context["error"] = exc.status, exc.message
+    else:
+        context.update(
+            day=day,
+            day_label=DAY_LABELS[day],
+            hour=hour,
+            token=_version_token(timetable),
+            pairs=assignable_pairs(school, school_class, timetable),
+        )
+    return render(request, TPL + "_assign_panel.html", context, status=status)
+
+
+@permission_required(can_assign_slot)
+@require_POST
+def timetable_assign(request, week):
+    """Place a lesson of a (teacher, subject) pair in an empty cell."""
+
+    def edit(timetable):
+        class_id, day, hour = _parse_cell(request.POST)
+        teacher_id = _int_field(request.POST, "docente")
+        subject_id = _int_field(request.POST, "materia")
+        version = _int_field(request.POST, "version")
+        assign_lesson(
+            timetable.pk, class_id, day, hour, teacher_id, subject_id, version
+        )
+
+    return _edit_response(request, week, edit)
+
+
+@permission_required(can_decide_conflicts)
+@require_POST
+def timetable_conflicts_approve(request, week):
+    """Stop reporting the conflicts with the posted `chiavi`."""
+
+    def edit(timetable):
+        version = _int_field(request.POST, "version")
+        approve_conflicts(timetable.pk, request.POST.getlist("chiavi"), version)
+
+    return _edit_response(request, week, edit)
+
+
+@permission_required(can_decide_conflicts)
+@require_POST
+def timetable_conflicts_reject(request, week):
+    """Remove the lesson of a cell and leave the hour free (LIBERA)."""
+
+    def edit(timetable):
+        class_id, day, hour = _parse_cell(request.POST)
+        version = _int_field(request.POST, "version")
+        reject_lesson(timetable.pk, class_id, day, hour, version)
+
+    return _edit_response(request, week, edit)

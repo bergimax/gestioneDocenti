@@ -1,0 +1,28 @@
+<section class="tt-assign" aria-label="Assegna lezione">
+  <h2>Assegna un'ora: classe {{ school_class.name }}{% if day_label %}, {{ day_label }} {{ hour }}-{{ hour|add:1 }}{% endif %}</h2>
+  {% if error %}
+  <div class="message message-error" role="alert"><span>{{ error }}</span></div>
+  {% elif pairs %}
+  <ul class="tt-pairs">
+    {% for pair in pairs %}
+    <li>
+      <form method="post" action="{% url 'timetable_assign' week.start|date:'Y-m-d' %}" hx-post="{% url 'timetable_assign' week.start|date:'Y-m-d' %}" hx-target="#timetable-body" hx-swap="outerHTML">
+        <input type="hidden" name="classe" value="{{ school_class.pk }}">
+        <input type="hidden" name="giorno" value="{{ day }}">
+        <input type="hidden" name="ora_inizio" value="{{ hour }}">
+        <input type="hidden" name="docente" value="{{ pair.teacher_id }}">
+        <input type="hidden" name="materia" value="{{ pair.subject_id }}">
+        <input type="hidden" name="version" value="{{ token }}">
+        <span class="tt-pair-subject">{{ pair.subject }}</span>
+        <span class="tt-pair-teacher">{{ pair.teacher }}</span>
+        <span class="tt-pair-hours">ore rimanenti: {{ pair.remaining }}</span>
+        <button type="submit">Assegna</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="tt-empty">Nessuna assegnazione per questa classe.</p>
+  {% endif %}
+  <button type="button" onclick="this.closest('.tt-assign').remove()">Chiudi</button>
+</section>

@@ -5,7 +5,7 @@ import datetime
 from school.models import CalendarEntry, Class, SubjectKind
 
 from .context import _is_stage
-from .models import Day, Slot
+from .models import ConflictDecision, Day, Slot
 from .solver.context import CLASSE_UNFILLED
 from .solver.model import NO_COMPLETE_MESSAGE
 
@@ -62,9 +62,40 @@ def conflict_keys(conflicts):
     return by_class, by_teacher, by_day, pratica_days
 
 
+def decided_keys(timetable):
+    return set(
+        ConflictDecision.objects.filter(timetable=timetable).values_list(
+            "chiave", flat=True
+        )
+    )
+
+
+def visible_conflicts(timetable):
+    """The stored conflicts without the approved ones and the LIBERA holes.
+
+    The stored list and the score are left alone: only the reporting changes.
+    """
+    conflicts = timetable.conflicts or []
+    if not conflicts:
+        return []
+    decided = decided_keys(timetable)
+    return [
+        c for c in conflicts if not (isinstance(c, dict) and c.get("chiave") in decided)
+    ]
+
+
 def conflict_descriptions(conflicts):
     return [
         c["description"]
+        for c in conflicts or []
+        if isinstance(c, dict) and c.get("description")
+    ]
+
+
+def conflict_rows(conflicts):
+    """(description, chiave) of each reported conflict, for the list."""
+    return [
+        {"text": c["description"], "chiave": c.get("chiave", "")}
         for c in conflicts or []
         if isinstance(c, dict) and c.get("description")
     ]
@@ -82,7 +113,9 @@ def build_board(school, week_start, timetable):
     classes = list(Class.objects.filter(school=school).order_by("name", "pk"))
     dates = [week_start + datetime.timedelta(days=i) for i in range(5)]
     entries = list(CalendarEntry.objects.filter(school=school, date__in=dates))
-    by_class, by_teacher, by_day, pratica_days = conflict_keys(timetable.conflicts)
+    by_class, by_teacher, by_day, pratica_days = conflict_keys(
+        visible_conflicts(timetable)
+    )
 
     lessons = {}  # (class_id, day, hour) -> cell
     slots = list(

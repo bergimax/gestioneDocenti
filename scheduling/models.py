@@ -166,23 +166,38 @@ class Slot(models.Model):
             raise ValidationError(errors)
 
 
-class ConflictDecision(models.Model):
-    """An admin decision on a conflict (specs 10, `conflitto_gestito`).
+class DecisionAction(models.TextChoices):
+    APPROVATO = "APPROVATO", "Approvato"
+    LIBERA = "LIBERA", "Ora lasciata libera"
 
-    Stub until #30 builds the decision flow; generation only needs to clear it.
+
+class ConflictDecision(models.Model):
+    """An admin decision on a conflict (specs 3, `conflitto_gestito`).
+
+    APPROVATO: the conflict with this `chiave` is no longer reported.
+    LIBERA: the lesson of a class/day/hour was rejected and the hour is left
+    free on purpose; `chiave` is the one of the "hour not covered" conflict of
+    that cell, so the empty hour is not reported either. All decisions of a
+    timetable are deleted when the week is regenerated.
     """
 
     timetable = models.ForeignKey(
         Timetable, on_delete=models.CASCADE, related_name="conflict_decisions"
     )
-    chiave = models.CharField(max_length=200)
-    action = models.CharField(max_length=20, default="APPROVE")
+    chiave = models.CharField(max_length=300)
+    action = models.CharField(
+        max_length=10, choices=DecisionAction.choices, default=DecisionAction.APPROVATO
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         constraints = [
             models.UniqueConstraint(
                 fields=["timetable", "chiave"], name="conflictdecision_unique_key"
+            ),
+            models.CheckConstraint(
+                condition=Q(action__in=DecisionAction.values),
+                name="conflictdecision_action_valid",
             ),
         ]
 
