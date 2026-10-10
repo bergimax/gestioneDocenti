@@ -1,14 +1,21 @@
 import datetime
 import json
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.http import Http404, HttpResponseBadRequest
+from django.http import (
+    Http404,
+    HttpResponseBadRequest,
+    HttpResponseForbidden,
+    HttpResponseNotAllowed,
+)
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.cache import add_never_cache_headers, patch_cache_control
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from projects.permissions import (
@@ -355,18 +362,117 @@ def _client_address(request):
     return request.META.get("REMOTE_ADDR", "")
 
 
-def link_open(request, token):
-    """Token entry point. Opens the page of #20; rate limited, never logs the token."""
-    address = _client_address(request)
-    if links.is_rate_limited(address):
-        response = render(
-            request, TPL + "link_neutral.html", {"limited": True}, status=429
-        )
+NEUTRAL_MESSAGE = "Link non valido o scaduto, chiedi un nuovo link alla segreteria."
+
+
+def _public(response):
+    """Headers of every response of the public teacher page."""
+    _no_store(response)
+    response["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def _neutral(request, status=404, limited=False, fragment=False):
+    template = "link_neutral_fragment.html" if fragment else "link_neutral.html"
+    response = render(request, TPL + template, {"limited": limited}, status=status)
+    if limited:
         response["Retry-After"] = str(settings.LINK_LOOKUP_WINDOW_SECONDS)
-        return _no_store(response)
+    return _public(response)
+
+
+def _usable_link(request, token):
+    """(link, None) when usable, else (None, neutral/429 response)."""
+    address = _client_address(request)
+    fragment = request.method == "POST"
+    if links.is_rate_limited(address):
+        return None, _neutral(request, 429, limited=True, fragment=fragment)
     link = links.lookup_link(token)
-    if link is None:
+    if link is None or not link.teacher.active:
         links.record_failure(address)
-        return _no_store(render(request, TPL + "link_neutral.html", status=404))
+        return None, _neutral(request, 404, fragment=fragment)
+    return link, None
+
+
+def _link_page_context(link, token=None, grid=None, result=None):
+    resolution = services.resolve_teacher_grid(link.teacher, link.week_start)
+    if grid is None:
+        grid = _display_grid(resolution)
+    days = [
+        {
+            "key": day,
+            "label": DAY_LABELS[day],
+            "date": link.week_start + datetime.timedelta(days=n),
+            "slots": [
+                {
+                    "index": i,
+                    "available": slot["disponibile"],
+                    "start": slot["ora_inizio"],
+                }
+                for i, slot in enumerate(grid[day])
+            ],
+        }
+        for n, day in enumerate(grid_logic.DAYS)
+    ]
+    return {
+        "link": link,
+        "teacher": link.teacher,
+        "week_end": link.week_start + datetime.timedelta(days=4),
+        "days": days,
+        "hours": [s["start"] for s in days[0]["slots"]],
+        "grid": grid,
+        "result": result,
+        "save_url": reverse("availability_link_save", args=[token]) if token else "",
+    }
+
+
+def link_open(request, token):
+    """Teacher page: the token in the URL is the only credential."""
+    if request.method not in ("GET", "HEAD"):
+        return _public(HttpResponseNotAllowed(["GET"]))
+    link, refusal = _usable_link(request, token)
+    if refusal:
+        return refusal
     links.mark_used(link)
-    return _no_store(render(request, TPL + "link_open.html", {"link": link}))
+    return _public(
+        render(request, TPL + "link_open.html", _link_page_context(link, token))
+    )
+
+
+def _same_origin(request):
+    """Cross-site defence for the cookieless POST (no CSRF cookie exists)."""
+    if request.headers.get("HX-Request") != "true":
+        return False
+    if request.headers.get("Sec-Fetch-Site", "same-origin") not in (
+        "same-origin",
+        "none",
+    ):
+        return False
+    origin = request.headers.get("Origin")
+    return origin is None or urlsplit(origin).netloc == request.get_host()
+
+
+@csrf_exempt
+def link_save(request, token):
+    """Save the grid; teacher and week come from the link, never the request."""
+    if request.method != "POST":
+        return _public(HttpResponseNotAllowed(["POST"]))
+    if not _same_origin(request):
+        return _public(HttpResponseForbidden("Richiesta non consentita."))
+    link, refusal = _usable_link(request, token)
+    if refusal:
+        return refusal
+    try:
+        grid = _posted_grid(request)
+    except BadRequest:
+        result = {"ok": False, "message": "Griglia non valida: nulla e stato salvato."}
+        context = _link_page_context(link, result=result)
+        return _public(render(request, TPL + "link_result.html", context, status=400))
+    try:
+        services.save_availability(link.teacher, link.week_start, grid)
+    except (ValidationError, ValueError):
+        result = {"ok": False, "message": "Griglia non valida: nulla e stato salvato."}
+        context = _link_page_context(link, result=result)
+        return _public(render(request, TPL + "link_result.html", context, status=400))
+    result = {"ok": True, "message": "Disponibilita salvata. Grazie!"}
+    context = _link_page_context(link, grid=grid, result=result)
+    return _public(render(request, TPL + "link_result.html", context))

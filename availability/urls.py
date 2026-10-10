@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path("l/<str:token>/", views.link_open, name="availability_link_open"),
+    path("l/<str:token>/salva/", views.link_save, name="availability_link_save"),
     path("disponibilita/link/", views.link_list, name="availability_links"),
     path(
         "disponibilita/link/<int:link_id>/revoca/",

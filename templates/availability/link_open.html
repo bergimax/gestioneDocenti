@@ -1,6 +1,27 @@
-{% extends "base.html" %}
+{% extends "availability/public_base.html" %}
 {% block title %}Disponibilita{% endblock %}
 {% block content %}
 <h1>Disponibilita</h1>
-<p>{{ link.teacher.name }}, settimana del {{ link.week_start|date:"d/m/Y" }}.</p>
+<p class="av-who"><strong>{{ teacher.name }}</strong><br>Settimana dal {{ link.week_start|date:"d/m/Y" }} al {{ week_end|date:"d/m/Y" }}</p>
+<p class="hint">Tocca una casella per cambiare: &#10003; Si = disponibile, &#10007; No = non disponibile. Poi premi Salva.</p>
+{{ grid|json_script:"grid-data" }}
+<form class="av-link-form" hx-post="{{ save_url }}" hx-target="#av-result" hx-swap="outerHTML" x-data="{ grid: JSON.parse(document.getElementById('grid-data').textContent) }">
+  <input type="hidden" name="grid" :value="JSON.stringify(grid)">
+  <div class="av-public-grid" role="group" aria-label="Disponibilita settimanale">
+    <div class="av-public-row av-public-head">
+      <span class="visually-hidden">Giorno</span>
+      {% for h in hours %}<span>{{ h }}</span>{% endfor %}
+    </div>
+    {% for day in days %}
+    <div class="av-public-row">
+      <span class="av-public-day">{{ day.label }} {{ day.date|date:"d/m" }}</span>
+      {% for slot in day.slots %}
+      <button type="button" class="av-pcell {% if slot.available %}av-on{% else %}av-off{% endif %}" aria-pressed="{% if slot.available %}true{% else %}false{% endif %}" aria-label="{{ day.label }} {{ day.date|date:'d/m' }} {{ slot.start }}" :aria-pressed="grid.{{ day.key }}[{{ slot.index }}].disponibile.toString()" :class="grid.{{ day.key }}[{{ slot.index }}].disponibile ? 'av-on' : 'av-off'" @click="grid.{{ day.key }}[{{ slot.index }}].disponibile = !grid.{{ day.key }}[{{ slot.index }}].disponibile"><span x-text="grid.{{ day.key }}[{{ slot.index }}].disponibile ? '&#10003; Si' : '&#10007; No'">{% if slot.available %}&#10003; Si{% else %}&#10007; No{% endif %}</span></button>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  <button type="submit" class="button av-save">Salva</button>
+  <div id="av-result" aria-live="polite"></div>
+</form>
 {% endblock %}

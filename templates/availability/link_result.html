@@ -1,0 +1,3 @@
+<div id="av-result" class="av-message {% if result.ok %}av-message-ok{% else %}av-message-error{% endif %}" role="{% if result.ok %}status{% else %}alert{% endif %}">
+  <p>{% if result.ok %}&#10003; {% else %}&#10007; {% endif %}{{ result.message }}</p>
+</div>
