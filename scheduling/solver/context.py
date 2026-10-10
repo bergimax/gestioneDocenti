@@ -56,11 +56,11 @@ AUTHORIZE_SINGLE_CLASSE_DAY = "authorize_single_classe_day"  # H11, S5
 FORCE_3_HOURS_THEORY = "force_3_hours_theory"  # S2
 AUTHORIZE_EARLY_EXIT = "authorize_early_exit"  # S4
 
-# Repair solving (architecture 7.4): the objective pays this per lesson cell that
-# differs from the current timetable (a moved lesson differs in two cells). It
-# stays below one hour of S3 deviation (EXACT_TARGET_WEIGHT) and far below the
+# Repair solving (architecture 7.4): the objective pays this per current lesson
+# that leaves its cell (a moved lesson pays once; capacity is exact, so every
+# added lesson is paid for by a removed one). It stays below one hour of S3 deviation (EXACT_TARGET_WEIGHT) and far below the
 # quasi-hard and fixed penalties.
-CHANGE_WEIGHT = 500_000
+CHANGE_WEIGHT = 1_000_000
 
 Id = int | str
 
@@ -142,7 +142,7 @@ class ScheduleContext:
       are run-only inputs.
     - ``current_lessons``: repair mode. ``None`` (the default) is a normal
       solve; a list (possibly empty) is the current timetable and every cell
-      that differs from it costs ``CHANGE_WEIGHT``.
+      that leaves its cell costs ``CHANGE_WEIGHT``.
     - ``blocked_cells[class_id]``: (day, hour) cells that must stay empty.
     """
 
