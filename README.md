@@ -30,6 +30,19 @@ nothing needs exporting. Its `DATABASE_URL` defaults to
 exported in the shell overrides it. A local PostgreSQL must be running for tests
 that touch the database (pytest-django creates its own `test_` database).
 
+## Solve worker
+
+Timetable generation runs outside the web process, queued in PostgreSQL with
+`django.tasks` (`django-tasks-db`). Start the worker next to the web server:
+
+    uv run manage.py migrate
+    uv run manage.py solve_worker
+
+It takes the options of `db_worker` (`--batch` processes the pending jobs and
+exits, `--max-tasks 1` stops after one job, `--interval N` sets the polling
+seconds). One process runs one solve at a time; Ctrl-C finishes the running
+solve and exits cleanly. The solver timeout is `SOLVER_TIMEOUT_SECONDS`.
+
 ## Users and passwords
 
 There is no self-registration, no email and no self-service password reset.

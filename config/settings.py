@@ -46,6 +46,8 @@ INSTALLED_APPS = [
     "school",
     "availability",
     "scheduling",
+    "django_tasks",
+    "django_tasks_db",
 ]
 
 MIDDLEWARE = [
@@ -109,3 +111,7 @@ LOGGING = {
         "django.server": {"filters": ["redact_link_tokens"]},
     },
 }
+
+# Background jobs (architecture 7.1): PostgreSQL is the queue, no broker.
+# django_tasks is the compat package that provides django.tasks on Django 5.2.
+TASKS = {"default": {"BACKEND": "django_tasks_db.DatabaseBackend"}}

@@ -17,3 +17,6 @@ os.environ.setdefault(
 )
 
 from config.settings import *  # noqa: E402, F403
+
+# Enqueueing in tests records nothing and runs nothing; tests call the task.
+TASKS = {"default": {"BACKEND": "django_tasks.backends.dummy.DummyBackend"}}

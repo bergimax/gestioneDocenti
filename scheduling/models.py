@@ -2,6 +2,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import F, Q
+from django.utils import timezone
 
 from availability.grid import check_monday
 from school.models import Class, School, Subject, Teacher
@@ -51,6 +52,8 @@ class Timetable(models.Model):
     soft_conflicts = models.PositiveIntegerField(default=0)
     approved_at = models.DateTimeField(null=True, blank=True)
     version = models.PositiveIntegerField(default=0)
+    # The solver's conflict list (specs 9.8 dicts), replaced on every generation.
+    conflicts = models.JSONField(default=list, blank=True)
 
     class Meta:
         constraints = [
@@ -161,3 +164,124 @@ class Slot(models.Model):
                     errors.setdefault(name, "Deve appartenere alla stessa scuola.")
         if errors:
             raise ValidationError(errors)
+
+
+class ConflictDecision(models.Model):
+    """An admin decision on a conflict (specs 10, `conflitto_gestito`).
+
+    Stub until #30 builds the decision flow; generation only needs to clear it.
+    """
+
+    timetable = models.ForeignKey(
+        Timetable, on_delete=models.CASCADE, related_name="conflict_decisions"
+    )
+    chiave = models.CharField(max_length=200)
+    action = models.CharField(max_length=20, default="APPROVE")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["timetable", "chiave"], name="conflictdecision_unique_key"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.chiave} ({self.action})"
+
+
+class JobKind(models.TextChoices):
+    GENERATE = "GENERATE", "Generazione"
+
+
+class JobStatus(models.TextChoices):
+    PENDING = "PENDING", "In attesa"
+    RUNNING = "RUNNING", "In corso"
+    DONE = "DONE", "Completato"
+    FAILED = "FAILED", "Fallito"
+
+
+ACTIVE_JOB_STATUSES = (JobStatus.PENDING, JobStatus.RUNNING)
+_ALLOWED_TRANSITIONS = {
+    JobStatus.PENDING: {JobStatus.RUNNING},
+    JobStatus.RUNNING: {JobStatus.DONE, JobStatus.FAILED},
+}
+
+
+class InvalidJobTransition(Exception):
+    """A SolveJob status change other than PENDING -> RUNNING -> DONE/FAILED."""
+
+
+class SolveJob(models.Model):
+    """A background solve for one week (architecture section 4).
+
+    Status moves only forward through `transition_to`: PENDING -> RUNNING ->
+    DONE or FAILED. `result` is for the UI (message, score, counts); `error` is
+    a human-readable Italian message, never a traceback.
+    """
+
+    school = models.ForeignKey(School, on_delete=models.PROTECT, related_name="jobs")
+    week_start = models.DateField("inizio settimana")
+    kind = models.CharField(
+        max_length=10, choices=JobKind.choices, default=JobKind.GENERATE
+    )
+    status = models.CharField(
+        max_length=10, choices=JobStatus.choices, default=JobStatus.PENDING
+    )
+    params = models.JSONField(default=dict, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)
+    requested_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(status__in=JobStatus.values), name="solvejob_status_valid"
+            ),
+            models.CheckConstraint(
+                condition=Q(kind__in=JobKind.values), name="solvejob_kind_valid"
+            ),
+            # One active job per week and kind, also under concurrent requests.
+            models.UniqueConstraint(
+                fields=["school", "week_start", "kind"],
+                condition=Q(status__in=["PENDING", "RUNNING"]),
+                name="solvejob_one_active_per_week",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.kind} {self.week_start} {self.status}"
+
+    def transition_to(self, status, *, error="", result=None):
+        """Move to `status` atomically, setting started_at / finished_at.
+
+        Raises InvalidJobTransition unless the stored status allows it.
+        """
+        if status not in _ALLOWED_TRANSITIONS.get(self.status, ()):
+            raise InvalidJobTransition(f"{self.status} -> {status}")
+        now = timezone.now()
+        fields = {"status": status}
+        if status == JobStatus.RUNNING:
+            fields["started_at"] = now
+        else:
+            fields["finished_at"] = now
+            fields["error"] = error
+            if result is not None:
+                fields["result"] = result
+        # Conditional on the stored status: a concurrent change loses.
+        changed = SolveJob.objects.filter(pk=self.pk, status=self.status).update(
+            **fields
+        )
+        if not changed:
+            raise InvalidJobTransition(f"{self.status} -> {status}")
+        for name, value in fields.items():
+            setattr(self, name, value)
