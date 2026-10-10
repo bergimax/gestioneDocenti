@@ -16,10 +16,33 @@ PRATICA = "PRATICA"
 RELAX_WEIGHT = 1000  # penalty of one quasi-hard violation (specs 9.4)
 MAX_HOURS_PER_CLASSE_DAY = 4  # H11
 
+EXACT_TARGET_WEIGHT = 500  # S3: added to the S3 weight per hour of deviation
+FIXED_PENALTY_WEIGHT = 1500  # classe_unfilled, classe_over_capacity, monte_ore_exceeded
+MAX_SOFT_WEIGHT = 200  # ceiling of an adjustable preference weight
+
+CLASSE_LATE_START = "classe_late_start"  # S1
+TEORIA_CONSECUTIVE = "teoria_consecutive"  # S2
+ORE_TARGET_DEVIATION = "ore_target_deviation"  # S3
+CONTRACTOR_GAP = "contractor_gap"  # S4
+SINGLE_CLASSE_DAY = "single_classe_day"  # S5
+
+DEFAULT_SOFT_WEIGHTS = {
+    CLASSE_LATE_START: 100,
+    TEORIA_CONSECUTIVE: 10,
+    ORE_TARGET_DEVIATION: 15,
+    CONTRACTOR_GAP: 150,
+    SINGLE_CLASSE_DAY: 10,
+}
+
+QUALITY_A_ABOVE = 95  # score > 95 is level A
+QUALITY_B_ABOVE = 80  # score > 80 is level B, else C
+
 OVERRIDE_AVAILABILITY = "override_availability"  # H4
 AUTHORIZE_FRIDAY_LATE_START = "authorize_friday_late_start"  # H9
 AUTHORIZE_SHORT_PRATICA_BLOCK = "authorize_short_pratica_block"  # H10
-AUTHORIZE_SINGLE_CLASSE_DAY = "authorize_single_classe_day"  # H11
+AUTHORIZE_SINGLE_CLASSE_DAY = "authorize_single_classe_day"  # H11, S5
+FORCE_3_HOURS_THEORY = "force_3_hours_theory"  # S2
+AUTHORIZE_EARLY_EXIT = "authorize_early_exit"  # S4
 
 Id = int | str
 
@@ -71,6 +94,7 @@ class Derogation:
     class_id: Id | None = None
     teacher_id: Id | None = None
     day: int | None = None
+    max_hours: int | None = None  # force_3_hours_theory: the cap (default 3)
 
 
 @dataclass(frozen=True)
@@ -93,6 +117,9 @@ class ScheduleContext:
     - ``availability_relaxed``: H4 becomes a 1000-weight override instead of
       rigid (used by manual edits).
     - ``derogations``: see ``Derogation``.
+    - ``targets[assignment_id]``: weekly hours the assignment should reach (S3).
+      Computed elsewhere; an assignment without an entry has no target and is
+      never penalised.
     - ``excluded_days[teacher_id]`` (H7) and ``weekly_caps[teacher_id]`` (H8)
       are run-only inputs.
     """
@@ -109,6 +136,7 @@ class ScheduleContext:
     availability: dict[Id, frozenset[tuple[int, int]]] | None = None
     availability_relaxed: bool = False
     derogations: list[Derogation] = field(default_factory=list)
+    targets: dict[Id, int] = field(default_factory=dict)
     timeout_seconds: float = 60.0
 
 
@@ -127,9 +155,36 @@ class Conflict:
 
 
 @dataclass(frozen=True)
+class Penalty:
+    """A violated penalty term: a quasi-hard override or a soft preference.
+
+    ``value`` is the term's amount (1 for a flag, the hours of deviation for S3,
+    where ``weight`` is the weight per hour). ``class_id``/``teacher_id``/``day``
+    are ``None`` where the penalty has no such subject.
+    """
+
+    kind: str
+    class_id: Id | None
+    teacher_id: Id | None
+    day: int | None
+    weight: int
+    value: int = 1
+
+
+@dataclass(frozen=True)
 class SolveResult:
     status: SolveStatus
     lessons: list[Lesson] = field(default_factory=list)
     conflicts: list[Conflict] = field(default_factory=list)
     # Sum of the override variables times their weight, read from the solution.
     override_penalty: int = 0
+    # Every violated penalty term (quasi-hard overrides included) and the
+    # number of penalty terms in the model (specs 9.6).
+    violations: list[Penalty] = field(default_factory=list)
+    n_penalties: int = 0
+    quality_score: float = 0.0
+    quality_level: str = "C"
+
+    @property
+    def n_soft_conflicts(self) -> int:
+        return len(self.violations)

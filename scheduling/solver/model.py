@@ -8,23 +8,33 @@ from ortools.sat.python import cp_model
 
 from .context import (
     ASSUNTO,
+    AUTHORIZE_EARLY_EXIT,
     AUTHORIZE_FRIDAY_LATE_START,
     AUTHORIZE_SHORT_PRATICA_BLOCK,
     AUTHORIZE_SINGLE_CLASSE_DAY,
+    CLASSE_LATE_START,
+    CONTRACTOR_GAP,
     CONTRATTO,
     DAYS,
+    EXACT_TARGET_WEIGHT,
     FIRST_HOUR,
+    FORCE_3_HOURS_THEORY,
     HOURS,
     MAX_HOURS_PER_CLASSE_DAY,
+    ORE_TARGET_DEVIATION,
     OVERRIDE_AVAILABILITY,
     PRATICA,
     RELAX_WEIGHT,
+    SINGLE_CLASSE_DAY,
+    TEORIA_CONSECUTIVE,
     Conflict,
     Lesson,
+    Penalty,
     ScheduleContext,
     SolveResult,
     SolveStatus,
 )
+from .weights import quality, resolve_weights, scaled_weight
 
 
 def _sum(terms):
@@ -64,7 +74,9 @@ def _hour_label(h: int) -> str:
     return f"{FIRST_HOUR + h:02d}:00"
 
 
-def solve(ctx: ScheduleContext) -> SolveResult:
+def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
+    """Solve the week; ``weights`` is the per-run soft weight map (specs 9.4)."""
+    soft_weights = resolve_weights(weights)  # rejects bad input before solving
     classes = (
         {a.class_id for a in ctx.assignments}
         | set(ctx.class_capacity)
@@ -75,7 +87,9 @@ def solve(ctx: ScheduleContext) -> SolveResult:
     for p in ctx.pairings:
         classes |= {p.class_a, p.class_b}
     if not classes:
-        return SolveResult(SolveStatus.OPTIMAL, [])
+        return SolveResult(
+            SolveStatus.OPTIMAL, [], quality_score=100.0, quality_level="A"
+        )
 
     by_key = {(a.teacher_id, a.class_id, a.subject_id): a for a in ctx.assignments}
     by_class = defaultdict(list)
@@ -172,11 +186,37 @@ def solve(ctx: ScheduleContext) -> SolveResult:
             <= max(0, cap)
         )
 
+    h9_active = set()  # (class, day) where H9 already speaks for the late start
     _add_quasi_hard(
-        ctx, m, x, classes, by_class, by_teacher, shadow, pick_by_class_day, penalties
+        ctx,
+        m,
+        x,
+        classes,
+        by_class,
+        by_teacher,
+        shadow,
+        pick_by_class_day,
+        penalties,
+        h9_active,
     )
-    if penalties:
-        m.minimize(_sum(RELAX_WEIGHT * var for var, _ in penalties))
+    soft = []  # (var, weight, kind, class_id, teacher_id, day)
+    _add_soft(
+        ctx,
+        m,
+        x,
+        classes,
+        by_teacher,
+        shadow,
+        pick_by_class_day,
+        h9_active,
+        soft_weights,
+        soft,
+    )
+    if penalties or soft:
+        m.minimize(
+            _sum(RELAX_WEIGHT * var for var, _ in penalties)
+            + _sum(weight * var for var, weight, *_ in soft)
+        )
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = ctx.timeout_seconds
@@ -184,7 +224,7 @@ def solve(ctx: ScheduleContext) -> SolveResult:
     solver.parameters.random_seed = 0
     status = _STATUS.get(solver.solve(m), SolveStatus.UNKNOWN)
     if status not in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE):
-        return SolveResult(status, [])
+        return SolveResult(status, [], quality_score=0.0, quality_level="C")
     lessons = [
         Lesson(a.id, d, h)
         for a in ctx.assignments
@@ -196,12 +236,178 @@ def solve(ctx: ScheduleContext) -> SolveResult:
     conflicts = [
         _conflict(rec, lessons, ctx) for var, rec in penalties if solver.value(var)
     ]
-    penalty = round(solver.objective_value) if penalties else 0
-    return SolveResult(status, lessons, conflicts, penalty)
+    violations = [
+        Penalty(rec[0], rec[1], rec[2], rec[3], RELAX_WEIGHT)
+        for var, rec in penalties
+        if solver.value(var)
+    ]
+    violations += [
+        Penalty(kind, class_id, teacher_id, day, weight, solver.value(var))
+        for var, weight, kind, class_id, teacher_id, day in soft
+        if solver.value(var)
+    ]
+    n_penalties = len(penalties) + len(soft)
+    score, level = quality(True, n_penalties, len(violations))
+    return SolveResult(
+        status,
+        lessons,
+        conflicts,
+        RELAX_WEIGHT * len(conflicts),
+        violations,
+        n_penalties,
+        score,
+        level,
+    )
+
+
+def _add_soft(
+    ctx,
+    m,
+    x,
+    classes,
+    by_teacher,
+    shadow,
+    pick_by_class_day,
+    h9_active,
+    weights,
+    soft,
+):
+    """S1-S5: each term is a variable with the weight it carries in the objective."""
+
+    def flag(var, name, class_id, teacher_id, day):
+        weight = max(1, round(weights[name]))
+        soft.append((var, weight, name, class_id, teacher_id, day))
+
+    # S1: a class with lessons on a day starts at 08:00; a full day must anyway,
+    # and on a Friday where H9 is active H9 already speaks for the late start.
+    if weights[CLASSE_LATE_START] > 0:
+        for class_id in sorted(classes, key=str):
+            for d in range(DAYS):
+                pick = pick_by_class_day.get((class_id, d))
+                if not pick or (len(pick) == 1 and 0 in pick):
+                    continue
+                if (class_id, d) in h9_active:
+                    continue
+                v = m.new_bool_var(f"s1_{class_id}_{d}")
+                if 0 in pick:
+                    m.add(v + pick[0] == 1)
+                else:
+                    m.add(v == 1)  # the minimum start hour makes it unavoidable
+                flag(v, CLASSE_LATE_START, class_id, None, d)
+
+    # S2: no more than `cap` consecutive theory hours with the same teacher and
+    # class; one term per window of cap + 1 hours, so one per excess hour.
+    if weights[TEORIA_CONSECUTIVE] > 0:
+        for teacher_id, group in by_teacher.items():
+            for class_id in sorted({a.class_id for a in group}, key=str):
+                mine = [
+                    a
+                    for a in group
+                    if a.class_id == class_id and a.subject_type != PRATICA
+                ]
+                for d in range(DAYS):
+                    cap = 2
+                    for dg in ctx.derogations:
+                        if dg.action_type == FORCE_3_HOURS_THEORY and _derogated(
+                            ctx, FORCE_3_HOURS_THEORY, class_id, {teacher_id}, d
+                        ):
+                            cap = max(cap, dg.max_hours or 3)
+                    if not mine or cap >= _capacity(ctx, class_id, d):
+                        continue  # the day is too short for a window to exist
+                    occ = [_sum(x[a.id, d, h] for a in mine) for h in range(HOURS)]
+                    for s in range(HOURS - cap):
+                        v = m.new_bool_var(f"s2_{teacher_id}_{class_id}_{d}_{s}")
+                        m.add(v >= _sum(occ[s : s + cap + 1]) - cap)
+                        for h in range(s, s + cap + 1):
+                            m.add(v <= occ[h])
+                        flag(v, TEORIA_CONSECUTIVE, class_id, teacher_id, d)
+
+    # S3: hours per assignment against its target (exact target: 15 + 500 per hour).
+    for a in ctx.assignments:
+        if a.id not in ctx.targets:
+            continue
+        dev = m.new_int_var(0, DAYS * HOURS, f"s3_{a.id}")
+        total = _sum(x[a.id, d, h] for d in range(DAYS) for h in range(HOURS))
+        m.add_abs_equality(dev, total - ctx.targets[a.id])
+        weight = scaled_weight(
+            weights[ORE_TARGET_DEVIATION] + EXACT_TARGET_WEIGHT, ctx, a.teacher_id
+        )
+        soft.append((dev, weight, ORE_TARGET_DEVIATION, a.class_id, a.teacher_id, None))
+
+    # S4: a contractor has no real gap hour (free, with lessons before and after).
+    if weights[CONTRACTOR_GAP] > 0:
+        for teacher_id, group in by_teacher.items():
+            if ctx.teacher_types.get(teacher_id) != CONTRATTO:
+                continue
+            counted = [a for a in group if a.id not in shadow]
+            weight = scaled_weight(weights[CONTRACTOR_GAP], ctx, teacher_id)
+            class_ids = {a.class_id for a in group}
+            for d in range(DAYS):
+                if any(
+                    _derogated(ctx, AUTHORIZE_EARLY_EXIT, c, {teacher_id}, d)
+                    for c in class_ids
+                ):
+                    continue
+                if all(_capacity(ctx, c, d) == 0 for c in class_ids):
+                    continue
+                busy = []
+                for h in range(HOURS):
+                    b = m.new_bool_var(f"s4b_{teacher_id}_{d}_{h}")
+                    m.add(b == _sum(x[a.id, d, h] for a in counted))
+                    busy.append(b)
+                for h in range(1, HOURS - 1):
+                    before = m.new_bool_var(f"s4p_{teacher_id}_{d}_{h}")
+                    after = m.new_bool_var(f"s4n_{teacher_id}_{d}_{h}")
+                    m.add_max_equality(before, busy[:h])
+                    m.add_max_equality(after, busy[h + 1 :])
+                    g = m.new_bool_var(f"s4g_{teacher_id}_{d}_{h}")
+                    m.add(g <= before)
+                    m.add(g <= after)
+                    m.add(g <= 1 - busy[h])
+                    m.add(g >= before + after - busy[h] - 1)
+                    soft.append((g, weight, CONTRACTOR_GAP, None, teacher_id, d))
+
+    # S5: a teacher with 2+ classes does not spend a whole day (3+ hours) with one.
+    if weights[SINGLE_CLASSE_DAY] > 0:
+        for teacher_id, group in by_teacher.items():
+            class_ids = sorted({a.class_id for a in group}, key=str)
+            if len(class_ids) < 2:
+                continue
+            for class_id in class_ids:
+                mine = [a for a in group if a.class_id == class_id]
+                others = [a for a in group if a.class_id != class_id]
+                for d in range(DAYS):
+                    if _capacity(ctx, class_id, d) < 3 or _derogated(
+                        ctx, AUTHORIZE_SINGLE_CLASSE_DAY, class_id, {teacher_id}, d
+                    ):
+                        continue
+                    here = _sum(x[a.id, d, h] for a in mine for h in range(HOURS))
+                    rest = _sum(x[a.id, d, h] for a in others for h in range(HOURS))
+                    long_ = m.new_bool_var(f"s5l_{teacher_id}_{class_id}_{d}")
+                    m.add(here >= 3).only_enforce_if(long_)
+                    m.add(here <= 2).only_enforce_if(long_.negated())
+                    alone = m.new_bool_var(f"s5a_{teacher_id}_{class_id}_{d}")
+                    m.add(rest == 0).only_enforce_if(alone)
+                    m.add(rest >= 1).only_enforce_if(alone.negated())
+                    v = m.new_bool_var(f"s5_{teacher_id}_{class_id}_{d}")
+                    m.add_bool_and([long_, alone]).only_enforce_if(v)
+                    m.add_bool_or([long_.negated(), alone.negated()]).only_enforce_if(
+                        v.negated()
+                    )
+                    flag(v, SINGLE_CLASSE_DAY, class_id, teacher_id, d)
 
 
 def _add_quasi_hard(
-    ctx, m, x, classes, by_class, by_teacher, shadow, pick_by_class_day, penalties
+    ctx,
+    m,
+    x,
+    classes,
+    by_class,
+    by_teacher,
+    shadow,
+    pick_by_class_day,
+    penalties,
+    h9_active,
 ):
     """H4, H9, H10, H11: each violation is an override var weighted RELAX_WEIGHT."""
     assignment = {a.id: a for a in ctx.assignments}
@@ -268,6 +474,7 @@ def _add_quasi_hard(
         v = m.new_bool_var(f"h9_{class_id}")
         m.add(v + pick[0] == 1)
         penalties.append((v, ("H9", class_id, None, FRIDAY, None)))
+        h9_active.add((class_id, FRIDAY))
 
     # H10: a PRATICA subject forms one block of >= min(3, capacity) hours, or none.
     for class_id in classes:

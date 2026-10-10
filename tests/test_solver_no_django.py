@@ -6,7 +6,7 @@ from pathlib import Path
 import scheduling.solver
 
 PACKAGE = Path(scheduling.solver.__file__).parent
-ALLOWED = {"ortools", "collections", "dataclasses", "enum", "__future__"}
+ALLOWED = {"ortools", "collections", "dataclasses", "enum", "math", "__future__"}
 
 
 def test_solver_imports_with_django_blocked():
