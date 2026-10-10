@@ -253,7 +253,9 @@ def test_generate_on_approved_week_is_refused(world, admin):
 
 
 def test_segreteria_cannot_generate(world, seg):
-    assert seg.post(GENERATE, **HX).status_code == 403
+    r = seg.post(GENERATE, **HX)
+    assert r.status_code == 403
+    assert "Permesso negato" in html(r)  # the predicate's page, not Django's default
     assert SolveJob.objects.count() == 0
 
 
