@@ -9,7 +9,7 @@ a conflict: reading filters the list by the decisions.
 from .board import FIRST_HOUR, decided_keys
 from .context import build_week_context
 from .models import ConflictDecision, Day, DecisionAction, Slot, Timetable
-from .moves import MSG_STALE, InvalidMove, MoveRejected, _counterparts, reevaluate
+from .moves import MSG_STALE, InvalidMove, MoveRejected, reevaluate
 from .services import apply_change
 from .solver import CLASSE_UNFILLED
 from .solver.conflicts import chiave
@@ -83,10 +83,8 @@ def reject_lesson(timetable_id, class_id, day, hour, version):
         ]
         if not found:
             raise MoveRejected(MSG_EMPTY)
+        # A paired lesson has a row in each class: both match the cell.
         gone = {s.pk: s for s in found}
-        for s in found:
-            for other in _counterparts(s):
-                gone[other.pk] = other
         class_ids = set()
         for s in gone.values():
             class_ids |= {s.school_class_id, s.paired_class_id} - {None}
