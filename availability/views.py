@@ -1,0 +1,272 @@
+import datetime
+import json
+
+from django.core.exceptions import ValidationError
+from django.http import Http404, HttpResponseBadRequest
+from django.shortcuts import render
+from django.views.decorators.http import require_GET, require_POST
+
+from projects.permissions import can_edit_availability, permission_required
+from school.models import Teacher
+from school.selectors import current_school, today
+
+from . import grid as grid_logic
+from . import services
+
+TPL = "availability/"
+DAY_LABELS = {
+    "lunedi": "Lun",
+    "martedi": "Mar",
+    "mercoledi": "Mer",
+    "giovedi": "Gio",
+    "venerdi": "Ven",
+}
+
+
+class BadRequest(Exception):
+    pass
+
+
+def _is_htmx(request):
+    return request.headers.get("HX-Request") == "true"
+
+
+def _parse_week(school, raw):
+    """The listed week whose Monday is `raw` (ISO date), else BadRequest."""
+    try:
+        start = datetime.date.fromisoformat(raw)
+    except (TypeError, ValueError):
+        raise BadRequest("Settimana non valida.") from None
+    for week in services.school_weeks(school):
+        if week["start"] == start:
+            return week
+    raise BadRequest("Settimana non presente nell'anno formativo.")
+
+
+def _default_week(weeks):
+    day = today()
+    for week in weeks:
+        if week["start"] <= day < week["start"] + datetime.timedelta(days=7):
+            return week
+    return weeks[0] if weeks else None
+
+
+def _source_label(resolution):
+    if resolution.errors:
+        return "Griglia memorizzata non valida: mostrata quella predefinita"
+    if resolution.source == grid_logic.STORED:
+        return "Salvata per questa settimana"
+    if resolution.source == grid_logic.INHERITED:
+        return f"Copiata dalla settimana del {resolution.from_week:%d/%m/%Y}"
+    return "Predefinita (tutto disponibile)"
+
+
+def _display_grid(resolution):
+    return grid_logic.default_grid() if resolution.errors else resolution.grid
+
+
+def _card(row, week):
+    resolution = row["resolution"]
+    grid = _display_grid(resolution)
+    days = [
+        {
+            "key": day,
+            "label": DAY_LABELS[day],
+            "slots": [
+                {
+                    "index": i,
+                    "available": slot["disponibile"],
+                    "start": slot["ora_inizio"],
+                }
+                for i, slot in enumerate(grid[day])
+            ],
+        }
+        for day in grid_logic.DAYS
+    ]
+    teacher = row["teacher"]
+    return {
+        "teacher": teacher,
+        "days": days,
+        "hours": [s["start"] for s in days[0]["slots"]],
+        "source": _source_label(resolution),
+        "stored": resolution.source == grid_logic.STORED and not resolution.errors,
+        "assunto": teacher.type == "ASSUNTO",
+        "week": week,
+    }
+
+
+def _status_context(school, week):
+    return {"status": services.week_status(school, week["start"]), "week": week}
+
+
+def _page_context(school, week, notice=None):
+    weeks = services.school_weeks(school)
+    rows = services.school_rows(school, week["start"])
+    previous = grid_logic.previous_week(weeks, week["start"])
+    context = {
+        "school": school,
+        "weeks": weeks,
+        "week": week,
+        "cards": [_card(row, week) for row in rows],
+        "has_previous": previous is not None,
+        "notice": notice,
+    }
+    context.update(_status_context(school, week))
+    return context
+
+
+def _no_school(request):
+    return render(request, TPL + "page.html", {"school": None})
+
+
+def _bad_request(message):
+    return HttpResponseBadRequest(message)
+
+
+@permission_required(can_edit_availability)
+@require_GET
+def availability_page(request):
+    school = current_school()
+    if school is None:
+        return _no_school(request)
+    weeks = services.school_weeks(school)
+    raw = request.GET.get("settimana")
+    if raw is not None:
+        try:
+            week = _parse_week(school, raw)
+        except BadRequest as e:
+            return _bad_request(str(e))
+    else:
+        week = _default_week(weeks)
+    if week is None:
+        return render(request, TPL + "page.html", {"school": school, "weeks": []})
+    context = _page_context(school, week)
+    if (
+        _is_htmx(request)
+        and request.headers.get("HX-History-Restore-Request") != "true"
+    ):
+        return render(request, TPL + "_section.html", context)
+    return render(request, TPL + "page.html", context)
+
+
+def _teacher_of(school, teacher_id):
+    try:
+        return Teacher.objects.get(pk=teacher_id, school=school, active=True)
+    except Teacher.DoesNotExist:
+        raise Http404 from None
+
+
+def _row_for(school, week, teacher):
+    for row in services.school_rows(school, week["start"]):
+        if row["teacher"].pk == teacher.pk:
+            return row
+    raise Http404
+
+
+def _card_response(request, school, week, teacher):
+    context = {"card": _card(_row_for(school, week, teacher), week)}
+    context.update(_status_context(school, week))
+    context["oob"] = True
+    return render(request, TPL + "_card_update.html", context)
+
+
+def _context_for_write(school, week_raw, teacher_id):
+    week = _parse_week(school, week_raw)
+    return week, _teacher_of(school, teacher_id)
+
+
+def _toggled(resolution, day, slot):
+    grid = _display_grid(resolution)
+    if day not in grid_logic.DAYS:
+        raise BadRequest("Giorno non valido.")
+    try:
+        index = int(slot)
+    except (TypeError, ValueError):
+        raise BadRequest("Fascia non valida.") from None
+    if not 0 <= index < len(grid[day]):
+        raise BadRequest("Fascia non valida.")
+    grid[day][index]["disponibile"] = not grid[day][index]["disponibile"]
+    return grid
+
+
+def _write(school, week_raw, teacher_id, build_grid):
+    """Resolve week/teacher, build the grid, save it; return (week, teacher)."""
+    week, teacher = _context_for_write(school, week_raw, teacher_id)
+    grid = build_grid(services.resolve_teacher_grid(teacher, week["start"]))
+    try:
+        services.save_availability(teacher, week["start"], grid)
+    except (ValidationError, ValueError):
+        raise BadRequest("Griglia non valida.") from None
+    return week, teacher
+
+
+def _do_write(request, week_raw, teacher_id, build_grid):
+    school = current_school()
+    if school is None:
+        raise Http404
+    try:
+        week, teacher = _write(school, week_raw, teacher_id, build_grid)
+    except BadRequest as e:
+        return _bad_request(str(e))
+    return _card_response(request, school, week, teacher)
+
+
+@permission_required(can_edit_availability)
+@require_POST
+def availability_toggle(request, week, teacher_id):
+    return _do_write(
+        request,
+        week,
+        teacher_id,
+        lambda resolution: _toggled(
+            resolution, request.POST.get("day"), request.POST.get("slot")
+        ),
+    )
+
+
+def _posted_grid(request):
+    try:
+        grid = json.loads(request.POST.get("grid", ""))
+    except ValueError:
+        raise BadRequest("Griglia non valida.") from None
+    if grid_logic.grid_errors(grid):
+        raise BadRequest("Griglia non valida.")
+    return grid
+
+
+@permission_required(can_edit_availability)
+@require_POST
+def availability_save(request, week, teacher_id):
+    def build(_resolution):
+        return _posted_grid(request)
+
+    return _do_write(request, week, teacher_id, build)
+
+
+def _copy_notice(result):
+    if result["previous_week"] is None:
+        return "Nessuna settimana precedente: non e stato copiato nulla."
+    if result["previous_records"] == 0:
+        return (
+            "La settimana precedente non ha disponibilita registrate: "
+            "non e stato copiato nulla."
+        )
+    return (
+        f"Copiati {result['copied']} docenti, "
+        f"saltati {result['skipped']} (gia compilati)."
+    )
+
+
+@permission_required(can_edit_availability)
+@require_POST
+def availability_copy(request, week):
+    school = current_school()
+    if school is None:
+        raise Http404
+    try:
+        week_info = _parse_week(school, week)
+    except BadRequest as e:
+        return _bad_request(str(e))
+    result = services.copy_previous_week(school, week_info["start"])
+    context = _page_context(school, week_info, notice=_copy_notice(result))
+    return render(request, TPL + "_section.html", context)

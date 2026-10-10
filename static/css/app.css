@@ -126,3 +126,23 @@ button { padding: .4rem .9rem; cursor: pointer; }
 .setup-blockers { color: var(--muted); }
 button[disabled] { cursor: not-allowed; opacity: .55; }
 .message ul { margin: .25rem 0 0; padding-left: 1.2rem; }
+
+/* Availability screen. State is shown by a mark and a border style, not by color alone. */
+.av-toolbar, .av-copy { margin-bottom: .75rem; }
+.av-copy { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
+.av-toolbar select { padding: .4rem; border: 1px solid var(--border); border-radius: 4px; font: inherit; max-width: 100%; }
+.av-status { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .6rem .8rem; margin-bottom: 1rem; }
+.av-status p { margin: 0 0 .4rem; }
+.av-bar { height: .8rem; background: #e3e6ec; border-radius: 4px; overflow: hidden; }
+.av-bar-fill { height: 100%; background: #2e7d32; }
+.av-missing { margin: 0; padding-left: 1.2rem; columns: 2 12rem; }
+.av-card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .6rem .8rem; margin-bottom: 1rem; }
+.av-card h2 { margin: 0; font-size: 1.1rem; }
+.av-source { margin: .1rem 0 .4rem; }
+.av-grid { border-collapse: separate; border-spacing: .2rem; }
+.av-grid th { font-weight: 600; text-align: center; font-size: .85rem; padding: 0 .1rem; }
+.av-grid tbody th { text-align: left; }
+.av-grid td { padding: 0; }
+.av-cell { min-width: 2.75rem; min-height: 2.75rem; padding: 0; border: 2px solid; border-radius: 4px; font-size: 1.2rem; font-weight: 700; }
+.av-on { background: #e6f4ea; border-color: #2e7d32; color: #1b5e20; border-style: solid; }
+.av-off { background: #fdecea; border-color: #c62828; color: #7f1d1d; border-style: dashed; }

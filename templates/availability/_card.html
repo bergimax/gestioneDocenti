@@ -1,0 +1,23 @@
+<article id="teacher-card-{{ card.teacher.pk }}" class="av-card" aria-label="{{ card.teacher.name }}">
+  <h2>{{ card.teacher.name }}</h2>
+  <p class="hint av-source">{{ card.source }}{% if card.assunto %} &middot; Assunto: sempre disponibile; la griglia vincola solo i docenti a contratto.{% endif %}</p>
+  <div class="table-wrap">
+    <table class="av-grid">
+      <thead>
+        <tr><th scope="col"><span class="visually-hidden">Giorno</span></th>{% for h in card.hours %}<th scope="col">{{ h }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for day in card.days %}
+        <tr>
+          <th scope="row">{{ day.label }}</th>
+          {% for slot in day.slots %}
+          <td>
+            <button type="button" class="av-cell {% if slot.available %}av-on{% else %}av-off{% endif %}" aria-pressed="{% if slot.available %}true{% else %}false{% endif %}" aria-label="{{ card.teacher.name }} {{ day.key }} {{ slot.start }}: {% if slot.available %}disponibile{% else %}non disponibile{% endif %}" hx-post="{% url 'availability_toggle' card.week.start|date:'Y-m-d' card.teacher.pk %}" hx-vals='{"day": "{{ day.key }}", "slot": "{{ slot.index }}"}' hx-target="#teacher-card-{{ card.teacher.pk }}" hx-swap="outerHTML">{% if slot.available %}&#10003;{% else %}&#10007;{% endif %}</button>
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</article>

@@ -1,0 +1,26 @@
+<section id="availability-section" aria-label="Disponibilita settimanale">
+  <form class="av-toolbar" method="get" action="{% url 'availability' %}" hx-get="{% url 'availability' %}" hx-trigger="change, submit" hx-target="#availability-section" hx-swap="outerHTML" hx-push-url="true">
+    <div class="field">
+      <label for="av-week">Settimana</label>
+      <select id="av-week" name="settimana">
+        {% for w in weeks %}
+        <option value="{{ w.start|date:'Y-m-d' }}"{% if w.start == week.start %} selected{% endif %}>Settimana {{ w.week_num }}: {{ w.start|date:"d/m/Y" }} - {{ w.end|date:"d/m/Y" }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <noscript><button type="submit">Vai</button></noscript>
+  </form>
+  <form class="av-copy" method="post" action="{% url 'availability_copy' week.start|date:'Y-m-d' %}" hx-post="{% url 'availability_copy' week.start|date:'Y-m-d' %}" hx-target="#availability-section" hx-swap="outerHTML">
+    {% csrf_token %}
+    <button type="submit"{% if not has_previous %} disabled aria-describedby="av-copy-hint"{% endif %}>Copia dalla settimana precedente</button>
+    {% if not has_previous %}<span id="av-copy-hint" class="hint">Prima settimana dell'anno: nessuna settimana precedente da copiare.</span>{% endif %}
+  </form>
+  {% if notice %}<div class="message message-info" role="status"><span>{{ notice }}</span></div>{% endif %}
+  {% include "availability/_status.html" %}
+  <p class="hint">Tocca una cella per cambiare tra disponibile (&#10003;) e non disponibile (&#10007;). La griglia vincola solo i docenti a contratto.</p>
+  {% for card in cards %}
+  {% include "availability/_card.html" %}
+  {% empty %}
+  <p>Nessun docente attivo.</p>
+  {% endfor %}
+</section>

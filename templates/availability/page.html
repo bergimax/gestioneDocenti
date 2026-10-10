@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Disponibilita{% endblock %}
+{% block content %}
+<h1>Disponibilita</h1>
+{% if not school %}
+<p>Nessuna scuola configurata: esegui prima il setup.</p>
+{% elif not weeks %}
+<p>Nessuna settimana disponibile per questo anno formativo.</p>
+{% else %}
+{% include "availability/_section.html" %}
+{% endif %}
+{% endblock %}

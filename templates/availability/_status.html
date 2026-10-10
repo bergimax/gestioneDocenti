@@ -1,0 +1,10 @@
+<div id="availability-status" class="av-status"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <p><strong>{{ status.completion_percentage|stringformat:'s' }}%</strong> &middot; {{ status.teachers_with_availability }} di {{ status.total_teachers }} docenti compilati</p>
+  <div class="av-bar" role="progressbar" aria-label="Completamento della settimana" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ status.completion_percentage|stringformat:'s' }}"><div class="av-bar-fill" style="width: {{ status.completion_percentage|stringformat:'s' }}%"></div></div>
+  {% if status.teachers_missing %}
+  <p class="av-missing-title">Docenti mancanti:</p>
+  <ul class="av-missing">
+    {% for t in status.teachers_missing %}<li>{{ t.name }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>

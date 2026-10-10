@@ -137,3 +137,11 @@ def list_weeks(year_start, year_end):
         )
         start += datetime.timedelta(days=7)
     return weeks
+
+
+def previous_week(weeks, week_start):
+    """The Monday of the listed week before `week_start`, or None."""
+    starts = [w["start"] for w in weeks]
+    if week_start not in starts or starts.index(week_start) == 0:
+        return None
+    return starts[starts.index(week_start) - 1]

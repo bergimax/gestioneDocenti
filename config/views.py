@@ -1,11 +1,7 @@
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from projects.permissions import (
-    can_edit_availability,
-    can_view_timetable,
-    permission_required,
-)
+from projects.permissions import can_view_timetable, permission_required
 
 
 @permission_required(can_view_timetable)
@@ -27,5 +23,4 @@ def _placeholder(name, predicate):
     return view
 
 
-availability = _placeholder("Disponibilita", can_edit_availability)
 timetable = _placeholder("Orario", can_view_timetable)
