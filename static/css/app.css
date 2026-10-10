@@ -159,3 +159,23 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .av-message p { margin: 0; }
 .av-message-ok { background: #e6f4ea; border-color: #2e7d32; }
 .av-message-error { background: #fdecea; border-color: #c62828; }
+
+/* Timetable screen. Conflicts get a mark and a dashed border, stage is yellow with text. */
+.tt-job { margin-bottom: 1rem; }
+.tt-summary { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; }
+.tt-approved { background: #e3f4e6; color: #14532d; padding: .15rem .5rem; }
+.tt-conflicts { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; margin: .75rem 0; }
+.tt-conflicts h2 { margin: 0 0 .25rem; font-size: 1.1rem; }
+.tt-conflicts ul { margin: 0; padding-left: 1.2rem; }
+.tt-day h2 { font-size: 1.15rem; margin: 1rem 0 .4rem; }
+.tt-scroll { max-width: 100%; overflow-x: auto; }
+.tt-grid { border-collapse: collapse; background: var(--surface); min-width: 44rem; width: 100%; }
+.tt-grid th, .tt-grid td { border: 1px solid var(--border); padding: .3rem .4rem; font-size: .85rem; text-align: center; vertical-align: middle; }
+.tt-grid thead th { background: #eef0f4; }
+.tt-grid tbody th { text-align: left; white-space: nowrap; background: #eef0f4; }
+.tt-subject { display: block; }
+.tt-teacher { display: block; font-weight: 700; }
+.tt-free { background: #d9d9d9; }
+.tt-stage { background: #ffff00; border-color: #c9a800; font-weight: 700; }
+.tt-conflict { border: 2px dashed #b42318; background: #fde8e6; }
+.tt-flag { color: #b42318; font-weight: 700; }

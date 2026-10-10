@@ -1,0 +1,52 @@
+<div id="timetable-body"{% if oob %} hx-swap-oob="true"{% endif %} hx-get="{% url 'timetable_grid' week.start|date:'Y-m-d' %}?versione={{ token }}" hx-trigger="every 5s" hx-swap="outerHTML" data-version="{{ token }}">
+  {% if not timetable %}
+  <p class="tt-empty">Nessun orario per questa settimana.</p>
+  {% else %}
+  <div class="tt-summary">
+    {% if approved %}<span class="cal-badge tt-approved">Approvata</span>{% endif %}
+    {% if timetable.quality_level %}<p class="tt-quality">Qualit&agrave;: livello <strong>{{ timetable.quality_level }}</strong>{% if timetable.quality_score is not None %} (punteggio {{ timetable.quality_score|floatformat:1 }}){% endif %}</p>{% endif %}
+    {% if best_effort %}<p class="message message-info" role="status">{{ no_complete_message }}</p>{% endif %}
+  </div>
+  {% if conflict_list %}
+  <section class="tt-conflicts" aria-label="Conflitti">
+    <h2>Conflitti ({{ conflict_list|length }})</h2>
+    <ul>
+      {% for text in conflict_list %}<li>{{ text }}</li>{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+  {% for day in days %}
+  <section class="tt-day" aria-label="{{ day.label }}">
+    <h2>{{ day.label }} {{ day.date|date:"d/m" }}</h2>
+    <div class="tt-scroll">
+      <table class="tt-grid">
+        <thead>
+          <tr>
+            <th scope="col">Classe</th>
+            {% for cell in day.rows.0.cells %}<th scope="col">{{ cell.hour }}-{{ cell.hour|add:1 }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in day.rows %}
+          <tr>
+            <th scope="row">{{ row.school_class.name }}</th>
+            {% for cell in row.cells %}
+            {% if cell.kind == "lesson" %}
+            <td class="tt-lesson{% if cell.conflict %} tt-conflict{% endif %}"{% if cell.conflict %} data-conflict="true"{% endif %}>{% if cell.conflict %}<span class="tt-flag" title="Conflitto"><span aria-hidden="true">!</span><span class="visually-hidden">Conflitto</span></span> {% endif %}<span class="tt-subject">{{ cell.subject }}</span> <span class="tt-teacher">{{ cell.teacher }}</span></td>
+            {% elif cell.kind == "stage" %}
+            <td class="tt-stage">STAGE</td>
+            {% else %}
+            <td class="tt-free{% if cell.conflict %} tt-conflict{% endif %}"{% if cell.conflict %} data-conflict="true"{% endif %}>{% if cell.conflict %}<span class="tt-flag" title="Conflitto"><span aria-hidden="true">!</span><span class="visually-hidden">Conflitto</span></span>{% endif %}</td>
+            {% endif %}
+            {% endfor %}
+          </tr>
+          {% empty %}
+          <tr><td colspan="7">Nessuna classe.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endfor %}
+  {% endif %}
+</div>

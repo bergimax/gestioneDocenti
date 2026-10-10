@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Orario{% endblock %}
+{% block content %}
+<h1>Orario</h1>
+{% if not school %}
+<p>Nessuna scuola configurata: esegui prima il setup.</p>
+{% elif not weeks %}
+<p>Nessuna settimana disponibile per questo anno formativo.</p>
+{% else %}
+<section id="timetable-section" aria-label="Orario settimanale">
+  <form class="av-toolbar" method="get" action="{% url 'timetable' %}" x-data>
+    <div class="field">
+      <label for="tt-week">Settimana</label>
+      <select id="tt-week" name="settimana" @change="$el.form.submit()">
+        {% for w in weeks %}
+        <option value="{{ w.start|date:'Y-m-d' }}"{% if w.start == week.start %} selected{% endif %}>Settimana {{ w.week_num }}: {{ w.start|date:"d/m/Y" }} - {{ w.end|date:"d/m/Y" }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <noscript><button type="submit">Vai</button></noscript>
+  </form>
+  {% include "scheduling/_job.html" %}
+  {% include "scheduling/_body.html" %}
+</section>
+<script>
+// htmx does not swap 4xx by default; the generate endpoint answers 409 with a message.
+document.addEventListener("htmx:beforeSwap", function (event) {
+  var status = event.detail.xhr.status;
+  if (status === 400 || status === 404 || status === 409) {
+    event.detail.shouldSwap = true;
+    event.detail.isError = false;
+  }
+});
+</script>
+{% endif %}
+{% endblock %}

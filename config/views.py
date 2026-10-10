@@ -13,14 +13,3 @@ def home(request):
 @require_POST
 def overview_ping(request):
     return render(request, "partials/ping.html")
-
-
-def _placeholder(name, predicate):
-    @permission_required(predicate)
-    def view(request):
-        return render(request, "placeholder.html", {"page_name": name})
-
-    return view
-
-
-timetable = _placeholder("Orario", can_view_timetable)
