@@ -4,7 +4,7 @@ import logging
 import re
 
 # Path of the teacher page (availability/urls.py): /l/<token>/
-_TOKEN_PATH = re.compile(r"(/l/)([A-Za-z0-9_-]{6})[A-Za-z0-9_-]*")
+_TOKEN_PATH = re.compile(r"(/l/)([A-Za-z0-9_-]{0,6})[^\s\"'?]*")
 
 
 def redact(text):

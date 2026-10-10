@@ -8,7 +8,7 @@ from django.test import Client
 from accounts.models import User
 from availability import grid as g
 from availability import links
-from availability.models import Availability, AvailabilityLink
+from availability.models import Availability, AvailabilityLink, LinkLookupFailure
 from school.models import School, Teacher
 
 D = datetime.date
@@ -327,3 +327,30 @@ def test_token_never_logged(client, teacher, clock, caplog):
             assert secret not in record.getMessage()
             assert secret not in str(record.__dict__.get("args"))
             assert secret not in str(record.__dict__.get("msg"))
+
+
+@pytest.mark.parametrize("path", ["/l/a/b/", "/l/a%2Fb/", "/l/a/b/c/salva/"])
+def test_slash_tokens_get_neutral_page_and_accounting(client, teacher, clock, path):
+    _, good = links.create_link(teacher, W1, None)
+    reference = client.get(page("A" * 43), REMOTE_ADDR="10.9.9.9")
+    r = client.get(path)
+    assert r.status_code == 404
+    assert r.content == reference.content
+    assert "no-store" in r["Cache-Control"]
+    assert r["Referrer-Policy"] == "no-referrer"
+    assert not r.cookies
+    assert LinkLookupFailure.objects.filter(client_address="127.0.0.1").count() == 1
+    for _ in range(9):
+        client.get(path)
+    assert client.get(path).status_code == 429
+    assert client.get(page(good)).status_code == 429
+
+
+def test_slash_token_post_and_logging(client, teacher, clock, caplog):
+    caplog.set_level(logging.DEBUG)
+    logging.getLogger("django.request").setLevel(logging.DEBUG)
+    assert post(client, "abcdefghij/klmnop", all_off()).status_code == 404
+    assert client.get("/l/abcdefghij/klmnop/").status_code == 404
+    for record in caplog.records:
+        assert "klmnop" not in record.getMessage()
+        assert "ghij" not in record.getMessage()

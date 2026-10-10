@@ -455,7 +455,8 @@ def _same_origin(request):
 def link_save(request, token):
     """Save the grid; teacher and week come from the link, never the request."""
     if request.method != "POST":
-        return _public(HttpResponseNotAllowed(["POST"]))
+        # Same accounting as the page: /l/<anything>/salva/ is just a token.
+        return _usable_link(request, token)[1] or _neutral(request)
     if not _same_origin(request):
         return _public(HttpResponseForbidden("Richiesta non consentita."))
     link, refusal = _usable_link(request, token)
