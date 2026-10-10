@@ -139,11 +139,11 @@ def test_diff_of_identical_timetables_is_empty():
 
 
 def test_diff_pairs_a_removed_cell_with_the_added_cell_of_the_same_day():
-    old = lessons(("a", 0, 0), ("a", 3, 0))
-    new = lessons(("a", 3, 2), ("a", 1, 1))
+    old = lessons(("a", 2, 0), ("a", 3, 0))
+    new = lessons(("a", 1, 5), ("a", 2, 3))
     changes = diff_lessons(old, new)
-    assert Change("a", (3, 0), (3, 2)) in changes
-    assert Change("a", (0, 0), (1, 1)) in changes
+    assert Change("a", (2, 0), (2, 3)) in changes
+    assert Change("a", (3, 0), (1, 5)) in changes
     assert len(changes) == 2
 
 

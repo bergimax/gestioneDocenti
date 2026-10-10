@@ -449,14 +449,13 @@ def _change_terms(ctx, m, x):
     """Repair mode: CHANGE_WEIGHT per current lesson that is gone from its cell.
 
     Not a penalty term of the quality score: it is the price of touching the
-    timetable, not a defect of it. Also hints the solver at the current lessons.
+    timetable, not a defect of it.
     """
     if ctx.current_lessons is None:
         return []
     current = {(le.assignment_id, le.day, le.hour) for le in ctx.current_lessons}
     terms = []
     for key, var in x.items():
-        m.add_hint(var, 1 if key in current else 0)
         if key in current:  # capacity is exact, so every added cell costs a removal
             terms.append(CHANGE_WEIGHT * (1 - var))
     return terms
