@@ -12,6 +12,7 @@ from projects.permissions import (
     can_decide_conflicts,
     can_generate,
     can_move_lesson,
+    can_repair,
     can_view_timetable,
     permission_required,
 )
@@ -30,7 +31,7 @@ from .board import (
 )
 from .decisions import approve_conflicts, reject_lesson
 from .derogations import QUICK_ACTIONS
-from .forms import QuickActionForm
+from .forms import QuickActionForm, RepairForm
 from .jobs import GenerationRefused, enqueue_generation
 from .models import (
     ACTIVE_JOB_STATUSES,
@@ -43,6 +44,15 @@ from .models import (
 )
 from .moves import InvalidMove, MoveRejected, move_lesson
 from .quick_actions import ERROR_NO_TIMETABLE, apply_quick_action
+from .repair import ERROR_NO_TIMETABLE as REPAIR_NO_TIMETABLE
+from .repair import (
+    PARAMS_KEY,
+    RepairRefused,
+    confirm_repair,
+    describe,
+    dismiss_repair,
+    enqueue_repair,
+)
 from .services import TimetableLocked
 
 TPL = "scheduling/"
@@ -205,6 +215,7 @@ def timetable_page(request):
     context.update(_job_context(school, week, request.user))
     context.update(_body_context(school, week, request.user))
     context.update(_deroga_context(school, week, request.user))
+    context.update(_repair_context(school, week, request.user))
     return render(request, TPL + "page.html", context)
 
 
@@ -459,3 +470,176 @@ def _refusal(timetable):
 
 
 MSG_QUICK_APPROVED = "La settimana è approvata: l'orario non può essere rigenerato."
+
+
+# ---- repair solving (sostituzione) -------------------------------------------
+
+MSG_REPAIR_STARTED = "Sostituzione avviata: {what}."
+MSG_REPAIR_APPLIED = "Sostituzione applicata: l'orario è stato aggiornato."
+MSG_REPAIR_DISMISSED = "Sostituzione annullata: l'orario non è stato modificato."
+
+
+def _repair_job(school, week):
+    return (
+        SolveJob.objects.filter(
+            school=school, week_start=week["start"], kind=JobKind.REPAIR
+        )
+        .order_by("-pk")
+        .first()
+    )
+
+
+def _repair_context(
+    school,
+    week,
+    user,
+    form=None,
+    message=None,
+    error=None,
+    oob=False,
+    open_form=False,
+):
+    """The "Sostituzione" panel: the form (draft week, ADMIN) and the last job."""
+    timetable = _timetable(school, week)
+    draft = timetable is not None and timetable.state == TimetableState.BOZZA
+    visible = draft and can_repair(user)
+    job = _repair_job(school, week) if can_repair(user) else None
+    context = {
+        "week": week,
+        "repair_visible": visible,
+        "repair_oob": oob,
+        "repair_message": message,
+        "repair_error": error,
+        "repair_open": open_form or form is not None or message is not None,
+        "repair_job": None,
+        "repair_running": False,
+        "repair_failed": None,
+        "repair_proposal": None,
+    }
+    if visible:
+        context["repair_form"] = form or RepairForm(school=school, timetable=timetable)
+        chosen = context["repair_form"]["tipo"].value()
+        context["repair_options"] = [
+            {
+                "value": value,
+                "label": label,
+                "fields": " ".join(RepairForm.NEEDS.get(value, ())),
+                "selected": value == chosen,
+            }
+            for value, label in context["repair_form"].fields["tipo"].choices
+        ]
+    if job is not None and draft:
+        context["repair_job"] = job
+        context["repair_running"] = job.status in ACTIVE_JOB_STATUSES
+        if job.status == JobStatus.FAILED:
+            context["repair_failed"] = job.error
+        elif job.status == JobStatus.DONE and not (
+            job.result.get("applied") or job.result.get("dismissed")
+        ):
+            stale = job.result.get("base_version") != timetable.version
+            context["repair_proposal"] = {
+                **job.result,
+                "job": job,
+                "what": describe(job.params[PARAMS_KEY]),
+                "stale": stale,
+                "can_confirm": visible
+                and not stale
+                and not job.result.get("empty")
+                and bool(job.result.get("changes")),
+            }
+    return context
+
+
+def _repair_response(request, school, week, status=200, with_body=False, **kw):
+    context = _repair_context(school, week, request.user, **kw)
+    if with_body:
+        context.update(_body_context(school, week, request.user, oob=True))
+    return render(request, TPL + "_repair_response.html", context, status=status)
+
+
+@permission_required(can_repair)
+@require_POST
+def timetable_repair(request, week):
+    """Start a REPAIR job from the "Sostituzione" form."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    timetable = _timetable(school, week)
+    refusal = _refusal_repair(timetable)
+    if refusal:
+        return _repair_response(request, school, week, status=409, error=refusal)
+    form = RepairForm(request.POST, school=school, timetable=timetable)
+    if not form.is_valid():
+        return _repair_response(request, school, week, status=400, form=form)
+    params = form.params()
+    try:
+        enqueue_repair(week["start"], request.user, params)
+    except RepairRefused as exc:
+        return _repair_response(
+            request, school, week, status=exc.status, error=exc.message, form=form
+        )
+    message = MSG_REPAIR_STARTED.format(what=describe(params))
+    return _repair_response(request, school, week, message=message)
+
+
+def _refusal_repair(timetable):
+    if timetable is None:
+        return REPAIR_NO_TIMETABLE
+    if timetable.state == TimetableState.APPROVATO:
+        return MSG_REPAIR_APPROVED
+    return None
+
+
+MSG_REPAIR_APPROVED = (
+    "La settimana è approvata: l'orario non può essere modificato da una sostituzione."
+)
+
+
+@permission_required(can_repair)
+@require_GET
+def timetable_repair_status(request, week):
+    """Polled while a repair runs: the status area, with the diff when done."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    context = _repair_context(school, week, request.user)
+    return render(request, TPL + "_repair_status.html", context)
+
+
+@permission_required(can_repair)
+@require_POST
+def timetable_repair_confirm(request, week, job_id):
+    """Apply the diff of a finished repair; answers with the panel and the grid."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    try:
+        job_ref = SolveJob.objects.filter(
+            pk=job_id, school=school, week_start=week["start"], kind=JobKind.REPAIR
+        ).first()
+        if job_ref is None:
+            raise RepairRefused("Sostituzione non trovata.", status=404)
+        confirm_repair(job_id, request.user)
+    except RepairRefused as exc:
+        return _repair_response(
+            request, school, week, status=exc.status, error=exc.message, with_body=True
+        )
+    return _repair_response(
+        request, school, week, message=MSG_REPAIR_APPLIED, with_body=True
+    )
+
+
+@permission_required(can_repair)
+@require_POST
+def timetable_repair_dismiss(request, week, job_id):
+    """Annulla: drop the proposal; the timetable and its version stay as they are."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    try:
+        if not SolveJob.objects.filter(
+            pk=job_id, school=school, week_start=week["start"], kind=JobKind.REPAIR
+        ).exists():
+            raise RepairRefused("Sostituzione non trovata.", status=404)
+        dismiss_repair(job_id, request.user)
+    except RepairRefused as exc:
+        return _repair_response(
+            request, school, week, status=exc.status, error=exc.message
+        )
+    return _repair_response(request, school, week, message=MSG_REPAIR_DISMISSED)

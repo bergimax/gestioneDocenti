@@ -4,6 +4,7 @@ from django import forms
 
 from school.models import Class, Teacher, TeacherType
 
+from . import repair
 from .derogations import (
     CLASSE,
     DOCENTE,
@@ -15,7 +16,7 @@ from .derogations import (
     applies,
     label_of,
 )
-from .models import Day
+from .models import Day, Slot
 
 MSG_MAX_HOURS = (
     f"Il massimo di ore deve essere un numero intero da {MAX_HOURS_RANGE[0]} "
@@ -109,4 +110,140 @@ class QuickActionForm(forms.Form):
             "teacher_id": teacher.pk if teacher and applies(action, DOCENTE) else None,
             "day": (data.get(GIORNO) or None) if applies(action, GIORNO) else None,
             "max_hours": data.get(MAX_ORE) if applies(action, MAX_ORE) else None,
+        }
+
+
+MSG_NOTHING_TO_REPAIR = (
+    "Niente da riparare: il docente non ha lezioni in questa settimana."
+)
+MSG_BAD_DAY = "Giorno non valido: sono ammessi solo i giorni feriali."
+MSG_NO_SUCH_SLOT = "Non c'è nessuna lezione della classe in quel giorno e a quell'ora."
+MSG_BAD_HOUR = "L'ora deve essere compresa tra 8 e 13."
+
+
+class RepairForm(forms.Form):
+    """The "Sostituzione" form: the kind of perturbation and its parameters."""
+
+    tipo = forms.ChoiceField(
+        label="Tipo di sostituzione",
+        choices=[("", "Scegli il tipo")]
+        + [(key, label) for key, label in repair.KIND_LABELS.items()],
+        error_messages={
+            "required": "Scegli il tipo di sostituzione.",
+            "invalid_choice": "Tipo di sostituzione non valido.",
+        },
+    )
+    docente = forms.ModelChoiceField(
+        Teacher.objects.none(),
+        required=False,
+        label="Docente",
+        empty_label="Scegli il docente",
+        error_messages={"invalid_choice": "Il docente indicato non esiste."},
+    )
+    classe = forms.ModelChoiceField(
+        Class.objects.none(),
+        required=False,
+        label="Classe",
+        empty_label="Scegli la classe",
+        error_messages={"invalid_choice": "La classe indicata non esiste."},
+    )
+    giorni = forms.MultipleChoiceField(
+        required=False,
+        label="Giorni di assenza",
+        choices=Day.choices,
+        widget=forms.CheckboxSelectMultiple,
+        error_messages={"invalid_choice": MSG_BAD_DAY},
+    )
+    giorno = forms.ChoiceField(
+        required=False,
+        label="Giorno",
+        choices=[("", "Scegli il giorno")] + list(Day.choices),
+        error_messages={"invalid_choice": MSG_BAD_DAY},
+    )
+    ora = forms.CharField(required=False, label="Ora di inizio (8-13)")
+
+    NEEDS = {
+        repair.TEACHER_ABSENT: ("docente", "giorni"),
+        repair.SLOT_REMOVED: ("classe", "giorno", "ora"),
+        repair.CLASS_CLOSED: ("classe", "giorno"),
+    }
+    REQUIRED = {
+        "docente": "Scegli il docente.",
+        "classe": "Scegli la classe.",
+        "giorni": "Scegli almeno un giorno.",
+        "giorno": "Scegli il giorno.",
+        "ora": "Indica l'ora di inizio.",
+    }
+
+    def __init__(self, *args, school, timetable=None, **kwargs):
+        kwargs.setdefault("auto_id", "id_sost_%s")  # the Deroga form has its own ids
+        super().__init__(*args, **kwargs)
+        self.timetable = timetable
+        for name in ("docente", "classe", "giorni", "giorno", "ora"):
+            self.fields[name].widget.attrs["x-bind:disabled"] = f"!shows('{name}')"
+        self.fields["ora"].widget.attrs["inputmode"] = "numeric"
+        self.fields["ora"].widget.attrs["autocomplete"] = "off"
+        self.fields["docente"].queryset = Teacher.objects.filter(
+            school=school
+        ).order_by("name", "pk")
+        self.fields["classe"].queryset = Class.objects.filter(school=school).order_by(
+            "name", "pk"
+        )
+
+    def clean(self):
+        data = super().clean()
+        kind = data.get("tipo")
+        if kind not in self.NEEDS:
+            return data
+        if self.timetable is None:
+            raise forms.ValidationError(repair.ERROR_NO_TIMETABLE)
+        for name in self.NEEDS[kind]:
+            if name not in self.errors and not data.get(name):
+                self.add_error(name, self.REQUIRED[name])
+        if self.errors:
+            return data
+        slots = Slot.objects.filter(timetable=self.timetable)
+        if kind == repair.TEACHER_ABSENT:
+            if not slots.filter(teacher=data["docente"]).exists():
+                self.add_error("docente", MSG_NOTHING_TO_REPAIR)
+        elif kind == repair.SLOT_REMOVED:
+            hour = self._hour(data["ora"])
+            if hour is None:
+                self.add_error("ora", MSG_BAD_HOUR)
+            elif not (
+                slots.filter(
+                    day=data["giorno"], start_hour=hour, school_class=data["classe"]
+                ).exists()
+                or slots.filter(
+                    day=data["giorno"],
+                    start_hour=hour,
+                    paired_class=data["classe"],
+                ).exists()
+            ):
+                self.add_error("ora", MSG_NO_SUCH_SLOT)
+        return data
+
+    @staticmethod
+    def _hour(raw):
+        if not re.fullmatch(r"[0-9]{1,2}", raw or ""):
+            return None
+        value = int(raw)
+        return value if 8 <= value <= 13 else None
+
+    def params(self):
+        """The validated perturbation, as stored in the job's params."""
+        data = self.cleaned_data
+        kind = data["tipo"]
+        teacher, school_class = data.get("docente"), data.get("classe")
+        days = (
+            sorted(data["giorni"], key=Day.values.index)
+            if kind == repair.TEACHER_ABSENT
+            else [data["giorno"]]
+        )
+        return {
+            "kind": kind,
+            "teacher_id": teacher.pk if kind == repair.TEACHER_ABSENT else None,
+            "class_id": None if kind == repair.TEACHER_ABSENT else school_class.pk,
+            "days": days,
+            "hour": self._hour(data["ora"]) if kind == repair.SLOT_REMOVED else None,
         }

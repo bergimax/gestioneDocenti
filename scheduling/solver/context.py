@@ -56,6 +56,12 @@ AUTHORIZE_SINGLE_CLASSE_DAY = "authorize_single_classe_day"  # H11, S5
 FORCE_3_HOURS_THEORY = "force_3_hours_theory"  # S2
 AUTHORIZE_EARLY_EXIT = "authorize_early_exit"  # S4
 
+# Repair solving (architecture 7.4): the objective pays this per lesson cell that
+# differs from the current timetable (a moved lesson differs in two cells). It
+# stays below one hour of S3 deviation (EXACT_TARGET_WEIGHT) and far below the
+# quasi-hard and fixed penalties.
+CHANGE_WEIGHT = 500_000
+
 Id = int | str
 
 
@@ -134,6 +140,10 @@ class ScheduleContext:
       never penalised.
     - ``excluded_days[teacher_id]`` (H7) and ``weekly_caps[teacher_id]`` (H8)
       are run-only inputs.
+    - ``current_lessons``: repair mode. ``None`` (the default) is a normal
+      solve; a list (possibly empty) is the current timetable and every cell
+      that differs from it costs ``CHANGE_WEIGHT``.
+    - ``blocked_cells[class_id]``: (day, hour) cells that must stay empty.
     """
 
     assignments: list[Assignment] = field(default_factory=list)
@@ -158,6 +168,8 @@ class ScheduleContext:
     # falls back to its text.
     class_names: dict[Id, str] = field(default_factory=dict)
     teacher_names: dict[Id, str] = field(default_factory=dict)
+    current_lessons: list[Lesson] | None = None
+    blocked_cells: dict[Id, frozenset[tuple[int, int]]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

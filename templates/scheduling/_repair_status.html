@@ -1,0 +1,66 @@
+<div id="repair-status" class="tt-repair-status"{% if repair_running %} hx-get="{% url 'timetable_repair_status' week.start|date:'Y-m-d' %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  {% if repair_running %}
+  <p class="tt-running" role="status">Sostituzione in corso&hellip;</p>
+  {% elif repair_failed %}
+  <div class="message message-error" role="alert"><span>{{ repair_failed }}</span></div>
+  {% elif repair_proposal %}
+  {% with p=repair_proposal %}
+  <section class="tt-diff" aria-label="Proposta di sostituzione">
+    <h2>Proposta: {{ p.what }}</h2>
+    {% if p.empty %}
+    <p class="message message-info" role="status">Nessuna lezione da modificare</p>
+    {% else %}
+    <p class="tt-diff-count"><strong>{{ p.n_changes }}</strong> lezioni da modificare ({{ p.n_moved }} spostate, {{ p.n_removed }} rimosse, {{ p.n_added }} aggiunte)</p>
+    {% if not p.complete %}
+    <p class="message message-info" role="status">{{ p.message }}</p>
+    {% endif %}
+    <div class="tt-scroll">
+      <table class="tt-diff-table">
+        <thead>
+          <tr><th scope="col">Classe</th><th scope="col">Materia</th><th scope="col">Docente</th><th scope="col">Prima</th><th scope="col">Dopo</th></tr>
+        </thead>
+        <tbody>
+          {% for c in p.changes %}
+          <tr>
+            <td>{{ c.class }}</td>
+            <td>{{ c.subject }}</td>
+            <td>{{ c.teacher }}</td>
+            <td>{% if c.old %}{{ c.old.label }} {{ c.old.hour }}-{{ c.old.hour|add:1 }}{% else %}nuova{% endif %}</td>
+            <td>{% if c.new %}{{ c.new.label }} {{ c.new.hour }}-{{ c.new.hour|add:1 }}{% else %}rimossa{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% if p.explanations %}
+    <section class="tt-explanations" aria-label="Perch&eacute; non c'&egrave; una sostituzione completa">
+      <h2>Perch&eacute; non c'&egrave; una sostituzione completa</h2>
+      <ul>{% for message in p.explanations %}<li>{{ message }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+    {% if p.conflicts %}
+    <section class="tt-conflicts" aria-label="Conflitti della proposta">
+      <h2>Conflitti della proposta ({{ p.conflicts|length }})</h2>
+      <ul>{% for text in p.conflicts %}<li>{{ text }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+    {% if p.stale %}
+    <div class="message message-error" role="alert"><span>L'orario è cambiato dopo il calcolo della sostituzione: ripeti la sostituzione per ottenere una proposta aggiornata.</span></div>
+    {% endif %}
+    <div class="tt-diff-actions">
+      {% if p.can_confirm %}
+      <form class="tt-inline" method="post" action="{% url 'timetable_repair_confirm' week.start|date:'Y-m-d' p.job.pk %}" hx-post="{% url 'timetable_repair_confirm' week.start|date:'Y-m-d' p.job.pk %}" hx-target="#tt-repair-panel" hx-swap="outerHTML">
+        {% csrf_token %}
+        <button type="submit">Conferma</button>
+      </form>
+      {% endif %}
+      <form class="tt-inline" method="post" action="{% url 'timetable_repair_dismiss' week.start|date:'Y-m-d' p.job.pk %}" hx-post="{% url 'timetable_repair_dismiss' week.start|date:'Y-m-d' p.job.pk %}" hx-target="#tt-repair-panel" hx-swap="outerHTML">
+        {% csrf_token %}
+        <button type="submit">Annulla</button>
+      </form>
+    </div>
+  </section>
+  {% endwith %}
+  {% endif %}
+</div>

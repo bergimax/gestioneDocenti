@@ -195,5 +195,12 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-deroga { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; margin: .75rem 0; }
 .tt-deroga summary { font-weight: 700; cursor: pointer; }
 .tt-deroga form { margin-top: .5rem; max-width: 32rem; }
+.tt-repair, .tt-diff { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; margin: .75rem 0; }
+.tt-repair summary { font-weight: 700; cursor: pointer; }
+.tt-repair form { margin-top: .5rem; max-width: 32rem; }
+.tt-diff h2 { margin: 0 0 .25rem; font-size: 1.1rem; }
+.tt-diff-table { border-collapse: collapse; width: 100%; }
+.tt-diff-table th, .tt-diff-table td { border: 1px solid var(--border); padding: .25rem .5rem; text-align: left; }
+.tt-diff-actions { display: flex; gap: .5rem; margin-top: .5rem; }
 .tt-deroga-help { margin: 0 0 .5rem; font-size: .85rem; }
 .tt-quick-btn { font-size: .75rem; padding: .1rem .4rem; }

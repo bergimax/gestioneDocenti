@@ -207,6 +207,7 @@ class ConflictDecision(models.Model):
 
 class JobKind(models.TextChoices):
     GENERATE = "GENERATE", "Generazione"
+    REPAIR = "REPAIR", "Sostituzione"
 
 
 class JobStatus(models.TextChoices):

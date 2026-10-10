@@ -164,3 +164,10 @@ def run_job(job_id):
 @task
 def run_solve_job(job_id):
     run_job(job_id)
+
+
+@task
+def run_repair_job(job_id):
+    from .repair import run_repair  # repair imports this module
+
+    run_repair(job_id)

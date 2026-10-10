@@ -30,5 +30,25 @@ urlpatterns = [
         views.timetable_quick_action,
         name="timetable_quick_action",
     ),
+    path(
+        "orario/<str:week>/sostituzione/",
+        views.timetable_repair,
+        name="timetable_repair",
+    ),
+    path(
+        "orario/<str:week>/sostituzione/stato/",
+        views.timetable_repair_status,
+        name="timetable_repair_status",
+    ),
+    path(
+        "orario/<str:week>/sostituzione/<int:job_id>/conferma/",
+        views.timetable_repair_confirm,
+        name="timetable_repair_confirm",
+    ),
+    path(
+        "orario/<str:week>/sostituzione/<int:job_id>/annulla/",
+        views.timetable_repair_dismiss,
+        name="timetable_repair_dismiss",
+    ),
     path("orario/<str:week>/stato/", views.timetable_job, name="timetable_job"),
 ]

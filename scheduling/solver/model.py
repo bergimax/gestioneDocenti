@@ -15,6 +15,7 @@ from .context import (
     AUTHORIZE_FRIDAY_LATE_START,
     AUTHORIZE_SHORT_PRATICA_BLOCK,
     AUTHORIZE_SINGLE_CLASSE_DAY,
+    CHANGE_WEIGHT,
     CLASSE_DOUBLE_BOOKING,
     CLASSE_EARLY_START,
     CLASSE_LATE_START,
@@ -236,7 +237,12 @@ def _solve_mode(ctx, soft_weights, mode, pinned, probe=None) -> SolveResult:
                 m.add(occupied[h] <= max(1, pins[h]))  # H1b
             # H2 + H2b + H2c: one contiguous block of exactly `cap` lessons,
             # starting no earlier than the class's minimum start hour.
+            blocked = {h for bd, h in ctx.blocked_cells.get(class_id, ()) if bd == d}
             starts = list(range(min_hour, HOURS - cap + 1)) if cap else []
+            # A block must not cover a cell that has to stay empty.
+            starts = [s for s in starts if not any(s <= h < s + cap for h in blocked)]
+            for h in blocked:
+                _guard(probe, ("cap", class_id, d), m.add(occupied[h] == 0))
             if relaxed:
                 # The block must also cover the pinned hours.
                 starts = [
@@ -373,11 +379,13 @@ def _solve_mode(ctx, soft_weights, mode, pinned, probe=None) -> SolveResult:
         soft_weights,
         soft,
     )
-    if penalties or soft or unfilled:
+    changes = _change_terms(ctx, m, x)
+    if penalties or soft or unfilled or changes:
         m.minimize(
             _sum(RELAX_WEIGHT * var for var, _ in penalties)
             + _sum(weight * var for var, weight, *_ in soft)
             + _sum(FIXED_PENALTY_WEIGHT * var for var, *_ in unfilled)
+            + _sum(changes)
         )
 
     solver = cp_model.CpSolver()
@@ -435,6 +443,25 @@ def _solve_mode(ctx, soft_weights, mode, pinned, probe=None) -> SolveResult:
         level,
         conflict_items=build_conflict_items(violations, conflicts, ctx, lessons),
     )
+
+
+def _change_terms(ctx, m, x):
+    """Repair mode: CHANGE_WEIGHT per cell that differs from the current timetable.
+
+    Not a penalty term of the quality score: it is the price of touching the
+    timetable, not a defect of it. Also hints the solver at the current lessons.
+    """
+    if ctx.current_lessons is None:
+        return []
+    current = {(le.assignment_id, le.day, le.hour) for le in ctx.current_lessons}
+    terms = []
+    for key, var in x.items():
+        m.add_hint(var, 1 if key in current else 0)
+        if key in current:
+            terms.append(CHANGE_WEIGHT * (1 - var))
+        else:
+            terms.append(CHANGE_WEIGHT * var)
+    return terms
 
 
 def _pin_lessons(ctx, mode, pinned, by_key, shadow, x, m):

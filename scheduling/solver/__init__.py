@@ -41,9 +41,27 @@ from .context import (
     SolveStatus,
 )
 from .model import NO_COMPLETE_MESSAGE, solve
+from .repair import (
+    CLASS_CLOSED,
+    SLOT_REMOVED,
+    TEACHER_ABSENT,
+    Change,
+    Perturbation,
+    affected_lessons,
+    apply_perturbation,
+    diff_lessons,
+)
 from .weights import quality, resolve_weights, scaled_weight, scarcity_multiplier
 
 __all__ = [
+    "CLASS_CLOSED",
+    "SLOT_REMOVED",
+    "TEACHER_ABSENT",
+    "Change",
+    "Perturbation",
+    "affected_lessons",
+    "apply_perturbation",
+    "diff_lessons",
     "CLASSE_DOUBLE_BOOKING",
     "CLASSE_EARLY_START",
     "CLASSE_OVER_CAPACITY",
