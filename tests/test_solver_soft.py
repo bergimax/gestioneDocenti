@@ -458,6 +458,28 @@ def test_s5_two_hours_with_one_class_is_fine():
     assert of(solved(ctx), SINGLE_CLASSE_DAY) == []
 
 
+def test_s5_two_hours_with_a_class_that_has_more_lessons_is_fine():
+    # The day has room for three hours, but T gives only two of them.
+    ctx = make(
+        [A(1, "T", "A", 2), A(2, "U", "A", 1), A(3, "T", "B", 0)],
+        {"A": day_cap(MON, 3), "B": day_cap(MON, 0)},
+    )
+    res = solved(ctx)
+    assert len(hours_of(res, 1)) == 2
+    assert of(res, SINGLE_CLASSE_DAY) == []
+
+
+def test_s5_a_day_shared_with_another_class_is_not_a_single_class_day():
+    # T has three hours with A and one with B the same day: not "one class only".
+    ctx = make(
+        [A(1, "T", "A", 3), A(2, "T", "B", 1)],
+        {"A": day_cap(MON, 3), "B": day_cap(MON, 1)},
+    )
+    res = solved(ctx)
+    assert len(hours_of(res, 1)) == 3 and len(hours_of(res, 2)) == 1
+    assert of(res, SINGLE_CLASSE_DAY) == []
+
+
 def test_s5_avoided_when_the_day_can_be_shared():
     ctx = make(
         [A(1, "T", "A"), A(2, "U", "A"), A(3, "T", "B"), A(4, "V", "B")],
