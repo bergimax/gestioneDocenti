@@ -45,6 +45,10 @@ def can_generate(user, obj=None):
     return _allowed(user, ADMIN_ONLY)
 
 
+def can_move_lesson(user, obj=None):
+    return _allowed(user, ADMIN_ONLY)
+
+
 def can_run_setup(user, obj=None):
     return _allowed(user, ADMIN_ONLY)
 
@@ -67,6 +71,7 @@ PREDICATES = (
     can_edit_availability,
     can_manage_availability_links,
     can_generate,
+    can_move_lesson,
     can_run_setup,
     can_edit_school_data,
     can_edit_teachers,

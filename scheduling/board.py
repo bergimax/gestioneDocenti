@@ -78,6 +78,7 @@ def build_board(school, week_start, timetable):
         key = (class_id, slot.day, slot.start_hour)
         return {
             "kind": "lesson",
+            "slot_id": slot.pk,
             "subject": slot.subject.name,
             "teacher": surname(slot.teacher),
             "paired": slot.paired,
@@ -108,6 +109,7 @@ def build_board(school, week_start, timetable):
                     cell = {"kind": "stage" if stage else "empty"}
                     cell["conflict"] = (school_class.pk, day, hour) in by_class
                 cell["hour"] = hour
+                cell["day"] = day
                 cells.append(cell)
             rows.append({"school_class": school_class, "cells": cells})
         days.append(

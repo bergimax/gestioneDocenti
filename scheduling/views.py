@@ -1,11 +1,17 @@
 import datetime
+import re
 
 from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET, require_POST
 
 from availability.services import school_weeks
-from projects.permissions import can_generate, can_view_timetable, permission_required
+from projects.permissions import (
+    can_generate,
+    can_move_lesson,
+    can_view_timetable,
+    permission_required,
+)
 from school.selectors import current_school, today
 
 from .board import (
@@ -17,12 +23,15 @@ from .board import (
 from .jobs import GenerationRefused, enqueue_generation
 from .models import (
     ACTIVE_JOB_STATUSES,
+    Day,
     JobKind,
     JobStatus,
     SolveJob,
     Timetable,
     TimetableState,
 )
+from .moves import InvalidMove, MoveRejected, move_lesson
+from .services import TimetableLocked
 
 TPL = "scheduling/"
 NO_TIMETABLE_TOKEN = "-1"
@@ -63,7 +72,7 @@ def _version_token(timetable):
     return NO_TIMETABLE_TOKEN if timetable is None else str(timetable.version)
 
 
-def _body_context(school, week, user, oob=False):
+def _body_context(school, week, user, oob=False, move_error=None):
     timetable = _timetable(school, week)
     context = {
         "week": week,
@@ -71,14 +80,18 @@ def _body_context(school, week, user, oob=False):
         "token": _version_token(timetable),
         "oob": oob,
         "can_generate": can_generate(user),
+        "move_error": move_error,
+        "can_move": False,
     }
     if timetable is not None:
+        approved = timetable.state == TimetableState.APPROVATO
         context.update(
+            can_move=can_move_lesson(user) and not approved,
             days=build_board(school, week["start"], timetable),
             conflict_list=conflict_descriptions(timetable.conflicts),
             best_effort=is_best_effort(timetable.conflicts),
             no_complete_message=NO_COMPLETE_MESSAGE,
-            approved=timetable.state == TimetableState.APPROVATO,
+            approved=approved,
         )
     return context
 
@@ -121,7 +134,12 @@ def timetable_page(request):
     week = _parse_week(school, raw) if raw is not None else _default_week(weeks)
     if week is None:
         return render(request, TPL + "page.html", {"school": school, "weeks": []})
-    context = {"school": school, "weeks": weeks, "week": week}
+    context = {
+        "school": school,
+        "weeks": weeks,
+        "week": week,
+        "load_move_js": can_move_lesson(request.user),
+    }
     context.update(_job_context(school, week, request.user))
     context.update(_body_context(school, week, request.user))
     return render(request, TPL + "page.html", context)
@@ -163,3 +181,50 @@ def timetable_generate(request, week):
     except GenerationRefused as exc:
         return _job_response(request, school, week, status=409, error=str(exc))
     return _job_response(request, school, week)
+
+
+MSG_APPROVED = "La settimana è approvata: le lezioni non si possono spostare."
+MSG_BAD_INPUT = "Dati dello spostamento non validi."
+_DIGITS = re.compile(r"[0-9]{1,9}")
+
+
+def _int_field(post, name):
+    raw = post.get(name, "")
+    if not _DIGITS.fullmatch(raw):
+        raise InvalidMove(f"{MSG_BAD_INPUT} Campo non valido: {name}.")
+    return int(raw)
+
+
+def _parse_move(post):
+    slot_id = _int_field(post, "slot_id")
+    version = _int_field(post, "version")
+    hour = _int_field(post, "ora_inizio")
+    if not 8 <= hour <= 13:
+        raise InvalidMove("L'ora di inizio deve essere compresa tra 8 e 13.")
+    day = post.get("giorno", "")
+    if day not in Day.values:
+        raise InvalidMove("Giorno non valido: sono ammessi solo i giorni feriali.")
+    return slot_id, day, hour, version
+
+
+@permission_required(can_move_lesson)
+@require_POST
+def timetable_move(request, week):
+    """Move one lesson; always answers with the full, current grid."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    timetable = _timetable(school, week)
+    if timetable is None:
+        raise Http404("Nessun orario per questa settimana.")
+    status, error = 200, None
+    try:
+        if timetable.state == TimetableState.APPROVATO:
+            raise TimetableLocked(timetable.pk)
+        slot_id, day, hour, version = _parse_move(request.POST)
+        move_lesson(timetable.pk, slot_id, day, hour, version)
+    except MoveRejected as exc:
+        status, error = exc.status, exc.message
+    except TimetableLocked:
+        status, error = 409, MSG_APPROVED
+    context = _body_context(school, week, request.user, move_error=error)
+    return render(request, TPL + "_body.html", context, status=status)

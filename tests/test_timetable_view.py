@@ -382,7 +382,7 @@ def test_conflicting_lesson_is_marked_and_listed(world, admin):
     )
     text = html(admin.get(PAGE))
     assert text.count('data-conflict="true"') == 1
-    marked = re.search(r'<td class="tt-lesson tt-conflict" data-conflict="true">', text)
+    marked = re.search(r'<td class="tt-lesson tt-conflict" data-conflict="true"[ >]', text)
     assert marked
     assert "Conflitti (1)" in text
     assert "Il docente ROSSI e doppiamente prenotato" in text
@@ -428,7 +428,7 @@ def test_conflict_on_other_day_or_hour_does_not_mark(world, admin):
         ],
     )
     text = html(admin.get(PAGE))
-    assert '<td class="tt-lesson">' in text
+    assert '<td class="tt-lesson" data-day="LUNEDI"' in text
     assert "tt-lesson tt-conflict" not in text
     assert "Conflitti (2)" in text
 
@@ -457,7 +457,7 @@ def test_unfilled_conflict_marks_the_empty_cell_and_shows_message(world, admin):
         ],
     )
     text = html(admin.get(PAGE))
-    assert '<td class="tt-free tt-conflict" data-conflict="true">' in text
+    assert '<td class="tt-free tt-conflict" data-conflict="true" ' in text
     assert "Nessun orario completo possibile" in text
 
 

@@ -48,9 +48,11 @@ def infeasible_message():
     return "Nessun orario possibile per questa settimana."
 
 
-def solve_exclusive(ctx):
+def solve_exclusive(ctx, pinned=None):
     """Run the solver, one at a time in this process."""
     with _SOLVE_LOCK:
+        if pinned:
+            return solve(ctx, pinned=pinned)
         return solve(ctx)
 
 

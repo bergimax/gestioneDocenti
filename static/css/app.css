@@ -179,3 +179,6 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-stage { background: #ffff00; border-color: #c9a800; font-weight: 700; }
 .tt-conflict { border: 2px dashed #b42318; background: #fde8e6; }
 .tt-flag { color: #b42318; font-weight: 700; }
+.tt-draggable { cursor: grab; touch-action: none; }
+.tt-ghost { opacity: .4; }
+.tt-grid td[data-drop] { min-width: 5.5rem; height: 2.6rem; }
