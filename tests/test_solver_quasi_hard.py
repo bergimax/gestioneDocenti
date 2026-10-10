@@ -74,7 +74,7 @@ def test_h4_rigid_when_only_free_cell_is_unavailable():
     # violation, even though the model has an override available.
     free = cells(MON, [0, 1, 2, 4, 5])
     ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 6)}, availability={"T": free})
-    res = solve(ctx)
+    res = solve(ctx, fallback=False)
     assert res.status == SolveStatus.INFEASIBLE
     assert res.conflicts == []
 
@@ -136,7 +136,7 @@ def test_h4_assunto_ignores_an_unavailable_grid():
 
 def test_h4_contractor_without_grid_is_unavailable_all_week():
     ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 2)}, availability={})
-    assert solve(ctx).status == SolveStatus.INFEASIBLE
+    assert solve(ctx, fallback=False).status == SolveStatus.INFEASIBLE
 
 
 def test_h4_override_availability_frees_a_contractor_without_grid():

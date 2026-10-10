@@ -26,6 +26,16 @@ ORE_TARGET_DEVIATION = "ore_target_deviation"  # S3
 CONTRACTOR_GAP = "contractor_gap"  # S4
 SINGLE_CLASSE_DAY = "single_classe_day"  # S5
 
+# Fixed 1500 penalties (specs 9.4, 9.7): uncovered hours in best-effort mode and
+# what a pinned lesson breaks in forced mode.
+CLASSE_UNFILLED = "classe_unfilled"
+CLASSE_OVER_CAPACITY = "classe_over_capacity"
+CLASSE_DOUBLE_BOOKING = "classe_double_booking"
+DOCENTE_DOUBLE_BOOKING = "docente_double_booking"
+MONTE_ORE_EXCEEDED = "monte_ore_exceeded"
+CLASSE_EARLY_START = "classe_early_start"
+CLASSE_STAGE_DAY = "classe_stage_day"
+
 DEFAULT_SOFT_WEIGHTS = {
     CLASSE_LATE_START: 100,
     TEORIA_CONSECUTIVE: 10,
@@ -137,6 +147,8 @@ class ScheduleContext:
     availability_relaxed: bool = False
     derogations: list[Derogation] = field(default_factory=list)
     targets: dict[Id, int] = field(default_factory=dict)
+    # How each target was derived (free text, shown in the S3 conflict).
+    target_sources: dict[Id, str] = field(default_factory=dict)
     timeout_seconds: float = 60.0
 
 
@@ -169,6 +181,8 @@ class Penalty:
     day: int | None
     weight: int
     value: int = 1
+    hour: int | None = None
+    assignment_id: Id | None = None
 
 
 @dataclass(frozen=True)
@@ -184,6 +198,15 @@ class SolveResult:
     n_penalties: int = 0
     quality_score: float = 0.0
     quality_level: str = "C"
+    # Set when the week could not be completed (specs 9.7).
+    message: str = ""
+    # Every violated penalty as a specs 9.8 conflict dict (see conflicts.py);
+    # ``conflicts`` above keeps only the quasi-hard overrides.
+    conflict_items: list[dict] = field(default_factory=list, compare=False)
+
+    @property
+    def slots(self) -> list[Lesson]:
+        return self.lessons
 
     @property
     def n_soft_conflicts(self) -> int:

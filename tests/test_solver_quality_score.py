@@ -77,7 +77,8 @@ def test_no_penalty_term_at_all_is_100_and_a():
 
 def test_infeasible_has_score_0_level_c_and_no_conflicts():
     # Full-day class with a teacher who can only give 2 hours (H6 + H2).
-    res = solve(make([A(1, "T", "A", 2)], {"A": day_cap(MON, 6)}))
+    ctx = make([A(1, "T", "A", 2)], {"A": day_cap(MON, 6)})
+    res = solve(ctx, fallback=False)  # the rigid model alone
     assert res.status == SolveStatus.INFEASIBLE
     assert (res.quality_score, res.quality_level) == (0.0, "C")
     assert res.n_soft_conflicts == 0

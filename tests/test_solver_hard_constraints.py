@@ -1,5 +1,6 @@
 import itertools
 from collections import defaultdict
+from functools import partial
 
 from scheduling.solver import (
     ASSUNTO,
@@ -8,8 +9,11 @@ from scheduling.solver import (
     Pairing,
     ScheduleContext,
     SolveStatus,
-    solve,
 )
+from scheduling.solver import solve as solve_with_fallback
+
+# These tests cover the rigid model; the fallback chain is in test_solver_fallback.
+solve = partial(solve_with_fallback, fallback=False)
 
 
 def day0_only(classes, cap, **extra):

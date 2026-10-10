@@ -2,25 +2,36 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
+from collections.abc import Iterable
+from dataclasses import replace
 
 from ortools.sat.python import cp_model
 
+from .conflicts import build_conflict_items
 from .context import (
     ASSUNTO,
     AUTHORIZE_EARLY_EXIT,
     AUTHORIZE_FRIDAY_LATE_START,
     AUTHORIZE_SHORT_PRATICA_BLOCK,
     AUTHORIZE_SINGLE_CLASSE_DAY,
+    CLASSE_DOUBLE_BOOKING,
+    CLASSE_EARLY_START,
     CLASSE_LATE_START,
+    CLASSE_OVER_CAPACITY,
+    CLASSE_STAGE_DAY,
+    CLASSE_UNFILLED,
     CONTRACTOR_GAP,
     CONTRATTO,
     DAYS,
+    DOCENTE_DOUBLE_BOOKING,
     EXACT_TARGET_WEIGHT,
     FIRST_HOUR,
+    FIXED_PENALTY_WEIGHT,
     FORCE_3_HOURS_THEORY,
     HOURS,
     MAX_HOURS_PER_CLASSE_DAY,
+    MONTE_ORE_EXCEEDED,
     ORE_TARGET_DEVIATION,
     OVERRIDE_AVAILABILITY,
     PRATICA,
@@ -35,6 +46,13 @@ from .context import (
     SolveStatus,
 )
 from .weights import quality, resolve_weights, scaled_weight
+
+RIGID = "rigid"
+BEST_EFFORT = "best_effort"
+FORCED = "forced"
+NO_COMPLETE_MESSAGE = (
+    "Nessun orario completo possibile: alcune ore restano senza docente."
+)
 
 
 def _sum(terms):
@@ -74,9 +92,37 @@ def _hour_label(h: int) -> str:
     return f"{FIRST_HOUR + h:02d}:00"
 
 
-def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
-    """Solve the week; ``weights`` is the per-run soft weight map (specs 9.4)."""
+def solve(
+    ctx: ScheduleContext,
+    weights: dict | None = None,
+    pinned: Iterable[Lesson] | None = None,
+    fallback: bool = True,
+) -> SolveResult:
+    """Solve the week with the fallback chain of specs 9.7.
+
+    ``weights`` is the per-run soft weight map (specs 9.4). Without ``pinned``
+    lessons the rigid model (H2 exact capacity) runs first; if it is
+    INFEASIBLE the best-effort model runs, where every uncovered hour is a
+    1500 penalty. With ``pinned`` lessons (manual edits) the forced model runs:
+    the pinned lessons are kept unchanged and what they break is reported as
+    conflicts instead of being an error. ``fallback=False`` stops after the
+    rigid model (an INFEASIBLE week is then returned as such).
+    """
     soft_weights = resolve_weights(weights)  # rejects bad input before solving
+    pinned = list(pinned or [])
+    if pinned:
+        result = _solve_mode(ctx, soft_weights, FORCED, pinned)
+    else:
+        result = _solve_mode(ctx, soft_weights, RIGID, [])
+        if fallback and result.status == SolveStatus.INFEASIBLE:
+            result = _solve_mode(ctx, soft_weights, BEST_EFFORT, [])
+    if any(v.kind == CLASSE_UNFILLED for v in result.violations):
+        result = replace(result, message=NO_COMPLETE_MESSAGE)
+    return result
+
+
+def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
+    relaxed = mode != RIGID
     classes = (
         {a.class_id for a in ctx.assignments}
         | set(ctx.class_capacity)
@@ -92,6 +138,7 @@ def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
         )
 
     by_key = {(a.teacher_id, a.class_id, a.subject_id): a for a in ctx.assignments}
+    by_id = {a.id: a for a in ctx.assignments}
     by_class = defaultdict(list)
     by_teacher = defaultdict(list)
     for a in ctx.assignments:
@@ -118,7 +165,11 @@ def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
             for h in range(HOURS):
                 m.add(x[a.id, d, h] == x[b.id, d, h])
 
+    pin, fixed = _pin_lessons(ctx, mode, pinned, by_key, shadow, x, m)
+    pin_count = Counter((by_id[i].class_id, d, h) for i, d, h in pin)
+
     penalties = []  # (var, record) - one override variable per violation
+    unfilled = []  # (var, class_id, day, hour or None): best-effort/forced holes
     pick_by_class_day = {}
 
     for class_id in classes:
@@ -130,39 +181,78 @@ def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
         for d in range(DAYS):
             cap = _capacity(ctx, class_id, d)
             occupied = [_sum(x[a.id, d, h] for a in group) for h in range(HOURS)]
+            pins = [pin_count[class_id, d, h] for h in range(HOURS)]
             for h in range(HOURS):
-                m.add(occupied[h] <= 1)  # H1b
+                m.add(occupied[h] <= max(1, pins[h]))  # H1b
             # H2 + H2b + H2c: one contiguous block of exactly `cap` lessons,
             # starting no earlier than the class's minimum start hour.
-            if cap == 0:  # H5 / closure
+            starts = list(range(min_hour, HOURS - cap + 1)) if cap else []
+            if relaxed:
+                # The block must also cover the pinned hours.
+                starts = [
+                    s
+                    for s in starts
+                    if all(s <= h < s + cap for h in range(HOURS) if pins[h])
+                ]
+                if max(pins) > 1:
+                    starts = []
+            if cap == 0 and not relaxed:  # H5 / closure
                 for h in range(HOURS):
                     m.add(occupied[h] == 0)
                 continue
-            starts = list(range(min_hour, HOURS - cap + 1))
-            if not starts:
+            if not starts and not relaxed:
                 m.add_bool_or([])  # unsatisfiable: the block cannot fit
+                continue
+            if not starts:
+                # No contiguous block can hold the day (pinned lessons break
+                # it, or it cannot fit): the lessons beyond the pinned ones
+                # fill what they can and the rest is uncovered.
+                for h in range(min_hour):
+                    m.add(occupied[h] <= pins[h])
+                need = max(0, cap - sum(1 for p in pins if p))
+                extra = _sum(occupied) - sum(pins)
+                if need:
+                    unf = m.new_int_var(0, need, f"unf_{class_id}_{d}")
+                    m.add(extra + unf == need)
+                    unfilled.append((unf, class_id, d, None))
+                else:
+                    m.add(extra == 0)
                 continue
             pick = {s: m.new_bool_var(f"blk_{class_id}_{d}_{s}") for s in starts}
             m.add_exactly_one(pick.values())
             pick_by_class_day[class_id, d] = pick
             for h in range(HOURS):
-                m.add(
-                    occupied[h] == _sum(v for s, v in pick.items() if s <= h < s + cap)
-                )
+                cover = _sum(v for s, v in pick.items() if s <= h < s + cap)
+                if relaxed:
+                    hole = m.new_bool_var(f"unf_{class_id}_{d}_{h}")
+                    m.add(occupied[h] + hole == cover)
+                    unfilled.append((hole, class_id, d, h))
+                else:
+                    m.add(occupied[h] == cover)
+
+    pin_teacher = Counter(
+        (by_id[i].teacher_id, d, h) for i, d, h in pin if i not in shadow
+    )
+    pin_week = Counter(i for i, _, _ in pin)
 
     # H1: a teacher is in one place per hour (a pair counts once).
     for group in by_teacher.values():
         counted = [a for a in group if a.id not in shadow]
         for d in range(DAYS):
             for h in range(HOURS):
-                m.add(_sum(x[a.id, d, h] for a in counted) <= 1)
+                m.add(
+                    _sum(x[a.id, d, h] for a in counted)
+                    <= max(
+                        1, pin_teacher[counted[0].teacher_id, d, h] if counted else 1
+                    )
+                )
 
     # H6: ASSUNTO hours per assignment never exceed the residual.
     for a in ctx.assignments:
         if ctx.teacher_types.get(a.teacher_id, ASSUNTO) == ASSUNTO:
             m.add(
                 _sum(x[a.id, d, h] for d in range(DAYS) for h in range(HOURS))
-                <= max(0, a.residual_hours)
+                <= max(0, a.residual_hours, pin_week[a.id])
             )
 
     # H7: excluded teacher-days.
@@ -171,9 +261,11 @@ def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
             for d in days:
                 if 0 <= d < DAYS:
                     for h in range(HOURS):
-                        m.add(x[a.id, d, h] == 0)
+                        if (a.id, d, h) not in pin:
+                            m.add(x[a.id, d, h] == 0)
 
     # H8: weekly cap per teacher.
+    cells = [(d, h) for d in range(DAYS) for h in range(HOURS)]
     for teacher_id, cap in ctx.weekly_caps.items():
         counted = [a for a in by_teacher.get(teacher_id, []) if a.id not in shadow]
         m.add(
@@ -183,7 +275,7 @@ def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
                 for d in range(DAYS)
                 for h in range(HOURS)
             )
-            <= max(0, cap)
+            <= max(0, cap, sum(pin_teacher[teacher_id, d, h] for d, h in cells))
         )
 
     h9_active = set()  # (class, day) where H9 already speaks for the late start
@@ -198,8 +290,9 @@ def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
         pick_by_class_day,
         penalties,
         h9_active,
+        pin,
     )
-    soft = []  # (var, weight, kind, class_id, teacher_id, day)
+    soft = []  # (var, weight, kind, class_id, teacher_id, day, hour, assignment)
     _add_soft(
         ctx,
         m,
@@ -212,10 +305,11 @@ def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
         soft_weights,
         soft,
     )
-    if penalties or soft:
+    if penalties or soft or unfilled:
         m.minimize(
             _sum(RELAX_WEIGHT * var for var, _ in penalties)
             + _sum(weight * var for var, weight, *_ in soft)
+            + _sum(FIXED_PENALTY_WEIGHT * var for var, *_ in unfilled)
         )
 
     solver = cp_model.CpSolver()
@@ -242,11 +336,25 @@ def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
         if solver.value(var)
     ]
     violations += [
-        Penalty(kind, class_id, teacher_id, day, weight, solver.value(var))
-        for var, weight, kind, class_id, teacher_id, day in soft
+        Penalty(kind, class_id, teacher_id, day, weight, solver.value(var), hr, aid)
+        for var, weight, kind, class_id, teacher_id, day, hr, aid in soft
         if solver.value(var)
     ]
-    n_penalties = len(penalties) + len(soft)
+    violations += [
+        Penalty(
+            CLASSE_UNFILLED,
+            class_id,
+            None,
+            day,
+            FIXED_PENALTY_WEIGHT,
+            solver.value(var),
+            hr,
+        )
+        for var, class_id, day, hr in unfilled
+        if solver.value(var)
+    ]
+    violations += fixed
+    n_penalties = len(penalties) + len(soft) + len(unfilled) + len(fixed)
     score, level = quality(True, n_penalties, len(violations))
     return SolveResult(
         status,
@@ -257,7 +365,94 @@ def solve(ctx: ScheduleContext, weights: dict | None = None) -> SolveResult:
         n_penalties,
         score,
         level,
+        conflict_items=build_conflict_items(violations, conflicts, ctx, lessons),
     )
+
+
+def _pin_lessons(ctx, mode, pinned, by_key, shadow, x, m):
+    """Fix the pinned lessons to 1 and return them with what they break.
+
+    Returns ``(pin, fixed)``: the set of pinned ``(assignment, day, hour)``
+    cells (a paired lesson pins both of its assignments) and the constant
+    ``Penalty`` list of the violations the pinned lessons cause by themselves
+    (capacity, double booking, hours budget, start hour, stage; specs 9.7).
+    """
+    if mode != FORCED:
+        return set(), []
+    by_id = {a.id: a for a in ctx.assignments}
+    partner = {}
+    for p in ctx.pairings:
+        a = by_key[p.teacher_id, p.class_a, p.subject_id]
+        b = by_key[p.teacher_id, p.class_b, p.subject_id]
+        partner[a.id], partner[b.id] = b.id, a.id
+    pin = set()
+    for le in pinned:
+        if le.assignment_id not in by_id:
+            raise ValueError(f"pinned lesson for an unknown assignment: {le}")
+        if not (0 <= le.day < DAYS and 0 <= le.hour < HOURS):
+            raise ValueError(f"pinned lesson outside the week grid: {le}")
+        pin.add((le.assignment_id, le.day, le.hour))
+        if le.assignment_id in partner:
+            pin.add((partner[le.assignment_id], le.day, le.hour))
+    for key in pin:
+        m.add(x[key] == 1)
+
+    fixed = []
+
+    def add(kind, class_id, teacher_id, day, hour, value=1):
+        fixed.append(
+            Penalty(kind, class_id, teacher_id, day, FIXED_PENALTY_WEIGHT, value, hour)
+        )
+
+    by_class_day = defaultdict(list)  # (class, day) -> [(hour, assignment)]
+    by_teacher_hour = defaultdict(list)
+    by_assignment = defaultdict(list)
+    for i, d, h in sorted(pin, key=lambda k: (k[1], k[2], str(k[0]))):
+        a = by_id[i]
+        by_class_day[a.class_id, d].append((h, a))
+        if i not in shadow:
+            by_teacher_hour[a.teacher_id, d, h].append(a)
+        by_assignment[i].append((d, h))
+    for (class_id, d), cells in by_class_day.items():
+        hours = sorted({h for h, _ in cells})
+        first = {}
+        for h, a in cells:
+            first.setdefault(h, a)
+        if d in ctx.stage_days.get(class_id, ()):
+            for h in hours:
+                add(CLASSE_STAGE_DAY, class_id, first[h].teacher_id, d, h)
+            continue
+        cap = _capacity(ctx, class_id, d)
+        min_hour = max(
+            0,
+            min(HOURS - 1, ctx.class_min_start.get(class_id, FIRST_HOUR) - FIRST_HOUR),
+        )
+        for h in hours:
+            if h < min_hour:
+                add(CLASSE_EARLY_START, class_id, first[h].teacher_id, d, h)
+        for h in hours[cap:]:
+            add(CLASSE_OVER_CAPACITY, class_id, first[h].teacher_id, d, h)
+        for h in hours:
+            n = sum(1 for hh, _ in cells if hh == h)
+            if n > 1:
+                add(CLASSE_DOUBLE_BOOKING, class_id, first[h].teacher_id, d, h, n - 1)
+    for (teacher_id, d, h), group in by_teacher_hour.items():
+        if len(group) > 1:
+            add(
+                DOCENTE_DOUBLE_BOOKING,
+                group[0].class_id,
+                teacher_id,
+                d,
+                h,
+                len(group) - 1,
+            )
+    for i, cells in by_assignment.items():
+        a = by_id[i]
+        if ctx.teacher_types.get(a.teacher_id, ASSUNTO) != ASSUNTO:
+            continue
+        for d, h in sorted(cells)[max(0, a.residual_hours) :]:
+            add(MONTE_ORE_EXCEEDED, a.class_id, a.teacher_id, d, h)
+    return pin, fixed
 
 
 def _add_soft(
@@ -276,7 +471,7 @@ def _add_soft(
 
     def flag(var, name, class_id, teacher_id, day):
         weight = max(1, round(weights[name]))
-        soft.append((var, weight, name, class_id, teacher_id, day))
+        soft.append((var, weight, name, class_id, teacher_id, day, None, None))
 
     # S1: a class with lessons on a day starts at 08:00; a full day must anyway,
     # and on a Friday where H9 is active H9 already speaks for the late start.
@@ -332,7 +527,18 @@ def _add_soft(
         weight = scaled_weight(
             weights[ORE_TARGET_DEVIATION] + EXACT_TARGET_WEIGHT, ctx, a.teacher_id
         )
-        soft.append((dev, weight, ORE_TARGET_DEVIATION, a.class_id, a.teacher_id, None))
+        soft.append(
+            (
+                dev,
+                weight,
+                ORE_TARGET_DEVIATION,
+                a.class_id,
+                a.teacher_id,
+                None,
+                None,
+                a.id,
+            )
+        )
 
     # S4: a contractor has no real gap hour (free, with lessons before and after).
     if weights[CONTRACTOR_GAP] > 0:
@@ -365,7 +571,9 @@ def _add_soft(
                     m.add(g <= after)
                     m.add(g <= 1 - busy[h])
                     m.add(g >= before + after - busy[h] - 1)
-                    soft.append((g, weight, CONTRACTOR_GAP, None, teacher_id, d))
+                    soft.append(
+                        (g, weight, CONTRACTOR_GAP, None, teacher_id, d, h, None)
+                    )
 
     # S5: a teacher with 2+ classes does not spend a whole day (3+ hours) with one.
     if weights[SINGLE_CLASSE_DAY] > 0:
@@ -408,6 +616,7 @@ def _add_quasi_hard(
     pick_by_class_day,
     penalties,
     h9_active,
+    pin=frozenset(),
 ):
     """H4, H9, H10, H11: each violation is an override var weighted RELAX_WEIGHT."""
     assignment = {a.id: a for a in ctx.assignments}
@@ -454,7 +663,7 @@ def _add_quasi_hard(
             for h in range(HOURS):
                 if (d, h) in free:
                     continue
-                if not ctx.availability_relaxed:
+                if not ctx.availability_relaxed and (a.id, d, h) not in pin:
                     m.add(x[a.id, d, h] == 0)
                 elif a.id not in shadow:
                     penalties.append(
