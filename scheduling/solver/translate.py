@@ -287,12 +287,9 @@ class _Translator:
     def deroghe(self, avail, caps) -> list[dict]:
         """`override_availability` for each contractor day that is part of a core."""
         needed = {c for c, _ in caps}
-        suggestions, seen = [], set()
+        suggestions = []
         for aid, day in avail:
             a = self.by_id[aid]
-            if (a.teacher_id, day) in seen:
-                continue
-            seen.add((a.teacher_id, day))
             class_id = next(
                 (
                     c

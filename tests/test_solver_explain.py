@@ -331,7 +331,10 @@ def test_cores_of_one_cause_seen_from_both_paired_classes_become_one_message():
         [{("cap", A, 0), ("avail", 1, 0)}, {("cap", B, 0), ("avail", 2, 0)}],
         **PAIRED,
     )
-    assert len(messages) == 1 and "1A" in messages[0] and "1B" in messages[0]
+    assert len(messages) == 1
+    assert (
+        "Le classi 1A (lunedì) e 1B (lunedì) richiedono in tutto 6 ore" in messages[0]
+    )
     assert len(deroghe) == 1
 
 
