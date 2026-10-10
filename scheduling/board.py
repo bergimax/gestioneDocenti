@@ -2,7 +2,7 @@
 
 import datetime
 
-from school.models import CalendarEntry, Class
+from school.models import CalendarEntry, Class, SubjectKind
 
 from .context import _is_stage
 from .models import Day, Slot
@@ -26,17 +26,32 @@ def surname(teacher):
     return parts[0] if parts else ""
 
 
+# Quasi-hard conflicts tied to a day, not to an hour: H4 (teacher unavailable)
+# and H11 (too many hours with one class) mark the teacher's lessons with that
+# class on that day, H10 (broken practical block) the practical lessons of the
+# class on that day.
+TEACHER_DAY_KINDS = {"H4", "H11"}
+PRATICA_DAY_KIND = "H10"
+
+
 def conflict_keys(conflicts):
     """Sets of (class_id, day, hour) and (teacher_id, day, hour) in conflict.
 
-    Only conflicts tied to one slot (`giorno` and `ore_slot`) mark cells; the
-    others appear in the list alone.
+    Conflicts tied to one slot (`giorno` and `ore_slot`) mark cells; the
+    day-level ones of TEACHER_DAY_KINDS fill `by_day` with (class_id,
+    teacher_id, day) and H10 fills `pratica_days` with (class_id, day).
+    The others appear in the list alone.
     """
-    by_class, by_teacher = set(), set()
+    by_class, by_teacher, by_day, pratica_days = set(), set(), set(), set()
     for c in conflicts or []:
         if not isinstance(c, dict):
             continue
         day, slot = c.get("giorno"), c.get("ore_slot")
+        if day is not None and slot is None and c.get("classe_id") is not None:
+            if c.get("kind") in TEACHER_DAY_KINDS and c.get("docente_id") is not None:
+                by_day.add((c["classe_id"], c["docente_id"], day))
+            elif c.get("kind") == PRATICA_DAY_KIND:
+                pratica_days.add((c["classe_id"], day))
         if day is None or not isinstance(slot, int):
             continue
         hour = FIRST_HOUR + slot
@@ -44,7 +59,7 @@ def conflict_keys(conflicts):
             by_class.add((c["classe_id"], day, hour))
         if c.get("docente_id") is not None:
             by_teacher.add((c["docente_id"], day, hour))
-    return by_class, by_teacher
+    return by_class, by_teacher, by_day, pratica_days
 
 
 def conflict_descriptions(conflicts):
@@ -67,7 +82,7 @@ def build_board(school, week_start, timetable):
     classes = list(Class.objects.filter(school=school).order_by("name", "pk"))
     dates = [week_start + datetime.timedelta(days=i) for i in range(5)]
     entries = list(CalendarEntry.objects.filter(school=school, date__in=dates))
-    by_class, by_teacher = conflict_keys(timetable.conflicts)
+    by_class, by_teacher, by_day, pratica_days = conflict_keys(timetable.conflicts)
 
     lessons = {}  # (class_id, day, hour) -> cell
     slots = list(
@@ -83,7 +98,12 @@ def build_board(school, week_start, timetable):
             "teacher": surname(slot.teacher),
             "paired": slot.paired,
             "conflict": key in by_class
-            or (slot.teacher_id, slot.day, slot.start_hour) in by_teacher,
+            or (slot.teacher_id, slot.day, slot.start_hour) in by_teacher
+            or (class_id, slot.teacher_id, slot.day) in by_day
+            or (
+                slot.subject.kind == SubjectKind.PRATICA
+                and (class_id, slot.day) in pratica_days
+            ),
         }
 
     for slot in slots:

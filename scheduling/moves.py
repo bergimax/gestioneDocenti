@@ -135,6 +135,10 @@ def move_lesson(timetable_id, slot_id, day, hour, version):
         ctx = dataclasses.replace(
             ctx,
             availability_relaxed=True,
+            # Evaluate exactly these lessons: with every teacher capped at the
+            # lessons pinned for them the solver cannot add any (filling an
+            # empty hour is a separate, explicit action).
+            weekly_caps={a.teacher_id: 0 for a in ctx.assignments},
             timeout_seconds=settings.SOLVER_TIMEOUT_SECONDS,
         )
         result = solve_exclusive(ctx, pinned=pinned)

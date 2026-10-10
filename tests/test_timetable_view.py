@@ -382,7 +382,9 @@ def test_conflicting_lesson_is_marked_and_listed(world, admin):
     )
     text = html(admin.get(PAGE))
     assert text.count('data-conflict="true"') == 1
-    marked = re.search(r'<td class="tt-lesson tt-conflict" data-conflict="true"[ >]', text)
+    marked = re.search(
+        r'<td class="tt-lesson tt-conflict" data-conflict="true"[ >]', text
+    )
     assert marked
     assert "Conflitti (1)" in text
     assert "Il docente ROSSI e doppiamente prenotato" in text
