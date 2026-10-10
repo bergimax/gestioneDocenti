@@ -490,3 +490,21 @@ def test_forced_paired_lesson_pins_both_classes():
     assert Lesson(2, MON, 3) in res.lessons
     # Only the late start of the pinned hour is reported, nothing structural.
     assert {i["kind"] for i in res.conflict_items} == {"classe_late_start"}
+
+
+def test_forced_paired_lesson_is_checked_in_both_classes():
+    ctx = make(
+        [A(1, "T", "A"), A(2, "T", "B")],
+        {"A": day_cap(MON, 1), "B": day_cap(MON, 0)},
+        pairings=[Pairing("A", "B", "S", "T")],
+    )
+    res = forced(ctx, (1, MON, 0))
+    (c,) = items(res, CLASSE_OVER_CAPACITY)
+    assert (c["classe_id"], c["ore_slot"]) == ("B", 0)
+
+
+@pytest.mark.parametrize("day, hour", [(5, 0), (-1, 0), (0, 6), (0, -1)])
+def test_forced_lesson_outside_the_grid_is_rejected(day, hour):
+    ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 1)})
+    with pytest.raises(ValueError):
+        solve(ctx, pinned=[Lesson(1, day, hour)])
