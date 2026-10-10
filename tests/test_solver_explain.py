@@ -545,3 +545,8 @@ def test_messages_have_no_ids_or_literal_names(ctx):
     assert not INTERNALS.search(text)
     for internal in (A, B, T, U):
         assert str(internal) not in text
+
+
+def test_a_single_residual_hour_is_singular():
+    text = only(explained(make([asg(1, T, A, residual=1)], {A: caps((0, 3))})))
+    assert "ha solo 1 ora residua" in text and "Mancano 2 ore" in text

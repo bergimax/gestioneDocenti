@@ -152,7 +152,7 @@ def test_infeasible_week_job_carries_the_explanation_and_the_best_effort(week):
     assert result["explanation_unavailable"] is False
     [text] = result["explanations"]
     assert "1A" in text and "lunedì" in text and "ROSSI MARIO" in text
-    assert "ha solo 1 ora residue" in text and "Mancano 1 ora" in text
+    assert "ha solo 1 ora residua" in text and "Mancano 1 ora" in text
     assert result["suggested_deroghe"] == []
     assert Timetable.objects.get().slots.count() == 1
 
@@ -208,7 +208,7 @@ def test_grid_lists_the_messages_above_the_grid(week, role):
     assert section < text.index('class="tt-day"')
     items = text[section : text.index("</section>", section)]
     assert items.count("<li>") == 1
-    assert "ROSSI MARIO" in items and "ha solo 1 ora residue" in items
+    assert "ROSSI MARIO" in items and "ha solo 1 ora residua" in items
     assert "<button" not in items and "<form" not in items
 
 
@@ -224,7 +224,7 @@ def test_grid_reads_the_stored_result_and_never_calls_the_solver(week):
         ),
     ):
         text = login("ADMIN").get(GRID).content.decode()
-    assert "ha solo 1 ora residue" in text
+    assert "ha solo 1 ora residua" in text
 
 
 def test_grid_of_a_feasible_week_shows_no_explanations(week):

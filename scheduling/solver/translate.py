@@ -27,6 +27,10 @@ def _ore(n: int) -> str:
     return f"{n} ora" if n == 1 else f"{n} ore"
 
 
+def _residue(n: int) -> str:
+    return "1 ora residua" if n == 1 else f"{n} ore residue"
+
+
 def _join(items: list[str]) -> str:
     if len(items) <= 1:
         return "".join(items)
@@ -262,7 +266,7 @@ class _Translator:
         ):
             residual = sum(self.residual(a) for a in mine)
             total = min(total, residual)
-            reasons.append(f"{who}: ha solo {_ore(residual)} residue")
+            reasons.append(f"{who}: ha solo {_residue(residual)}")
         return total
 
     def residual(self, assignment) -> int:
