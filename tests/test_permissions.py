@@ -18,6 +18,7 @@ MATRIX = {
     p.can_view_timetable: (True, True),
     p.can_view_school_data: (True, True),
     p.can_edit_availability: (True, True),
+    p.can_manage_availability_links: (True, True),
     p.can_generate: (True, False),
     p.can_run_setup: (True, False),
     p.can_edit_school_data: (True, False),

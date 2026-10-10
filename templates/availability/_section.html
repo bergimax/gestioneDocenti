@@ -15,6 +15,7 @@
     <button type="submit"{% if not has_previous %} disabled aria-describedby="av-copy-hint"{% endif %}>Copia dalla settimana precedente</button>
     {% if not has_previous %}<span id="av-copy-hint" class="hint">Prima settimana dell'anno: nessuna settimana precedente da copiare.</span>{% endif %}
   </form>
+  <p><a href="{% url 'availability_links' %}">Elenco link</a></p>
   {% if notice %}<div class="message message-info" role="status"><span>{{ notice }}</span></div>{% endif %}
   {% include "availability/_status.html" %}
   <p class="hint">Tocca una cella per cambiare tra disponibile (&#10003;) e non disponibile (&#10007;). La griglia vincola solo i docenti a contratto.</p>

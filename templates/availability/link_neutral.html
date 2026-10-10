@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Link non disponibile{% endblock %}
+{% block content %}
+<h1>Link non disponibile</h1>
+{% if limited %}
+<p>Troppi tentativi. Riprova tra qualche minuto.</p>
+{% else %}
+<p>Questo link non e valido o e scaduto. Chiedi alla segreteria di inviartene uno nuovo.</p>
+{% endif %}
+{% endblock %}

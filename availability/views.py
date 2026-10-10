@@ -1,17 +1,27 @@
 import datetime
 import json
 
+from django.conf import settings
+from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import Http404, HttpResponseBadRequest
-from django.shortcuts import render
+from django.shortcuts import redirect, render
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.cache import add_never_cache_headers, patch_cache_control
 from django.views.decorators.http import require_GET, require_POST
 
-from projects.permissions import can_edit_availability, permission_required
+from projects.permissions import (
+    can_edit_availability,
+    can_manage_availability_links,
+    permission_required,
+)
 from school.models import Teacher
 from school.selectors import current_school, today
 
 from . import grid as grid_logic
-from . import services
+from . import links, services
+from .models import AvailabilityLink
 
 TPL = "availability/"
 DAY_LABELS = {
@@ -270,3 +280,93 @@ def availability_copy(request, week):
     result = services.copy_previous_week(school, week_info["start"])
     context = _page_context(school, week_info, notice=_copy_notice(result))
     return render(request, TPL + "_section.html", context)
+
+
+# magic links (issue 19)
+
+
+def _link_teacher(request, week, teacher_id):
+    school = current_school()
+    return Teacher.objects.filter(pk=teacher_id, school=school).first()
+
+
+def _no_store(response):
+    patch_cache_control(response, no_store=True, private=True)
+    add_never_cache_headers(response)
+    return response
+
+
+@permission_required(can_manage_availability_links, _link_teacher)
+@require_POST
+def link_generate(request, week, teacher_id):
+    teacher = _link_teacher(request, week, teacher_id)
+    context = {"week_raw": week, "teacher": teacher}
+    try:
+        try:
+            week_start = datetime.date.fromisoformat(week)
+        except ValueError:
+            raise links.LinkError("Settimana non valida.") from None
+        link, token = links.create_link(teacher, week_start, request.user)
+    except links.LinkError as e:
+        context["error"] = str(e)
+        response = render(request, TPL + "link_created.html", context, status=400)
+        return _no_store(response)
+    context.update(
+        link=link,
+        url=request.build_absolute_uri(reverse("availability_link_open", args=[token])),
+        expires_at=timezone.localtime(link.expires_at),
+    )
+    return _no_store(render(request, TPL + "link_created.html", context))
+
+
+def _link_rows(school):
+    at = links.now()
+    rows = []
+    qs = (
+        AvailabilityLink.objects.filter(teacher__school=school)
+        .select_related("teacher")
+        .order_by("-created_at", "-pk")[:200]
+    )
+    for link in qs:
+        status = links.link_status(link, at)
+        rows.append({"link": link, "status": status, "can_revoke": status == "attivo"})
+    return rows
+
+
+@permission_required(can_manage_availability_links)
+@require_GET
+def link_list(request):
+    school = current_school()
+    rows = _link_rows(school) if school else []
+    return _no_store(render(request, TPL + "link_list.html", {"rows": rows}))
+
+
+@permission_required(can_manage_availability_links)
+@require_POST
+def link_revoke(request, link_id):
+    school = current_school()
+    link = AvailabilityLink.objects.filter(pk=link_id, teacher__school=school).first()
+    if link is not None and links.revoke_link(link.pk):
+        messages.success(request, "Link revocato.")
+    return redirect("availability_links")
+
+
+def _client_address(request):
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def link_open(request, token):
+    """Token entry point. Opens the page of #20; rate limited, never logs the token."""
+    address = _client_address(request)
+    if links.is_rate_limited(address):
+        response = render(
+            request, TPL + "link_neutral.html", {"limited": True}, status=429
+        )
+        response["Retry-After"] = str(settings.LINK_LOOKUP_WINDOW_SECONDS)
+        return _no_store(response)
+    link = links.lookup_link(token)
+    if link is None:
+        links.record_failure(address)
+        return _no_store(render(request, TPL + "link_neutral.html", status=404))
+    links.mark_used(link)
+    return _no_store(render(request, TPL + "link_open.html", {"link": link}))

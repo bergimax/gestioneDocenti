@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Link disponibilita{% endblock %}
+{% block content %}
+<h1>Link disponibilita</h1>
+{% if error %}
+<div class="message message-error" role="alert"><span>{{ error }}</span></div>
+{% else %}
+<p>Link per <strong>{{ teacher.name }}</strong>, settimana del {{ link.week_start|date:"d/m/Y" }}.</p>
+<div class="message message-warning" role="status"><span>Questo link viene mostrato una sola volta: copialo e invialo ora. Un eventuale link precedente per la stessa settimana e stato revocato.</span></div>
+<div class="field" x-data="{ copied: false }">
+  <label for="link-url">Link</label>
+  <input id="link-url" type="text" readonly value="{{ url }}" size="60" onclick="this.select()">
+  <button type="button" @click="navigator.clipboard.writeText(document.getElementById('link-url').value).then(() => copied = true)">Copia</button>
+  <span class="hint" x-show="copied" x-cloak>Copiato.</span>
+</div>
+<p>Scade il {{ expires_at|date:"d/m/Y" }} alle {{ expires_at|time:"H:i" }}.</p>
+{% endif %}
+<p><a href="{% url 'availability' %}?settimana={{ week_raw }}">Torna alla disponibilita</a> &middot; <a href="{% url 'availability_links' %}">Elenco link</a></p>
+{% endblock %}

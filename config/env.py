@@ -6,6 +6,9 @@ from urllib.parse import unquote, urlsplit
 from django.core.exceptions import ImproperlyConfigured
 
 DEFAULT_SOLVER_TIMEOUT_SECONDS = 60
+DEFAULT_AVAILABILITY_LINK_TTL_HOURS = 72
+DEFAULT_LINK_LOOKUP_MAX_FAILURES = 10
+DEFAULT_LINK_LOOKUP_WINDOW_SECONDS = 300
 DEFAULT_SETUP_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 

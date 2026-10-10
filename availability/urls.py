@@ -3,6 +3,18 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path("l/<str:token>/", views.link_open, name="availability_link_open"),
+    path("disponibilita/link/", views.link_list, name="availability_links"),
+    path(
+        "disponibilita/link/<int:link_id>/revoca/",
+        views.link_revoke,
+        name="availability_link_revoke",
+    ),
+    path(
+        "disponibilita/<str:week>/docente/<int:teacher_id>/link/",
+        views.link_generate,
+        name="availability_link_generate",
+    ),
     path("disponibilita/", views.availability_page, name="availability"),
     path(
         "disponibilita/<str:week>/copia/",

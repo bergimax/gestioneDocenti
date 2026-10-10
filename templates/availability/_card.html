@@ -1,6 +1,10 @@
 <article id="teacher-card-{{ card.teacher.pk }}" class="av-card" aria-label="{{ card.teacher.name }}">
   <h2>{{ card.teacher.name }}</h2>
   <p class="hint av-source">{{ card.source }}{% if card.assunto %} &middot; Assunto: sempre disponibile; la griglia vincola solo i docenti a contratto.{% endif %}</p>
+  <form method="post" action="{% url 'availability_link_generate' card.week.start|date:'Y-m-d' card.teacher.pk %}" class="av-link">
+    {% csrf_token %}
+    <button type="submit">Genera link</button>
+  </form>
   <div class="table-wrap">
     <table class="av-grid">
       <thead>

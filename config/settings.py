@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 
 from config.env import (
+    DEFAULT_AVAILABILITY_LINK_TTL_HOURS,
+    DEFAULT_LINK_LOOKUP_MAX_FAILURES,
+    DEFAULT_LINK_LOOKUP_WINDOW_SECONDS,
     DEFAULT_SETUP_MAX_UPLOAD_BYTES,
     DEFAULT_SOLVER_TIMEOUT_SECONDS,
     get_bool,
@@ -21,6 +24,15 @@ SOLVER_TIMEOUT_SECONDS = get_positive_int(
 )
 SETUP_MAX_UPLOAD_BYTES = get_positive_int(
     os.environ, "SETUP_MAX_UPLOAD_BYTES", DEFAULT_SETUP_MAX_UPLOAD_BYTES
+)
+AVAILABILITY_LINK_TTL_HOURS = get_positive_int(
+    os.environ, "AVAILABILITY_LINK_TTL_HOURS", DEFAULT_AVAILABILITY_LINK_TTL_HOURS
+)
+LINK_LOOKUP_MAX_FAILURES = get_positive_int(
+    os.environ, "LINK_LOOKUP_MAX_FAILURES", DEFAULT_LINK_LOOKUP_MAX_FAILURES
+)
+LINK_LOOKUP_WINDOW_SECONDS = get_positive_int(
+    os.environ, "LINK_LOOKUP_WINDOW_SECONDS", DEFAULT_LINK_LOOKUP_WINDOW_SECONDS
 )
 
 INSTALLED_APPS = [
@@ -84,3 +96,16 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "accounts.validators.MinimumLengthItalian"},
 ]
 SESSION_COOKIE_AGE = 7 * 24 * 60 * 60  # 7 days, specs §4
+
+# Magic-link tokens travel in URL paths: redact them from request logs.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "redact_link_tokens": {"()": "availability.logging.RedactLinkTokens"},
+    },
+    "loggers": {
+        "django.request": {"filters": ["redact_link_tokens"]},
+        "django.server": {"filters": ["redact_link_tokens"]},
+    },
+}

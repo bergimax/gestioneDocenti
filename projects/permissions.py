@@ -37,6 +37,10 @@ def can_edit_availability(user, obj=None):
     return _allowed(user, ALL_ROLES)
 
 
+def can_manage_availability_links(user, teacher=None):
+    return _allowed(user, ALL_ROLES)
+
+
 def can_generate(user, obj=None):
     return _allowed(user, ADMIN_ONLY)
 
@@ -61,6 +65,7 @@ PREDICATES = (
     can_view_timetable,
     can_view_school_data,
     can_edit_availability,
+    can_manage_availability_links,
     can_generate,
     can_run_setup,
     can_edit_school_data,

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Link disponibilita{% endblock %}
+{% block content %}
+<h1>Link disponibilita</h1>
+<p><a href="{% url 'availability' %}">Torna alla disponibilita</a></p>
+{% if rows %}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Docente</th><th scope="col">Settimana</th><th scope="col">Creato</th><th scope="col">Scadenza</th><th scope="col">Stato</th><th scope="col"><span class="visually-hidden">Azioni</span></th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+  <tr>
+    <td>{{ row.link.teacher.name }}</td>
+    <td>{{ row.link.week_start|date:"d/m/Y" }}</td>
+    <td>{{ row.link.created_at|date:"d/m/Y H:i" }}</td>
+    <td>{{ row.link.expires_at|date:"d/m/Y H:i" }}</td>
+    <td>{{ row.status }}</td>
+    <td>{% if row.can_revoke %}
+      <form method="post" action="{% url 'availability_link_revoke' row.link.pk %}">{% csrf_token %}<button type="submit">Revoca</button></form>
+    {% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p>Nessun link generato.</p>
+{% endif %}
+{% endblock %}
