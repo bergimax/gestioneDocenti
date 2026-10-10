@@ -308,10 +308,7 @@ def choose_alternative(job_id, index, user):
 
             def change(locked):
                 fresh = SolveJob.objects.select_for_update().get(pk=job_id)
-                if (
-                    fresh.result.get("picked")
-                    or AlternativePick.objects.filter(job=fresh).exists()
-                ):
+                if AlternativePick.objects.filter(job=fresh).exists():
                     raise AlternativeRefused(MSG_ALREADY_PICKED)
                 if locked.version != fresh.result["base_version"]:
                     raise AlternativeRefused(MSG_STALE)

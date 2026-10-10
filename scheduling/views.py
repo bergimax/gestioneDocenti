@@ -266,9 +266,7 @@ def timetable_job(request, week):
 def timetable_generate(request, week):
     school = _school_or_404()
     week = _parse_week(school, week)
-    want_alternatives = request.POST.get("alternative") == "1" and (
-        can_choose_alternative(request.user)
-    )
+    want_alternatives = request.POST.get("alternative") == "1"
     try:
         enqueue_generation(week["start"], request.user, alternatives=want_alternatives)
     except GenerationRefused as exc:
