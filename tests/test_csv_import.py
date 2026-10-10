@@ -410,6 +410,9 @@ def test_importers_import_only_stdlib_and_siblings():
     root = Path(__file__).resolve().parent.parent / "school" / "importers"
     files = list(root.glob("*.py"))
     assert len(files) >= 3
+    third_party = {
+        "calendar_pdf.py": {"pdfplumber"}
+    }  # the PDF reader is the one allowed extra
     for path in files:
         for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.Import):
@@ -422,7 +425,8 @@ def test_importers_import_only_stdlib_and_siblings():
                 continue
             for mod in mods:
                 top = mod.split(".")[0]
-                assert top in sys.stdlib_module_names, f"{path.name} imports {mod}"
+                allowed = sys.stdlib_module_names | third_party.get(path.name, set())
+                assert top in allowed, f"{path.name} imports {mod}"
 
 
 # --- over-long digit strings never raise ------------------------------------
