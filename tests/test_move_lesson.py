@@ -719,3 +719,26 @@ def test_sortablejs_is_vendored_with_its_version_and_licence():
 def test_invalidmove_is_a_400_and_a_rejection_a_409():
     assert InvalidMove("x").status == 400
     assert MoveRejected("x").status == 409
+
+
+# ---- day-level conflicts mark the lessons they concern ------------------
+
+
+def test_h11_marks_only_that_teachers_lessons_with_that_class_that_day(w, admin):
+    w.tt.conflicts = [
+        {
+            "kind": "H11",
+            "description": "troppe ore",
+            "classe_id": w.a.pk,
+            "docente_id": w.rossi.pk,
+            "giorno": "LUNEDI",
+        }
+    ]
+    w.tt.save()
+    text = html(admin.get(PAGE))
+    assert text.count('data-conflict="true"') == 1
+    assert conflicted(text, ("LUNEDI", 8))  # Rossi with 1A on Monday
+    # a plain conflict of another kind without an hour marks nothing
+    w.tt.conflicts[0]["kind"] = "single_classe_day"
+    w.tt.save()
+    assert 'data-conflict="true"' not in html(admin.get(PAGE))
