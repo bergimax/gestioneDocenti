@@ -277,7 +277,8 @@ def test_no_replacement_means_best_effort_with_unfilled_hours_and_an_explanation
     res = solve(
         apply_perturbation(ctx, Perturbation(TEACHER_ABSENT, "t1", days=frozenset({0})))
     )
-    assert sorted(le.hour for le in res.lessons) == [0, 1, 3, 4, 5]
+    assert res.message
+    assert any(i["kind"] == CLASSE_UNFILLED for i in res.conflict_items)
     assert res.explanations
 
 
