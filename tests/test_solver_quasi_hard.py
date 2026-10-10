@@ -51,7 +51,7 @@ def kinds(res, kind):
 
 
 def assert_consistent(res):
-    """No silent violation: the objective equals 1000 per reported conflict."""
+    """No silent violation: the objective equals RELAX_WEIGHT per reported conflict."""
     assert res.override_penalty == RELAX_WEIGHT * len(res.conflicts)
     assert all(c.penalty == RELAX_WEIGHT for c in res.conflicts)
 

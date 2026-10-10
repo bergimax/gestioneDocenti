@@ -123,7 +123,7 @@ def test_score_follows_the_violated_share_of_the_penalties():
     assert res.quality_level == quality(True, res.n_penalties, 1)[1]
 
 
-def test_overrides_count_as_penalties_with_their_1000_weight():
+def test_overrides_count_as_penalties_with_their_relax_weight():
     ctx = make(
         [A(1, "T", "A")],
         {"A": day_cap(FRI, 3)},
@@ -132,7 +132,12 @@ def test_overrides_count_as_penalties_with_their_1000_weight():
     )
     res = solve(ctx)
     (h9,) = [v for v in res.violations if v.kind == "H9"]
-    assert (h9.class_id, h9.teacher_id, h9.day, h9.weight) == ("A", None, FRI, 1000)
+    assert (h9.class_id, h9.teacher_id, h9.day, h9.weight) == (
+        "A",
+        None,
+        FRI,
+        RELAX_WEIGHT,
+    )
     assert h9.weight == RELAX_WEIGHT
     assert res.n_soft_conflicts == len(res.violations) == 2  # H9 and one S2
     assert res.quality_score < 100

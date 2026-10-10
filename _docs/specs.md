@@ -350,18 +350,25 @@ alternativa e ogni violazione compare tra i conflitti con la deroga corrisponden
 
 | Id | Regola | Peso default | Note |
 |---|---|---|---|
-| S1 `classe_late_start` | Una classe inizia alle 8:00 | **100** | peso massimo tra le preferenze; inattivo se il giorno è pieno |
-| S2 `teoria_consecutive` | Max 2 ore consecutive di teoria con lo stesso docente nella stessa classe | **10** | deroga `force_3_hours_theory` alza il tetto (3 o `max_hours`) |
-| S3 `ore_target_deviation` | Ore settimanali dell'assegnazione = target (§8) | **15 + 500** per ora di scarto | 500 = `EXACT_TARGET_WEIGHT` (decisione admin 2026-10: target «esatto», cede solo per riempire un'aula). Per i contrattisti vedi 9.5 |
-| S4 `contractor_gap` | Nessuna **ora buca vera** per un contrattista (ora libera con lezione prima e dopo nello stesso giorno) | **150** per ora buca | Solo CONTRATTO: i buchi cadono quindi sugli assunti (nessuna penalità). Per i contrattisti vedi 9.5. Deroga `authorize_early_exit` la spegne |
-| S5 `single_classe_day` | Un docente con ≥2 classi non passa un'intera giornata (≥3 ore) con una sola classe | **10** | deroga `authorize_single_classe_day` |
+| S1 `classe_late_start` | Una classe inizia alle 8:00 | **500** | peso massimo tra le preferenze; inattivo se il giorno è pieno |
+| S2 `teoria_consecutive` | Max 2 ore consecutive di teoria con lo stesso docente nella stessa classe | **50** | deroga `force_3_hours_theory` alza il tetto (3 o `max_hours`) |
+| S3 `ore_target_deviation` | Ore settimanali dell'assegnazione = target (§8) | **75 + 10_000_000** per ora di scarto | 10_000_000 = `EXACT_TARGET_WEIGHT` (decisione admin 2026-10: target «esatto», cede solo per riempire un'aula). Per i contrattisti vedi 9.5 |
+| S4 `contractor_gap` | Nessuna **ora buca vera** per un contrattista (ora libera con lezione prima e dopo nello stesso giorno) | **750** per ora buca | Solo CONTRATTO: i buchi cadono quindi sugli assunti (nessuna penalità). Per i contrattisti vedi 9.5. Deroga `authorize_early_exit` la spegne |
+| S5 `single_classe_day` | Un docente con ≥2 classi non passa un'intera giornata (≥3 ore) con una sola classe | **50** | deroga `authorize_single_classe_day` |
 
-Pesi regolabili (`DEFAULT_SOFT_WEIGHTS`, tetto `MAX_SOFT_WEIGHT = 200`): `classe_late_start 100`,
-`teoria_consecutive 10`, `ore_target_deviation 15`, `contractor_gap 150`, `single_classe_day 10`. Pesi fissi:
-`RELAX_WEIGHT 1000` (vincoli quasi rigidi), **1500** per ora non coperta (`classe_unfilled`), ora oltre capienza
-(`classe_over_capacity`) e monte ore superato in modalità *forced* (`monte_ore_exceeded`): una classe vuota non viene
-mai scambiata con una preferenza. Ordine di priorità: **ore non coperte (1500) > vincoli quasi rigidi (1000) > target
-esatto (500+) > preferenze (≤ 200)**.
+Pesi regolabili (`DEFAULT_SOFT_WEIGHTS`, tetto `MAX_SOFT_WEIGHT = 1_000`): `classe_late_start 500`,
+`teoria_consecutive 50`, `ore_target_deviation 75`, `contractor_gap 750`, `single_classe_day 50`. Pesi fissi:
+`RELAX_WEIGHT 10_000_000_000` (vincoli quasi rigidi), **1_000_000_000_000** (`FIXED_PENALTY_WEIGHT`) per ora non
+coperta (`classe_unfilled`), ora oltre capienza (`classe_over_capacity`) e monte ore superato in modalità *forced*
+(`monte_ore_exceeded`): una classe vuota non viene mai scambiata con una preferenza. Ordine di priorità: **ore non
+coperte (1e12) > vincoli quasi rigidi (1e10) > target esatto (1e7+) > preferenze (≤ 1_000)**, a distanza di decadi.
+
+Somma nel caso peggiore (una scuola: 40 classi, 5 giorni, ≤ 30 ore per classe e settimana, ≤ 100 docenti): le
+preferenze pesano al massimo `1_000 · 1.5 = 1_500` a violazione, quindi ≤ 2_000 violazioni sommano ≤ 3.0e6, meno della
+più economica ora di scarto dal target (`0.5 · 1e7 = 5.0e6`); ≤ 200 ore di scarto · ~1.5e7 = 3.0e9 < `RELAX_WEIGHT`;
+≤ 50 deroghe · 1e10 = 5.0e11 < `FIXED_PENALTY_WEIGHT`; l'obiettivo massimo (≈ 1_200 ore non coperte · 1e12 = 1.2e15)
+resta sotto 2^53 (conversione esatta in CP-SAT). Una violazione di un livello superiore non si scambia quindi mai con un
+numero realistico di violazioni dei livelli inferiori. Il punteggio di qualità (9.6) non dipende dai pesi.
 
 ### 9.5 Contrattisti: scarsità di disponibilità
 
@@ -369,7 +376,7 @@ Il peso di S3 e S4 per un contrattista è moltiplicato per `m = 1.5 − (ore_dis
 chi ha pochissima disponibilità ha penalità più alte (si rispetta di più il suo target e si evitano i suoi buchi,
 viene «piazzato per primo»); chi è molto disponibile ha più flessibilità. Nessuna griglia registrata → `m = 1.5`;
 deroga `override_availability` attiva per quel docente → `m = 1.0`; non-contrattisti → `m = 1.0`. Il peso risultante è
-`max(1, round(peso · m))`. Valori: gap 75…225, scarto dal target ≈ 258…772 (se non si ritocca il peso S3).
+`max(1, round(peso · m))`. Valori: gap 375…1125, scarto dal target ≈ 5_000_038…15_000_112 (calcolati da 10_000_075, se non si ritocca il peso S3).
 
 ### 9.6 Punteggio di qualità
 

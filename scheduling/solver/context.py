@@ -13,12 +13,14 @@ ASSUNTO = "ASSUNTO"
 CONTRATTO = "CONTRATTO"
 PRATICA = "PRATICA"
 
-RELAX_WEIGHT = 1000  # penalty of one quasi-hard violation (specs 9.4)
+RELAX_WEIGHT = 10_000_000_000  # penalty of one quasi-hard violation (specs 9.4)
 MAX_HOURS_PER_CLASSE_DAY = 4  # H11
 
-EXACT_TARGET_WEIGHT = 500  # S3: added to the S3 weight per hour of deviation
-FIXED_PENALTY_WEIGHT = 1500  # classe_unfilled, classe_over_capacity, monte_ore_exceeded
-MAX_SOFT_WEIGHT = 200  # ceiling of an adjustable preference weight
+EXACT_TARGET_WEIGHT = 10_000_000  # S3: added to the S3 weight per hour of deviation
+FIXED_PENALTY_WEIGHT = (
+    1_000_000_000_000  # classe_unfilled, classe_over_capacity, monte_ore_exceeded
+)
+MAX_SOFT_WEIGHT = 1_000  # ceiling of an adjustable preference weight
 
 CLASSE_LATE_START = "classe_late_start"  # S1
 TEORIA_CONSECUTIVE = "teoria_consecutive"  # S2
@@ -26,8 +28,8 @@ ORE_TARGET_DEVIATION = "ore_target_deviation"  # S3
 CONTRACTOR_GAP = "contractor_gap"  # S4
 SINGLE_CLASSE_DAY = "single_classe_day"  # S5
 
-# Fixed 1500 penalties (specs 9.4, 9.7): uncovered hours in best-effort mode and
-# what a pinned lesson breaks in forced mode.
+# Fixed (FIXED_PENALTY_WEIGHT) penalties (specs 9.4, 9.7): uncovered hours in
+# best-effort mode and what a pinned lesson breaks in forced mode.
 CLASSE_UNFILLED = "classe_unfilled"
 CLASSE_OVER_CAPACITY = "classe_over_capacity"
 CLASSE_DOUBLE_BOOKING = "classe_double_booking"
@@ -37,11 +39,11 @@ CLASSE_EARLY_START = "classe_early_start"
 CLASSE_STAGE_DAY = "classe_stage_day"
 
 DEFAULT_SOFT_WEIGHTS = {
-    CLASSE_LATE_START: 100,
-    TEORIA_CONSECUTIVE: 10,
-    ORE_TARGET_DEVIATION: 15,
-    CONTRACTOR_GAP: 150,
-    SINGLE_CLASSE_DAY: 10,
+    CLASSE_LATE_START: 500,
+    TEORIA_CONSECUTIVE: 50,
+    ORE_TARGET_DEVIATION: 75,
+    CONTRACTOR_GAP: 750,
+    SINGLE_CLASSE_DAY: 50,
 }
 
 QUALITY_A_ABOVE = 95  # score > 95 is level A
@@ -124,7 +126,7 @@ class ScheduleContext:
       (the default) means no availability data was supplied and H4 is not
       modelled (keeps #22 contexts unchanged); once a dict is given, a
       contractor missing from it has no grid and is unavailable all week.
-    - ``availability_relaxed``: H4 becomes a 1000-weight override instead of
+    - ``availability_relaxed``: H4 becomes a RELAX_WEIGHT override instead of
       rigid (used by manual edits).
     - ``derogations``: see ``Derogation``.
     - ``targets[assignment_id]``: weekly hours the assignment should reach (S3).

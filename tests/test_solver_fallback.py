@@ -84,7 +84,7 @@ def test_infeasible_week_falls_back_to_best_effort():
     assert len(items(res, CLASSE_UNFILLED)) == 2
 
 
-def test_one_unfilled_conflict_per_uncovered_hour_with_weight_1500():
+def test_one_unfilled_conflict_per_uncovered_hour_with_weight_fixed_penalty():
     res = solve(unfilled_week())
     holes = items(res, CLASSE_UNFILLED)
     taught = {le.hour for le in res.lessons}
@@ -92,7 +92,7 @@ def test_one_unfilled_conflict_per_uncovered_hour_with_weight_1500():
     assert all(i["classe_id"] == "A" and i["giorno"] == "LUNEDI" for i in holes)
     unfilled = [v for v in res.violations if v.kind == CLASSE_UNFILLED]
     assert [v.weight for v in unfilled] == [FIXED_PENALTY_WEIGHT] * 2
-    assert FIXED_PENALTY_WEIGHT == 1500
+    assert FIXED_PENALTY_WEIGHT == 1_000_000_000_000
     assert res.n_soft_conflicts >= 2 and res.n_penalties >= 2
 
 
@@ -105,8 +105,8 @@ def test_message_is_absent_when_best_effort_finds_nothing_uncovered():
 def test_best_effort_never_empties_a_class_for_a_preference():
     # Target 2 hours for T, but the class has 4 hours and T can give 3. Leaving
     # the class with only 2 lessons would hit the target (cost 0 + two uncovered
-    # hours); a third lesson costs one hour of deviation (515) but covers one
-    # more hour (1500).
+    # hours); a third lesson costs one hour of deviation (exact-target tier) but
+    # covers one more hour (FIXED_PENALTY_WEIGHT).
     ctx = make(
         [A(1, "T", "A", 3)],
         {"A": day_cap(MON, 4)},
@@ -217,7 +217,11 @@ def test_forced_start_before_minimum_is_a_conflict():
     ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 2)}, class_min_start={"A": 10})
     res = forced(ctx, (1, MON, 0))
     (c,) = items(res, CLASSE_EARLY_START)
-    assert (c["classe_id"], c["ore_slot"], c["weight"]) == ("A", 0, 1500)
+    assert (c["classe_id"], c["ore_slot"], c["weight"]) == (
+        "A",
+        0,
+        FIXED_PENALTY_WEIGHT,
+    )
 
 
 def test_forced_lesson_on_a_stage_day_is_a_conflict():
@@ -242,7 +246,7 @@ def test_forced_unavailable_hour_is_reported_at_the_override_weight():
     )
     res = forced(ctx, (1, MON, 0))
     (c,) = items(res, "H4")
-    assert c["weight"] == RELAX_WEIGHT == 1000
+    assert c["weight"] == RELAX_WEIGHT == 10_000_000_000
     assert c["suggested_action"]["action_type"] == "override_availability"
     (q,) = res.conflicts
     assert (q.kind, q.penalty, q.hour) == ("H4", RELAX_WEIGHT, 0)
@@ -379,9 +383,9 @@ def test_key_does_not_change_when_an_unrelated_lesson_moves():
 
 def test_conflicts_are_deduplicated_by_kind_class_teacher_day_hour():
     pens = [
-        Penalty(ORE_TARGET_DEVIATION, "A", "T", None, 515, 1, None, 1),
-        Penalty(ORE_TARGET_DEVIATION, "A", "T", None, 515, 2, None, 2),
-        Penalty(ORE_TARGET_DEVIATION, "A", "U", None, 515, 1, None, 3),
+        Penalty(ORE_TARGET_DEVIATION, "A", "T", None, 10_000_075, 1, None, 1),
+        Penalty(ORE_TARGET_DEVIATION, "A", "T", None, 10_000_075, 2, None, 2),
+        Penalty(ORE_TARGET_DEVIATION, "A", "U", None, 10_000_075, 1, None, 3),
     ]
     ctx = ScheduleContext(
         assignments=[A(1, "T", "A"), A(2, "T", "A"), A(3, "U", "A")],
@@ -395,8 +399,8 @@ def test_conflicts_are_deduplicated_by_kind_class_teacher_day_hour():
 
 def test_distinct_hours_are_not_merged():
     pens = [
-        Penalty("classe_unfilled", "A", None, 0, 1500, 1, 2),
-        Penalty("classe_unfilled", "A", None, 0, 1500, 1, 3),
+        Penalty("classe_unfilled", "A", None, 0, FIXED_PENALTY_WEIGHT, 1, 2),
+        Penalty("classe_unfilled", "A", None, 0, FIXED_PENALTY_WEIGHT, 1, 3),
     ]
     out = build_conflict_items(pens, [], ScheduleContext(), [])
     assert sorted(c["ore_slot"] for c in out) == [2, 3]

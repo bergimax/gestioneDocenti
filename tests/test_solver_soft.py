@@ -88,7 +88,12 @@ def test_s1_late_start_unavoidable_is_reported_once():
     ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 2)}, class_min_start={"A": 10})
     res = solved(ctx)
     (v,) = of(res, CLASSE_LATE_START)
-    assert (v.class_id, v.teacher_id, v.day, v.weight) == ("A", None, MON, 100)
+    assert (v.class_id, v.teacher_id, v.day, v.weight) == (
+        "A",
+        None,
+        MON,
+        DEFAULT_SOFT_WEIGHTS[CLASSE_LATE_START],
+    )
     assert min(h for _, h in hours_of(res, 1)) >= 2
 
 
@@ -112,7 +117,8 @@ def test_s1_a_teacher_shared_between_classes_makes_one_start_late():
         {"A": day_cap(MON, 2), "B": day_cap(MON, 2)},
     )
     (v,) = of(solved(ctx), CLASSE_LATE_START)
-    assert v.weight == 100 and v.day == MON
+    assert v.weight == DEFAULT_SOFT_WEIGHTS[CLASSE_LATE_START]
+    assert v.day == MON
 
 
 def test_s1_weight_zero_removes_its_effects():
@@ -182,7 +188,12 @@ def test_s2_two_teachers_can_avoid_three_consecutive_hours():
 def test_s2_three_consecutive_theory_hours_are_penalised_once():
     res = solved(make([A(1, "T", "A")], {"A": day_cap(MON, 3)}))
     (v,) = of(res, TEORIA_CONSECUTIVE)
-    assert (v.class_id, v.teacher_id, v.day, v.weight) == ("A", "T", MON, 10)
+    assert (v.class_id, v.teacher_id, v.day, v.weight) == (
+        "A",
+        "T",
+        MON,
+        DEFAULT_SOFT_WEIGHTS[TEORIA_CONSECUTIVE],
+    )
 
 
 def test_s2_is_penalised_once_per_excess_hour():
@@ -281,8 +292,8 @@ def test_s3_deviation_of_two_hours_is_twice_the_per_hour_weight():
     ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 2)}, targets={1: 4})
     (v,) = of(solved(ctx), ORE_TARGET_DEVIATION)
     assert v.value == 2
-    assert v.weight == 15 + EXACT_TARGET_WEIGHT
-    assert v.weight * v.value == 1030
+    assert v.weight == 75 + EXACT_TARGET_WEIGHT
+    assert v.weight * v.value == 2 * (75 + EXACT_TARGET_WEIGHT)
     assert (v.class_id, v.teacher_id) == ("A", "T")
 
 
@@ -317,7 +328,7 @@ def test_s3_target_pulls_hours_to_the_assignment_that_needs_them():
 def test_s3_weight_override_changes_the_per_hour_weight():
     ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 2)}, targets={1: 3})
     (v,) = of(solved(ctx, {ORE_TARGET_DEVIATION: 100}), ORE_TARGET_DEVIATION)
-    assert v.weight == 600
+    assert v.weight == 100 + EXACT_TARGET_WEIGHT
 
 
 # ---------------------------------------------------------------- S4
@@ -346,7 +357,7 @@ def test_s4_contractor_gap_unavoidable_is_penalised_once():
     assert sorted(h for _, h in hours_of(res, 1) + hours_of(res, 2)) == [0, 2]
     (v,) = of(res, CONTRACTOR_GAP)
     assert (v.class_id, v.teacher_id, v.day) == (None, "T", MON)
-    assert v.weight == 215  # 150 * (1.5 - 2/30)
+    assert v.weight == 1075  # 750 * (1.5 - 2/30)
 
 
 def test_s4_two_gap_hours_are_penalised_twice():
@@ -360,7 +371,7 @@ def test_s4_two_gap_hours_are_penalised_twice():
 
 
 def test_s4_contractor_avoids_the_gap_when_it_is_cheaper_to_do_so():
-    # Avoiding the gap costs one more late start (100) < the gap (225).
+    # Avoiding the gap costs one more late start (500) < the gap (1125).
     res = solved(gap_ctx({"T": CONTRATTO}))
     assert of(res, CONTRACTOR_GAP) == []
     assert len(of(res, CLASSE_LATE_START)) == 2
@@ -447,7 +458,12 @@ def test_s5_single_class_teacher_is_never_penalised():
 def test_s5_two_classes_three_hours_with_one_is_penalised():
     res = solved(single_day_ctx())
     (v,) = of(res, SINGLE_CLASSE_DAY)
-    assert (v.class_id, v.teacher_id, v.day, v.weight) == ("A", "T", MON, 10)
+    assert (v.class_id, v.teacher_id, v.day, v.weight) == (
+        "A",
+        "T",
+        MON,
+        DEFAULT_SOFT_WEIGHTS[SINGLE_CLASSE_DAY],
+    )
 
 
 def test_s5_two_hours_with_one_class_is_fine():
@@ -535,13 +551,13 @@ def weights_for(ctx, teacher="T"):
 def test_scarcity_full_availability_halves_the_weights():
     ctx = contractor_ctx(30)
     assert scarcity_multiplier(ctx, "T") == 0.5
-    assert weights_for(ctx) == (75, 258)
+    assert weights_for(ctx) == (375, 5_000_038)
 
 
 def test_scarcity_no_available_hours_gives_one_and_a_half():
     ctx = contractor_ctx(0)
     assert scarcity_multiplier(ctx, "T") == 1.5
-    assert weights_for(ctx) == (225, 772)
+    assert weights_for(ctx) == (1125, 15_000_112)
 
 
 def test_scarcity_no_grid_recorded_gives_one_and_a_half():
@@ -551,12 +567,12 @@ def test_scarcity_no_grid_recorded_gives_one_and_a_half():
     )
     for ctx in contexts:
         assert scarcity_multiplier(ctx, "T") == 1.5
-        assert weights_for(ctx) == (225, 772)
+        assert weights_for(ctx) == (1125, 15_000_112)
 
 
 def test_scarcity_intermediate_hours_are_linear():
     assert scarcity_multiplier(contractor_ctx(15), "T") == 1.0
-    assert weights_for(contractor_ctx(15)) == (150, 515)
+    assert weights_for(contractor_ctx(15)) == (750, 10_000_075)
 
 
 def test_scarcity_override_availability_gives_one():
@@ -568,7 +584,7 @@ def test_scarcity_override_availability_gives_one():
     )
     for ctx in contexts:
         assert scarcity_multiplier(ctx, "T") == 1.0
-        assert weights_for(ctx) == (150, 515)
+        assert weights_for(ctx) == (750, 10_000_075)
 
 
 def test_scarcity_override_for_another_teacher_does_not_apply():
@@ -581,7 +597,7 @@ def test_scarcity_override_for_another_teacher_does_not_apply():
 def test_scarcity_non_contractor_gives_one():
     ctx = ScheduleContext(teacher_types={"T": ASSUNTO}, availability={"T": frozenset()})
     assert scarcity_multiplier(ctx, "T") == 1.0
-    assert weights_for(ctx) == (150, 515)
+    assert weights_for(ctx) == (750, 10_000_075)
     assert scarcity_multiplier(ScheduleContext(), "unknown") == 1.0
 
 
@@ -601,7 +617,7 @@ def test_scarcity_override_is_used_by_the_solver_for_s4():
     )
     res = solved(ctx)
     # Under the override the contractor is free everywhere and m = 1.0, so a
-    # gap (150) is dearer than the extra late start (100): none is left.
+    # gap (750) is dearer than the extra late start (500): none is left.
     assert of(res, CONTRACTOR_GAP) == []
 
 
@@ -614,8 +630,8 @@ def test_scarcity_scales_the_s3_weight_the_solver_uses():
         targets={1: 2},
     )
     (v,) = of(solved(ctx), ORE_TARGET_DEVIATION)
-    assert v.weight == scaled_weight(515, ctx, "T")
-    assert v.weight != 515
+    assert v.weight == scaled_weight(10_000_075, ctx, "T")
+    assert v.weight != 10_000_075
 
 
 # ---------------------------------------------------------------- weight map
@@ -641,6 +657,13 @@ def test_weight_map_rejects_bad_input_before_solving(bad):
         solve(ctx, bad)
 
 
+def test_weight_ceiling_is_one_thousand():
+    ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 2)})
+    solved(ctx, {CLASSE_LATE_START: 1_000})
+    with pytest.raises(ValueError, match="soft weight"):
+        solve(ctx, {CLASSE_LATE_START: 1_001})
+
+
 def test_weight_map_error_names_the_key():
     with pytest.raises(ValueError, match="nope"):
         solve(ScheduleContext(), {"nope": 1})
@@ -663,17 +686,26 @@ def test_empty_weight_map_equals_the_defaults():
 def test_missing_keys_use_the_default():
     ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 2)}, class_min_start={"A": 10})
     res = solved(ctx, {SINGLE_CLASSE_DAY: 50})
-    assert of(res, CLASSE_LATE_START)[0].weight == 100
+    assert (
+        of(res, CLASSE_LATE_START)[0].weight == DEFAULT_SOFT_WEIGHTS[CLASSE_LATE_START]
+    )
 
 
 # ------------------------------------------------------------ priority order
 
 
 def test_priority_constants_are_ordered():
-    assert FIXED_PENALTY_WEIGHT == 1500
-    assert RELAX_WEIGHT == 1000
-    assert EXACT_TARGET_WEIGHT == 500
-    assert MAX_SOFT_WEIGHT == 200
+    assert FIXED_PENALTY_WEIGHT == 1_000_000_000_000
+    assert RELAX_WEIGHT == 10_000_000_000
+    assert EXACT_TARGET_WEIGHT == 10_000_000
+    assert MAX_SOFT_WEIGHT == 1_000
+    assert DEFAULT_SOFT_WEIGHTS == {
+        CLASSE_LATE_START: 500,
+        TEORIA_CONSECUTIVE: 50,
+        ORE_TARGET_DEVIATION: 75,
+        CONTRACTOR_GAP: 750,
+        SINGLE_CLASSE_DAY: 50,
+    }
     s3_default = EXACT_TARGET_WEIGHT + DEFAULT_SOFT_WEIGHTS[ORE_TARGET_DEVIATION]
     assert FIXED_PENALTY_WEIGHT > RELAX_WEIGHT > s3_default > MAX_SOFT_WEIGHT
     assert all(0 <= w <= MAX_SOFT_WEIGHT for w in DEFAULT_SOFT_WEIGHTS.values())
@@ -691,7 +723,7 @@ MAX_WEIGHTS = {k: MAX_SOFT_WEIGHT for k in DEFAULT_SOFT_WEIGHTS}
 
 def test_priority_exact_target_beats_every_preference_at_max_weight():
     # T reaches its target of 3 hours only by spending the day with class A
-    # (S5) and teaching 3 consecutive theory hours (S2): 400 < 515.
+    # (S5) and teaching 3 consecutive theory hours (S2): 2_000 < 10_000_075.
     ctx = make(
         [A(1, "T", "A"), A(2, "U", "A"), A(3, "T", "B", 0)],
         {"A": day_cap(MON, 3), "B": day_cap(MON, 0)},
@@ -702,16 +734,17 @@ def test_priority_exact_target_beats_every_preference_at_max_weight():
     assert of(res, ORE_TARGET_DEVIATION) == []
     prefs = res.violations
     assert {v.kind for v in prefs} == {SINGLE_CLASSE_DAY, TEORIA_CONSECUTIVE}
-    # In this case all the preferences together stay below the 500+ tier.
-    assert sum(v.weight * v.value for v in prefs) == 400
+    # In this case all the preferences together stay below the exact-target tier.
+    assert sum(v.weight * v.value for v in prefs) == 2 * MAX_SOFT_WEIGHT
     assert sum(v.weight * v.value for v in prefs) < (
         EXACT_TARGET_WEIGHT + DEFAULT_SOFT_WEIGHTS[ORE_TARGET_DEVIATION]
     )
 
 
-def test_priority_500_deviation_beats_a_1000_quasi_hard_violation():
+def test_priority_target_deviation_beats_a_quasi_hard_violation():
     # Reaching T's target of 5 hours with class A needs a fifth hour in the
-    # day (H11, 1000); one hour short of target costs only 515.
+    # day (H11, RELAX_WEIGHT); one hour short of target costs only the
+    # exact-target tier.
     ctx = make(
         [A(1, "T", "A"), A(2, "U", "A"), A(3, "T", "B", 0)],
         {"A": day_cap(MON, 6), "B": day_cap(MON, 0)},
@@ -720,5 +753,8 @@ def test_priority_500_deviation_beats_a_1000_quasi_hard_violation():
     res = solved(ctx)
     assert res.conflicts == []
     (dev,) = of(res, ORE_TARGET_DEVIATION)
-    assert dev.value == 1 and dev.weight == 515
+    assert dev.value == 1
+    assert (
+        dev.weight == DEFAULT_SOFT_WEIGHTS[ORE_TARGET_DEVIATION] + EXACT_TARGET_WEIGHT
+    )
     assert len(hours_of(res, 1)) == 4

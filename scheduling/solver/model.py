@@ -103,10 +103,10 @@ def solve(
     ``weights`` is the per-run soft weight map (specs 9.4). Without ``pinned``
     lessons the rigid model (H2 exact capacity) runs first; if it is
     INFEASIBLE the best-effort model runs, where every uncovered hour is a
-    1500 penalty. With ``pinned`` lessons (manual edits) the forced model runs:
-    the pinned lessons are kept unchanged and what they break is reported as
-    conflicts instead of being an error. ``fallback=False`` stops after the
-    rigid model (an INFEASIBLE week is then returned as such).
+    FIXED_PENALTY_WEIGHT penalty. With ``pinned`` lessons (manual edits) the
+    forced model runs: the pinned lessons are kept unchanged and what they break
+    is reported as conflicts instead of being an error. ``fallback=False`` stops
+    after the rigid model (an INFEASIBLE week is then returned as such).
     """
     soft_weights = resolve_weights(weights)  # rejects bad input before solving
     pinned = list(pinned or [])
@@ -517,7 +517,8 @@ def _add_soft(
                             m.add(v <= occ[h])
                         flag(v, TEORIA_CONSECUTIVE, class_id, teacher_id, d)
 
-    # S3: hours per assignment against its target (exact target: 15 + 500 per hour).
+    # S3: hours per assignment against its target (exact target: S3 base +
+    # EXACT_TARGET_WEIGHT per hour).
     for a in ctx.assignments:
         if a.id not in ctx.targets:
             continue
