@@ -20,6 +20,7 @@ from scheduling.solver import (
     RELAX_WEIGHT,
     Assignment,
     Lesson,
+    Pairing,
     Penalty,
     ScheduleContext,
     SolveStatus,
@@ -450,3 +451,42 @@ def test_soft_violations_are_listed_too():
     res = solve(ctx)
     assert items(res, "classe_late_start")
     assert res.conflicts == []  # `conflicts` keeps only the quasi-hard overrides
+
+
+def test_best_effort_counts_every_hole_as_a_penalty_term_for_the_score():
+    covered = solve(make([A(1, "T", "A", 6)], {"A": day_cap(MON, 6)}))
+    best_effort = solve(unfilled_week())
+    # Six hour-slots of the day are penalty terms, two of them violated.
+    assert best_effort.n_penalties == covered.n_penalties + 6
+    assert len(best_effort.violations) == 2
+    assert best_effort.quality_score == (best_effort.n_penalties - 2) * 100 / (
+        best_effort.n_penalties
+    )
+
+
+def test_forced_lesson_on_an_excluded_day_is_kept_not_an_error():
+    ctx = make(
+        [A(1, "T", "A")],
+        {"A": day_cap(MON, 1)},
+        excluded_days={"T": frozenset({MON})},
+    )
+    res = forced(ctx, (1, MON, 0))
+    assert res.conflict_items == []
+
+
+def test_forced_lesson_over_the_weekly_cap_is_kept_not_an_error():
+    ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 1)}, weekly_caps={"T": 0})
+    res = forced(ctx, (1, MON, 0))
+    assert res.conflict_items == []
+
+
+def test_forced_paired_lesson_pins_both_classes():
+    ctx = make(
+        [A(1, "T", "A"), A(2, "T", "B")],
+        {"A": day_cap(MON, 1), "B": day_cap(MON, 1)},
+        pairings=[Pairing("A", "B", "S", "T")],
+    )
+    res = forced(ctx, (1, MON, 3))  # only the first class's lesson is pinned
+    assert Lesson(2, MON, 3) in res.lessons
+    # Only the late start of the pinned hour is reported, nothing structural.
+    assert {i["kind"] for i in res.conflict_items} == {"classe_late_start"}
