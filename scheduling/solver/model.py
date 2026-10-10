@@ -61,7 +61,6 @@ def _sum(terms):
     return cp_model.LinearExpr.sum(list(terms))
 
 
-_SOLVED = (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
 _STATUS = {
     cp_model.OPTIMAL: SolveStatus.OPTIMAL,
     cp_model.FEASIBLE: SolveStatus.FEASIBLE,
@@ -163,8 +162,6 @@ def solve(
                 suggested_deroghe=explanation.suggested_deroghe,
                 explanation_unavailable=explanation.unavailable,
             )
-            if explanation.unavailable and result.status in _SOLVED:
-                result = replace(result, message=NO_COMPLETE_MESSAGE)
     if any(v.kind == CLASSE_UNFILLED for v in result.violations):
         result = replace(result, message=NO_COMPLETE_MESSAGE)
     return result

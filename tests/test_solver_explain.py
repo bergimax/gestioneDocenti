@@ -16,9 +16,9 @@ from scheduling.solver import (
 )
 from scheduling.solver import explain as explain_module
 from scheduling.solver import model as solver_model
+from scheduling.solver.translate import translate
 
 SOLVED = (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
-MON, TUE = 0, 1
 
 # Ids are numbers nobody would write in a sentence, so a leak is easy to see.
 A, B = 7101, 7102
@@ -29,10 +29,17 @@ NAMES = {
 }
 
 
-def caps(**by_day):
-    """Class capacity from `mon=6`, `tue=3`; the other days are closed."""
-    names = ["mon", "tue", "wed", "thu", "fri"]
-    return {i: by_day.get(n, 0) for i, n in enumerate(names)}
+WORDS = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì"]
+# Every cause is checked on two different weekdays, so a day index that is
+# lost or hardcoded on the way to the sentence shows.
+ON_DAY = pytest.mark.parametrize("day", [0, 3])
+
+
+def caps(*cells):
+    """Class capacity from `(day, hours)` cells; the other days are closed."""
+    out = dict.fromkeys(range(5), 0)
+    out.update(dict(cells))
+    return out
 
 
 def asg(id, teacher, klass, residual=99):
@@ -66,39 +73,42 @@ def only(res):
 # ---- the six causes of the issue -------------------------------------------
 
 
-def test_a_class_needs_six_hours_teachers_cover_four():
+@ON_DAY
+def test_a_class_needs_six_hours_teachers_cover_four(day):
     ctx = make(
         [asg(1, T, A), asg(2, U, A)],
-        {A: caps(mon=6)},
+        {A: caps((day, 6))},
         teacher_types={T: CONTRATTO, U: CONTRATTO},
-        availability={T: free(MON, 0, 1), U: free(MON, 2, 3)},
+        availability={T: free(day, 0, 1), U: free(day, 2, 3)},
     )
     res = explained(ctx)
     text = only(res)
-    assert "1A" in text and "lunedì" in text
+    assert "1A" in text and WORDS[day] in text
     assert "ROSSI MARIO" in text and "BIANCHI LUCA" in text
     assert "richiede 6 ore" in text
     assert "ne coprono solo 4" in text
-    assert "disponibile solo 2 ore lunedì" in text
+    assert f"disponibile solo 2 ore {WORDS[day]}" in text
     assert "Mancano 2 ore" in text
 
 
-def test_b_the_only_teacher_of_two_classes_in_the_same_hours():
-    ctx = make([asg(1, T, A), asg(2, T, B)], {A: caps(mon=6), B: caps(mon=6)})
+@ON_DAY
+def test_b_the_only_teacher_of_two_classes_in_the_same_hours(day):
+    ctx = make([asg(1, T, A), asg(2, T, B)], {A: caps((day, 6)), B: caps((day, 6))})
     text = only(explained(ctx))
-    assert "ROSSI MARIO" in text and "lunedì" in text
+    assert "ROSSI MARIO" in text and WORDS[day] in text
     assert "classi 1A e 1B" in text
     assert "nelle stesse ore" in text
     assert "servono 12 ore ma ne può fare al massimo 6" in text
     assert "Mancano 6 ore" in text
 
 
-def test_b_overlap_with_a_limited_contractor_uses_his_available_hours():
+@ON_DAY
+def test_b_overlap_with_a_limited_contractor_uses_his_available_hours(day):
     ctx = make(
         [asg(1, T, A), asg(2, T, B)],
-        {A: caps(mon=3), B: caps(mon=3)},
+        {A: caps((day, 3)), B: caps((day, 3))},
         teacher_types={T: CONTRATTO},
-        availability={T: free(MON, 0, 1, 2, 3)},
+        availability={T: free(day, 0, 1, 2, 3)},
     )
     res = explained(ctx)
     text = only(res)
@@ -111,7 +121,7 @@ def test_b_overlap_without_a_shortage_of_hours_just_says_same_hours():
     # Both classes start at 11:00 for 3 hours: 6 teacher-hours, but the same 3.
     ctx = make(
         [asg(1, T, A), asg(2, T, B)],
-        {A: caps(mon=3), B: caps(mon=3)},
+        {A: caps((0, 3)), B: caps((0, 3))},
         class_min_start={A: 11, B: 11},
     )
     text = only(explained(ctx))
@@ -119,18 +129,19 @@ def test_b_overlap_without_a_shortage_of_hours_just_says_same_hours():
     assert "Mancano" not in text and "servono" not in text
 
 
-def test_c_contractor_unavailable_on_the_only_day_of_the_class():
+@ON_DAY
+def test_c_contractor_unavailable_on_the_only_day_of_the_class(day):
     ctx = make(
         [asg(1, T, A)],
-        {A: caps(mon=3)},
+        {A: caps((day, 3))},
         teacher_types={T: CONTRATTO},
-        availability={T: free(TUE, 0, 1, 2, 3, 4, 5)},
+        availability={T: free((day + 1) % 5, 0, 1, 2, 3, 4, 5)},
     )
     res = explained(ctx)
     text = only(res)
-    assert "1A" in text and "lunedì" in text and "ROSSI MARIO" in text
+    assert "1A" in text and WORDS[day] in text and "ROSSI MARIO" in text
     assert "nessun docente può coprirle" in text
-    assert "non disponibile lunedì" in text
+    assert f"non disponibile {WORDS[day]}" in text
     assert "Mancano 3 ore" in text
     assert res.suggested_deroghe == [
         {
@@ -138,16 +149,17 @@ def test_c_contractor_unavailable_on_the_only_day_of_the_class():
             "label": "Ignora la disponibilità",
             "classe": A,
             "docente": T,
-            "giorno": "LUNEDI",
+            "giorno": ["LUNEDI", "MARTEDI", "MERCOLEDI", "GIOVEDI", "VENERDI"][day],
         }
     ]
 
 
-def test_d_assunto_with_fewer_residual_hours_than_required():
-    ctx = make([asg(1, T, A, residual=4)], {A: caps(mon=6)})
+@ON_DAY
+def test_d_assunto_with_fewer_residual_hours_than_required(day):
+    ctx = make([asg(1, T, A, residual=4)], {A: caps((day, 6))})
     res = explained(ctx)
     text = only(res)
-    assert "1A" in text and "lunedì" in text and "ROSSI MARIO" in text
+    assert "1A" in text and WORDS[day] in text and "ROSSI MARIO" in text
     assert "richiede 6 ore" in text
     assert "ha solo 4 ore residue" in text
     assert "Mancano 2 ore" in text
@@ -155,54 +167,76 @@ def test_d_assunto_with_fewer_residual_hours_than_required():
 
 
 def test_d_residual_hours_are_shared_by_the_days_of_one_class():
-    ctx = make([asg(1, T, A, residual=7)], {A: caps(mon=6, tue=6)})
+    ctx = make([asg(1, T, A, residual=7)], {A: caps((0, 6), (1, 6))})
     text = only(explained(ctx))
     assert "La classe 1A (lunedì e martedì) richiede in tutto 12 ore" in text
     assert "ne coprono solo 7" in text
     assert "Mancano 5 ore" in text
 
 
-def test_e_stage_class_with_a_paired_lesson_forced_that_day():
+@ON_DAY
+def test_e_stage_class_with_a_paired_lesson_forced_that_day(day):
     ctx = make(
         [asg(1, T, A), asg(2, T, B)],
-        {A: caps(mon=3), B: caps(mon=3)},
+        {A: caps((day, 3)), B: caps((day, 3))},
         pairings=[Pairing(A, B, "S", T)],
-        stage_days={A: frozenset({MON})},
+        stage_days={A: frozenset({day})},
     )
     res = explained(ctx)
     text = only(res)
-    assert "1B" in text and "lunedì" in text and "ROSSI MARIO" in text
+    assert "1B" in text and WORDS[day] in text and "ROSSI MARIO" in text
     assert "in coppia con la classe 1A" in text
     assert "1A è in stage" in text
     assert "Mancano 3 ore" in text
     assert res.suggested_deroghe == []
 
 
-def test_e_closed_class_with_a_paired_lesson_forced_that_day():
+@ON_DAY
+def test_e_closed_class_with_a_paired_lesson_forced_that_day(day):
     ctx = make(
         [asg(1, T, A), asg(2, T, B)],
-        {A: caps(), B: caps(mon=3)},
+        {A: caps(), B: caps((day, 3))},
         pairings=[Pairing(A, B, "S", T)],
     )
     text = only(explained(ctx))
     assert "1A è chiusa" in text
     assert "1A è in stage" not in text
-    assert "1B" in text and "lunedì" in text and "Mancano 3 ore" in text
+    assert "1B" in text and WORDS[day] in text and "Mancano 3 ore" in text
 
 
-def test_f_paired_lesson_whose_teacher_is_unavailable():
+def test_e_the_core_of_a_paired_lesson_includes_the_pairing(monkeypatch):
+    cores = []
+    real = explain_module.translate
+    monkeypatch.setattr(
+        explain_module,
+        "translate",
+        lambda ctx, found: cores.extend(found) or real(ctx, found),
+    )
+    solve(
+        make(
+            [asg(1, T, A), asg(2, T, B)],
+            {A: caps((0, 3)), B: caps((0, 3))},
+            pairings=[Pairing(A, B, "S", T)],
+            stage_days={A: frozenset({0})},
+        )
+    )
+    assert [sorted(k[0] for k in core) for core in cores] == [["cap", "closed", "pair"]]
+
+
+@ON_DAY
+def test_f_paired_lesson_whose_teacher_is_unavailable(day):
     ctx = make(
         [asg(1, T, A), asg(2, T, B), asg(3, U, A)],
-        {A: caps(mon=3), B: caps(mon=3)},
+        {A: caps((day, 3)), B: caps((day, 3))},
         teacher_types={T: CONTRATTO},
         pairings=[Pairing(A, B, "S", T)],
-        availability={T: free(TUE, 0)},
+        availability={T: free((day + 1) % 5, 0)},
     )
     res = explained(ctx)
     text = only(res)
-    assert "1B" in text and "lunedì" in text and "ROSSI MARIO" in text
+    assert "1B" in text and WORDS[day] in text and "ROSSI MARIO" in text
     assert "lezione in coppia con la classe 1A" in text
-    assert "non disponibile lunedì" in text
+    assert f"non disponibile {WORDS[day]}" in text
     assert "Mancano 3 ore" in text
     assert [d["action_type"] for d in res.suggested_deroghe] == [
         "override_availability"
@@ -212,10 +246,10 @@ def test_f_paired_lesson_whose_teacher_is_unavailable():
 def test_f_one_paired_cause_reported_once_for_both_classes():
     ctx = make(
         [asg(1, T, A), asg(2, T, B)],
-        {A: caps(mon=3), B: caps(mon=3)},
+        {A: caps((0, 3)), B: caps((0, 3))},
         teacher_types={T: CONTRATTO},
         pairings=[Pairing(A, B, "S", T)],
-        availability={T: free(TUE, 0)},
+        availability={T: free(1, 0)},
     )
     res = explained(ctx)
     text = only(res)
@@ -226,17 +260,18 @@ def test_f_one_paired_cause_reported_once_for_both_classes():
 # ---- the other hard constraints --------------------------------------------
 
 
-def test_h7_excluded_day():
-    ctx = make([asg(1, T, A)], {A: caps(mon=3)}, excluded_days={T: frozenset({MON})})
+@ON_DAY
+def test_h7_excluded_day(day):
+    ctx = make([asg(1, T, A)], {A: caps((day, 3))}, excluded_days={T: frozenset({day})})
     text = only(explained(ctx))
-    assert "ROSSI MARIO: non insegna lunedì" in text
+    assert f"ROSSI MARIO: non insegna {WORDS[day]}" in text
     assert "Mancano 3 ore" in text
 
 
 def test_h8_weekly_cap_shared_by_two_classes():
     ctx = make(
         [asg(1, T, A), asg(2, T, B)],
-        {A: caps(mon=3), B: caps(tue=3)},
+        {A: caps((0, 3)), B: caps((1, 3))},
         weekly_caps={T: 4},
     )
     text = only(explained(ctx))
@@ -246,18 +281,20 @@ def test_h8_weekly_cap_shared_by_two_classes():
     assert "Mancano 2 ore" in text
 
 
-def test_a_class_without_teachers():
-    ctx = make([asg(1, T, B)], {A: caps(mon=3), B: caps()})
+@ON_DAY
+def test_a_class_without_teachers(day):
+    ctx = make([asg(1, T, B)], {A: caps((day, 3)), B: caps()})
     text = only(explained(ctx))
     assert "1A" in text and "nessun docente può coprirle" in text
     assert "nessun docente assegnato alla classe" in text
     assert "Mancano 3 ore" in text
 
 
-def test_a_block_that_does_not_fit_after_the_start_hour():
-    ctx = make([asg(1, T, A)], {A: caps(mon=3)}, class_min_start={A: 12})
+@ON_DAY
+def test_a_block_that_does_not_fit_after_the_start_hour(day):
+    ctx = make([asg(1, T, A)], {A: caps((day, 3))}, class_min_start={A: 12})
     text = only(explained(ctx))
-    assert "La classe 1A lunedì richiede 3 ore consecutive" in text
+    assert f"La classe 1A {WORDS[day]} richiede 3 ore consecutive" in text
     assert "12:00" in text
     assert "non c'è spazio" in text
 
@@ -265,12 +302,89 @@ def test_a_block_that_does_not_fit_after_the_start_hour():
 def test_paired_classes_with_different_day_lengths_get_a_generic_sentence():
     ctx = make(
         [asg(1, T, A), asg(2, T, B)],
-        {A: caps(mon=6), B: caps(mon=3)},
+        {A: caps((0, 6)), B: caps((0, 3))},
         pairings=[Pairing(A, B, "S", T)],
     )
     text = only(explained(ctx))
     assert text.startswith("I vincoli di questa settimana non permettono")
     assert "1A e 1B" in text
+
+
+# ---- translator on hand-made cores -------------------------------------------
+
+
+def translated(assignments, cores, **kw):
+    ctx = make(assignments, {A: caps((0, 3)), B: caps((0, 3))}, **kw)
+    return translate(ctx, cores)
+
+
+PAIRED = dict(
+    teacher_types={T: CONTRATTO},
+    pairings=[Pairing(A, B, "S", T)],
+    availability={T: free(1, 0)},
+)
+
+
+def test_cores_of_one_cause_seen_from_both_paired_classes_become_one_message():
+    messages, deroghe = translated(
+        [asg(1, T, A), asg(2, T, B)],
+        [{("cap", A, 0), ("avail", 1, 0)}, {("cap", B, 0), ("avail", 2, 0)}],
+        **PAIRED,
+    )
+    assert len(messages) == 1 and "1A" in messages[0] and "1B" in messages[0]
+    assert len(deroghe) == 1
+
+
+def test_cores_with_the_same_limited_residual_of_a_pair_are_one_cause():
+    messages, _ = translated(
+        [asg(1, T, A, 1), asg(2, T, B, 1)],
+        [{("cap", A, 0), ("hours", 1)}, {("cap", B, 0), ("hours", 2)}],
+        pairings=[Pairing(A, B, "S", T)],
+    )
+    assert len(messages) == 1
+
+
+def test_a_pair_is_limited_by_the_lower_residual_of_its_two_assignments():
+    messages, _ = translated(
+        [asg(1, T, A, 5), asg(2, T, B, 2)],
+        [{("cap", A, 0), ("hours", 2)}],
+        pairings=[Pairing(A, B, "S", T)],
+    )
+    assert "ha solo 2 ore residue" in messages[0]
+    assert "Mancano 1 ora" in messages[0]
+
+
+def test_cores_of_different_causes_stay_apart():
+    messages, _ = translated(
+        [asg(1, T, A, 1), asg(2, U, B, 1)],
+        [{("cap", A, 0), ("hours", 1)}, {("cap", B, 0), ("hours", 2)}],
+    )
+    assert len(messages) == 2
+
+
+def test_identical_sentences_and_suggestions_are_listed_once():
+    # The second core only adds a residual limit of a teacher 1A does not have.
+    messages, deroghe = translated(
+        [asg(1, T, A), asg(2, U, B, 1)],
+        [
+            {("cap", A, 0), ("avail", 1, 0)},
+            {("cap", A, 0), ("avail", 1, 0), ("hours", 2)},
+        ],
+        teacher_types={T: CONTRATTO},
+        availability={T: frozenset()},
+    )
+    assert len(messages) == 1
+    assert len(deroghe) == 1
+
+
+def test_one_suggestion_per_teacher_and_day_in_a_core():
+    _, deroghe = translated(
+        [asg(1, T, A), asg(2, T, B)],
+        [{("cap", A, 0), ("avail", 1, 0), ("avail", 2, 0)}],
+        teacher_types={T: CONTRATTO},
+        availability={T: frozenset()},
+    )
+    assert [d["docente"] for d in deroghe] == [T]
 
 
 # ---- several causes, feasible weeks, budget --------------------------------
@@ -279,7 +393,7 @@ def test_paired_classes_with_different_day_lengths_get_a_generic_sentence():
 def two_causes():
     return make(
         [asg(1, T, A, residual=4), asg(2, U, B, residual=2)],
-        {A: caps(mon=6), B: caps(tue=6)},
+        {A: caps((0, 6)), B: caps((1, 6))},
     )
 
 
@@ -299,14 +413,14 @@ def test_a_feasible_week_never_extracts_a_core(monkeypatch):
 
     monkeypatch.setattr(solver_model, "explain_infeasibility", boom)
     monkeypatch.setattr(solver_model, "build_probe", boom)
-    res = solve(make([asg(1, T, A)], {A: caps(mon=6)}))
+    res = solve(make([asg(1, T, A)], {A: caps((0, 6))}))
     assert res.status in SOLVED and res.message == ""
     assert res.explanations == [] and res.suggested_deroghe == []
     assert res.explanation_unavailable is False
 
 
 def test_infeasible_week_returns_best_effort_and_explanations():
-    res = explained(make([asg(1, T, A, residual=4)], {A: caps(mon=6)}))
+    res = explained(make([asg(1, T, A, residual=4)], {A: caps((0, 6))}))
     assert res.status in SOLVED
     assert len(res.lessons) == 4
     assert res.message == NO_COMPLETE_MESSAGE
@@ -314,19 +428,62 @@ def test_infeasible_week_returns_best_effort_and_explanations():
 
 
 def test_without_fallback_the_infeasible_result_is_explained_too():
-    res = solve(make([asg(1, T, A, residual=4)], {A: caps(mon=6)}), fallback=False)
+    res = solve(make([asg(1, T, A, residual=4)], {A: caps((0, 6))}), fallback=False)
     assert res.status == SolveStatus.INFEASIBLE
     assert res.lessons == []
     assert "ha solo 4 ore residue" in only(res)
 
 
 def test_zero_budget_gives_the_generic_message_and_the_flag():
-    ctx = make([asg(1, T, A, residual=4)], {A: caps(mon=6)})
+    ctx = make([asg(1, T, A, residual=4)], {A: caps((0, 6))})
     res = solve(dataclasses.replace(ctx, explain_budget_seconds=0.0))
     assert res.status in SOLVED and len(res.lessons) == 4
     assert res.explanation_unavailable is True
     assert res.explanations == [] and res.suggested_deroghe == []
     assert res.message == NO_COMPLETE_MESSAGE
+
+
+def test_zero_budget_never_calls_the_solver(monkeypatch):
+    from ortools.sat.python import cp_model
+
+    def boom(self, model):
+        raise AssertionError("solve called without budget")
+
+    monkeypatch.setattr(cp_model.CpSolver, "solve", boom)
+    ctx = dataclasses.replace(two_causes(), explain_budget_seconds=0.0)
+    assert explain_module.explain_infeasibility(ctx).unavailable is True
+
+
+def test_a_core_that_is_not_minimal_is_shrunk_before_it_is_translated(monkeypatch):
+    from ortools.sat.python import cp_model
+
+    real_solve = cp_model.CpSolver.solve
+
+    def solve_and_remember(self, model):
+        self.remembered = model
+        return real_solve(self, model)
+
+    # Pretend the solver returns every assumption as its core.
+    monkeypatch.setattr(cp_model.CpSolver, "solve", solve_and_remember)
+    monkeypatch.setattr(
+        cp_model.CpSolver,
+        "sufficient_assumptions_for_infeasibility",
+        lambda self: list(self.remembered.proto.assumptions),
+    )
+    res = explained(two_causes())
+    assert len(res.explanations) == 2
+    assert "1B" not in res.explanations[0] and "1A" not in res.explanations[1]
+
+
+def test_a_probe_that_turns_out_feasible_is_unavailable(monkeypatch):
+    from ortools.sat.python import cp_model
+
+    monkeypatch.setattr(
+        cp_model.CpSolver, "solve", lambda self, model: cp_model.OPTIMAL
+    )
+    monkeypatch.setattr(explain_module, "_used", lambda solver: 0.0)
+    result = explain_module.explain_infeasibility(two_causes())
+    assert result.unavailable is True and result.messages == []
 
 
 def test_budget_spent_during_extraction_drops_the_partial_explanation(monkeypatch):
@@ -350,7 +507,7 @@ def test_solver_stopping_on_its_time_limit_is_unavailable(monkeypatch):
 
 def test_a_week_the_probe_cannot_fail_is_unavailable(monkeypatch):
     monkeypatch.setattr(solver_model, "build_probe", lambda ctx: None)
-    res = solve(make([asg(1, T, A, residual=4)], {A: caps(mon=6)}))
+    res = solve(make([asg(1, T, A, residual=4)], {A: caps((0, 6))}))
     assert res.explanation_unavailable is True and res.explanations == []
 
 
@@ -364,15 +521,15 @@ INTERNALS = re.compile(r"hc_|\b(cap|closed|hours|excl|busy|weekly|avail|pair)\b"
     [
         make(
             [asg(1, T, A), asg(2, T, B)],
-            {A: caps(mon=3), B: caps(mon=3)},
+            {A: caps((0, 3)), B: caps((0, 3))},
             teacher_types={T: CONTRATTO},
             pairings=[Pairing(A, B, "S", T)],
-            availability={T: free(TUE, 0)},
+            availability={T: free(1, 0)},
         ),
-        make([asg(1, T, A), asg(2, T, B)], {A: caps(mon=6), B: caps(mon=6)}),
+        make([asg(1, T, A), asg(2, T, B)], {A: caps((0, 6)), B: caps((0, 6))}),
         make(
             [asg(1, T, A), asg(2, T, B)],
-            {A: caps(mon=3), B: caps(tue=3)},
+            {A: caps((0, 3)), B: caps((1, 3))},
             weekly_caps={T: 4},
         ),
         two_causes(),
