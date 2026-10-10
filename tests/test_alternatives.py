@@ -3,6 +3,7 @@
 import dataclasses
 import datetime
 import html as htmllib
+import re
 from unittest import mock
 
 import pytest
@@ -288,10 +289,14 @@ def test_the_week_and_its_version_are_untouched_until_the_pick(admin, rw):
 
 def test_alternatives_are_not_lessons_of_the_grid(admin, rw):
     grid_url = f"/orario/{WEEK}/griglia/"
-    before = html(admin.get(grid_url))
+
+    def grid():
+        return re.sub(r'data-csrf="[^"]*"', "", html(admin.get(grid_url)))
+
+    before = grid()
     assert 'class="tt-card' in before
     job = start(admin, fake=distinct(rw))
-    assert html(admin.get(grid_url)) == before  # same cells, same version
+    assert grid() == before  # same cells, same version
     assert job.result["alternatives"]  # held in the job, not in the week
 
 
