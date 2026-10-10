@@ -6,7 +6,7 @@ from school.models import CalendarEntry, Class, SubjectKind
 
 from .context import _is_stage
 from .derogations import QUICK_ACTIONS, label_of
-from .models import ConflictDecision, Day, Slot
+from .models import ConflictDecision, Day, JobKind, JobStatus, Slot, SolveJob
 from .solver.context import CLASSE_UNFILLED
 from .solver.model import NO_COMPLETE_MESSAGE
 
@@ -123,6 +123,26 @@ def conflict_rows(conflicts):
     ]
 
 
+def explanations(timetable):
+    """Why the week has no complete timetable, from the job that wrote it.
+
+    Read from the stored job result: the solver is never called while rendering.
+    """
+    job = (
+        SolveJob.objects.filter(
+            school_id=timetable.school_id,
+            week_start=timetable.week_start,
+            kind=JobKind.GENERATE,
+            status=JobStatus.DONE,
+        )
+        .order_by("-pk")
+        .first()
+    )
+    if job is None or job.result.get("timetable_id") != timetable.pk:
+        return []
+    return [m for m in job.result.get("explanations") or [] if isinstance(m, str)]
+
+
 def is_best_effort(conflicts):
     return any(
         isinstance(c, dict) and c.get("kind") == CLASSE_UNFILLED
@@ -193,4 +213,10 @@ def build_board(school, week_start, timetable):
     return days
 
 
-__all__ = ["HOURS", "NO_COMPLETE_MESSAGE", "build_board", "is_best_effort"]
+__all__ = [
+    "HOURS",
+    "NO_COMPLETE_MESSAGE",
+    "build_board",
+    "explanations",
+    "is_best_effort",
+]

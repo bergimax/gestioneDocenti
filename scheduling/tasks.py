@@ -121,6 +121,9 @@ def _write_result(job, result):
                 "n_slots": len(result.lessons),
                 "n_conflicts": len(result.conflict_items),
                 "message": result.message,
+                "explanations": result.explanations,
+                "explanation_unavailable": result.explanation_unavailable,
+                "suggested_deroghe": result.suggested_deroghe,
             },
         )
 
@@ -136,7 +139,11 @@ def run_job(job_id):
         derogation = derogation_from_params(job.params)
         extra = {"derogations": [derogation]} if derogation else {}
         ctx = build_week_context(job.week_start, job.school, **extra)
-        ctx = dataclasses.replace(ctx, timeout_seconds=settings.SOLVER_TIMEOUT_SECONDS)
+        ctx = dataclasses.replace(
+            ctx,
+            timeout_seconds=settings.SOLVER_TIMEOUT_SECONDS,
+            explain_budget_seconds=settings.SOLVER_EXPLAIN_BUDGET_SECONDS,
+        )
         result = solve_exclusive(ctx)
         if result.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE):
             _write_result(job, result)

@@ -191,4 +191,6 @@ def build_week_context(week_start, school=None, derogations=()):
         targets=targets,
         target_sources=sources,
         derogations=list(derogations),
+        class_names={c.pk: c.name for c in classes},
+        teacher_names={t.pk: t.name for t in teachers},
     )

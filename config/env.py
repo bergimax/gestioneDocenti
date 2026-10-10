@@ -6,6 +6,7 @@ from urllib.parse import unquote, urlsplit
 from django.core.exceptions import ImproperlyConfigured
 
 DEFAULT_SOLVER_TIMEOUT_SECONDS = 60
+DEFAULT_SOLVER_EXPLAIN_BUDGET_SECONDS = 10
 DEFAULT_AVAILABILITY_LINK_TTL_HOURS = 72
 DEFAULT_LINK_LOOKUP_MAX_FAILURES = 10
 DEFAULT_LINK_LOOKUP_WINDOW_SECONDS = 300
@@ -54,6 +55,17 @@ def get_positive_int(env: Mapping[str, str], name: str, default: int) -> int:
         ) from None
     if value <= 0:
         raise ImproperlyConfigured(f"{name} must be a positive integer (got {raw!r}).")
+    return value
+
+
+def get_explain_budget(env: Mapping[str, str], timeout: int) -> int:
+    """SOLVER_EXPLAIN_BUDGET_SECONDS: a positive integer below ``timeout``."""
+    name = "SOLVER_EXPLAIN_BUDGET_SECONDS"
+    value = get_positive_int(env, name, DEFAULT_SOLVER_EXPLAIN_BUDGET_SECONDS)
+    if value >= timeout:
+        raise ImproperlyConfigured(
+            f"{name} ({value}) must be below SOLVER_TIMEOUT_SECONDS ({timeout})."
+        )
     return value
 
 

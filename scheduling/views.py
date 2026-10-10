@@ -24,6 +24,7 @@ from .board import (
     NO_COMPLETE_MESSAGE,
     build_board,
     conflict_rows,
+    explanations,
     is_best_effort,
     visible_conflicts,
 )
@@ -109,6 +110,7 @@ def _body_context(school, week, user, oob=False, move_error=None, clear_panel=Fa
             days=build_board(school, week["start"], timetable),
             conflict_list=conflict_rows(visible),
             best_effort=is_best_effort(visible),
+            explanations=explanations(timetable),
             no_complete_message=NO_COMPLETE_MESSAGE,
             approved=approved,
         )

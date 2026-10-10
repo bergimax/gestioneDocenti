@@ -164,9 +164,9 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-job { margin-bottom: 1rem; }
 .tt-summary { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; }
 .tt-approved { background: #e3f4e6; color: #14532d; padding: .15rem .5rem; }
-.tt-conflicts { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; margin: .75rem 0; }
-.tt-conflicts h2 { margin: 0 0 .25rem; font-size: 1.1rem; }
-.tt-conflicts ul { margin: 0; padding-left: 1.2rem; }
+.tt-conflicts, .tt-explanations { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; margin: .75rem 0; }
+.tt-conflicts h2, .tt-explanations h2 { margin: 0 0 .25rem; font-size: 1.1rem; }
+.tt-conflicts ul, .tt-explanations ul { margin: 0; padding-left: 1.2rem; }
 .tt-day h2 { font-size: 1.15rem; margin: 1rem 0 .4rem; }
 .tt-scroll { max-width: 100%; overflow-x: auto; }
 .tt-grid { border-collapse: collapse; background: var(--surface); min-width: 44rem; width: 100%; }

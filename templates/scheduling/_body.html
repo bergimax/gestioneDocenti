@@ -10,6 +10,14 @@
     {% if timetable.quality_level %}<p class="tt-quality">Qualit&agrave;: livello <strong>{{ timetable.quality_level }}</strong>{% if timetable.quality_score is not None %} (punteggio {{ timetable.quality_score|floatformat:1 }}){% endif %}</p>{% endif %}
     {% if best_effort %}<p class="message message-info" role="status">{{ no_complete_message }}</p>{% endif %}
   </div>
+  {% if explanations %}
+  <section class="tt-explanations" aria-label="Perch&eacute; l'orario non &egrave; completo">
+    <h2>Perch&eacute; l'orario non &egrave; completo</h2>
+    <ul>
+      {% for message in explanations %}<li>{{ message }}</li>{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
   {% if conflict_list %}
   <section class="tt-conflicts" aria-label="Conflitti">
     <h2>Conflitti ({{ conflict_list|length }})</h2>

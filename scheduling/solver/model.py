@@ -45,6 +45,8 @@ from .context import (
     SolveResult,
     SolveStatus,
 )
+from .context import capacity as _capacity
+from .explain import explain_infeasibility
 from .weights import quality, resolve_weights, scaled_weight
 
 RIGID = "rigid"
@@ -59,18 +61,12 @@ def _sum(terms):
     return cp_model.LinearExpr.sum(list(terms))
 
 
+_SOLVED = (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
 _STATUS = {
     cp_model.OPTIMAL: SolveStatus.OPTIMAL,
     cp_model.FEASIBLE: SolveStatus.FEASIBLE,
     cp_model.INFEASIBLE: SolveStatus.INFEASIBLE,
 }
-
-
-def _capacity(ctx: ScheduleContext, class_id, day: int) -> int:
-    if day in ctx.stage_days.get(class_id, ()):
-        return 0  # H5
-    cap = ctx.class_capacity.get(class_id, {}).get(day, HOURS)
-    return max(0, min(HOURS, cap))
 
 
 _DAY_NAMES = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì"]
@@ -90,6 +86,47 @@ def _derogated(ctx: ScheduleContext, action, class_id, teachers, day) -> bool:
 
 def _hour_label(h: int) -> str:
     return f"{FIRST_HOUR + h:02d}:00"
+
+
+class _Probe:
+    """Assumption literals of the diagnostic model (specs 9.2, architecture 7.3).
+
+    Each hard constraint that can make a week infeasible is enforced only if its
+    literal is true. ``lits`` maps a constraint key to its literal; a key is a
+    tuple whose first item names the constraint (see ``explain.py``):
+    ``cap``/``closed`` (class, day), ``hours`` (assignment), ``excl``/``busy``
+    (teacher, day), ``weekly`` (teacher), ``avail`` (assignment, day), ``pair``
+    (index of the pairing).
+    """
+
+    def __init__(self):
+        self.model = None
+        self.lits = {}
+
+    def literal(self, key):
+        lit = self.lits.get(key)
+        if lit is None:
+            name = "_".join(str(part) for part in key)
+            lit = self.lits[key] = self.model.new_bool_var(f"hc_{name}")
+        return lit
+
+
+def _guard(probe, key, constraint):
+    """In the diagnostic model, enforce ``constraint`` only under its literal."""
+    if probe is not None:
+        constraint.only_enforce_if(probe.literal(key))
+
+
+def build_probe(ctx: ScheduleContext):
+    """The rigid model with assumption literals: ``(model, {key: literal})``.
+
+    ``None`` for a week without classes (nothing to explain). The objective is
+    left out: the model only answers feasible or not, under assumptions.
+    """
+    probe = _Probe()
+    if _solve_mode(ctx, resolve_weights(None), RIGID, [], probe) is None:
+        return None
+    return probe.model, probe.lits
 
 
 def solve(
@@ -114,14 +151,26 @@ def solve(
         result = _solve_mode(ctx, soft_weights, FORCED, pinned)
     else:
         result = _solve_mode(ctx, soft_weights, RIGID, [])
-        if fallback and result.status == SolveStatus.INFEASIBLE:
-            result = _solve_mode(ctx, soft_weights, BEST_EFFORT, [])
+        if result.status == SolveStatus.INFEASIBLE:
+            # Only an infeasible week is ever explained; a feasible one never
+            # reaches this branch, so it pays nothing for the literals.
+            explanation = explain_infeasibility(ctx)
+            if fallback:
+                result = _solve_mode(ctx, soft_weights, BEST_EFFORT, [])
+            result = replace(
+                result,
+                explanations=explanation.messages,
+                suggested_deroghe=explanation.suggested_deroghe,
+                explanation_unavailable=explanation.unavailable,
+            )
+            if explanation.unavailable and result.status in _SOLVED:
+                result = replace(result, message=NO_COMPLETE_MESSAGE)
     if any(v.kind == CLASSE_UNFILLED for v in result.violations):
         result = replace(result, message=NO_COMPLETE_MESSAGE)
     return result
 
 
-def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
+def _solve_mode(ctx, soft_weights, mode, pinned, probe=None) -> SolveResult:
     relaxed = mode != RIGID
     classes = (
         {a.class_id for a in ctx.assignments}
@@ -133,6 +182,8 @@ def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
     for p in ctx.pairings:
         classes |= {p.class_a, p.class_b}
     if not classes:
+        if probe is not None:
+            return None
         return SolveResult(
             SolveStatus.OPTIMAL, [], quality_score=100.0, quality_level="A"
         )
@@ -146,6 +197,8 @@ def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
         by_teacher[a.teacher_id].append(a)
 
     m = cp_model.CpModel()
+    if probe is not None:
+        probe.model = m
     x = {
         (a.id, d, h): m.new_bool_var(f"x_{a.id}_{d}_{h}")
         for a in ctx.assignments
@@ -155,7 +208,7 @@ def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
 
     # H3: the paired lesson is one lesson shared by two assignments.
     shadow = set()  # the second class's assignment: not counted for the teacher
-    for p in ctx.pairings:
+    for index, p in enumerate(ctx.pairings):
         a = by_key.get((p.teacher_id, p.class_a, p.subject_id))
         b = by_key.get((p.teacher_id, p.class_b, p.subject_id))
         if a is None or b is None:
@@ -163,7 +216,7 @@ def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
         shadow.add(b.id)
         for d in range(DAYS):
             for h in range(HOURS):
-                m.add(x[a.id, d, h] == x[b.id, d, h])
+                _guard(probe, ("pair", index), m.add(x[a.id, d, h] == x[b.id, d, h]))
 
     pin, fixed = _pin_lessons(ctx, mode, pinned, by_key, shadow, x, m)
     pin_count = Counter((by_id[i].class_id, d, h) for i, d, h in pin)
@@ -198,10 +251,11 @@ def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
                     starts = []
             if cap == 0 and not relaxed:  # H5 / closure
                 for h in range(HOURS):
-                    m.add(occupied[h] == 0)
+                    _guard(probe, ("closed", class_id, d), m.add(occupied[h] == 0))
                 continue
             if not starts and not relaxed:
-                m.add_bool_or([])  # unsatisfiable: the block cannot fit
+                # unsatisfiable: the block cannot fit
+                _guard(probe, ("cap", class_id, d), m.add_bool_or([]))
                 continue
             if not starts:
                 # No contiguous block can hold the day (pinned lessons break
@@ -228,7 +282,7 @@ def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
                     m.add(occupied[h] + hole == cover)
                     unfilled.append((hole, class_id, d, h))
                 else:
-                    m.add(occupied[h] == cover)
+                    _guard(probe, ("cap", class_id, d), m.add(occupied[h] == cover))
 
     pin_teacher = Counter(
         (by_id[i].teacher_id, d, h) for i, d, h in pin if i not in shadow
@@ -240,19 +294,25 @@ def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
         counted = [a for a in group if a.id not in shadow]
         for d in range(DAYS):
             for h in range(HOURS):
-                m.add(
+                busy = m.add(
                     _sum(x[a.id, d, h] for a in counted)
                     <= max(
                         1, pin_teacher[counted[0].teacher_id, d, h] if counted else 1
                     )
                 )
+                if counted:
+                    _guard(probe, ("busy", counted[0].teacher_id, d), busy)
 
     # H6: ASSUNTO hours per assignment never exceed the residual.
     for a in ctx.assignments:
         if ctx.teacher_types.get(a.teacher_id, ASSUNTO) == ASSUNTO:
-            m.add(
-                _sum(x[a.id, d, h] for d in range(DAYS) for h in range(HOURS))
-                <= max(0, a.residual_hours, pin_week[a.id])
+            _guard(
+                probe,
+                ("hours", a.id),
+                m.add(
+                    _sum(x[a.id, d, h] for d in range(DAYS) for h in range(HOURS))
+                    <= max(0, a.residual_hours, pin_week[a.id])
+                ),
             )
 
     # H7: excluded teacher-days.
@@ -262,20 +322,28 @@ def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
                 if 0 <= d < DAYS:
                     for h in range(HOURS):
                         if (a.id, d, h) not in pin:
-                            m.add(x[a.id, d, h] == 0)
+                            _guard(
+                                probe,
+                                ("excl", teacher_id, d),
+                                m.add(x[a.id, d, h] == 0),
+                            )
 
     # H8: weekly cap per teacher.
     cells = [(d, h) for d in range(DAYS) for h in range(HOURS)]
     for teacher_id, cap in ctx.weekly_caps.items():
         counted = [a for a in by_teacher.get(teacher_id, []) if a.id not in shadow]
-        m.add(
-            _sum(
-                x[a.id, d, h]
-                for a in counted
-                for d in range(DAYS)
-                for h in range(HOURS)
-            )
-            <= max(0, cap, sum(pin_teacher[teacher_id, d, h] for d, h in cells))
+        _guard(
+            probe,
+            ("weekly", teacher_id),
+            m.add(
+                _sum(
+                    x[a.id, d, h]
+                    for a in counted
+                    for d in range(DAYS)
+                    for h in range(HOURS)
+                )
+                <= max(0, cap, sum(pin_teacher[teacher_id, d, h] for d, h in cells))
+            ),
         )
 
     h9_active = set()  # (class, day) where H9 already speaks for the late start
@@ -291,7 +359,10 @@ def _solve_mode(ctx, soft_weights, mode, pinned) -> SolveResult:
         penalties,
         h9_active,
         pin,
+        probe,
     )
+    if probe is not None:
+        return m  # the diagnostic model needs neither preferences nor objective
     soft = []  # (var, weight, kind, class_id, teacher_id, day, hour, assignment)
     _add_soft(
         ctx,
@@ -618,6 +689,7 @@ def _add_quasi_hard(
     penalties,
     h9_active,
     pin=frozenset(),
+    probe=None,
 ):
     """H4, H9, H10, H11: each violation is an override var weighted RELAX_WEIGHT."""
     assignment = {a.id: a for a in ctx.assignments}
@@ -665,7 +737,7 @@ def _add_quasi_hard(
                 if (d, h) in free:
                     continue
                 if not ctx.availability_relaxed and (a.id, d, h) not in pin:
-                    m.add(x[a.id, d, h] == 0)
+                    _guard(probe, ("avail", a.id, d), m.add(x[a.id, d, h] == 0))
                 elif a.id not in shadow:
                     penalties.append(
                         (x[a.id, d, h], ("H4", a.class_id, a.teacher_id, d, h))

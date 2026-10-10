@@ -152,6 +152,12 @@ class ScheduleContext:
     # How each target was derived (free text, shown in the S3 conflict).
     target_sources: dict[Id, str] = field(default_factory=dict)
     timeout_seconds: float = 60.0
+    # Time budget of the unsat core extraction of an infeasible week (7.3).
+    explain_budget_seconds: float = 10.0
+    # Display names for the explanations: "1A", "COGNOME NOME". A missing id
+    # falls back to its text.
+    class_names: dict[Id, str] = field(default_factory=dict)
+    teacher_names: dict[Id, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -205,6 +211,12 @@ class SolveResult:
     # Every violated penalty as a specs 9.8 conflict dict (see conflicts.py);
     # ``conflicts`` above keeps only the quasi-hard overrides.
     conflict_items: list[dict] = field(default_factory=list, compare=False)
+    # Why the rigid model was infeasible (architecture 7.3): Italian sentences,
+    # the derogations that could unblock the week, and whether the unsat core
+    # extraction ran out of its time budget. All empty/False for a feasible week.
+    explanations: list[str] = field(default_factory=list, compare=False)
+    suggested_deroghe: list[dict] = field(default_factory=list, compare=False)
+    explanation_unavailable: bool = field(default=False, compare=False)
 
     @property
     def slots(self) -> list[Lesson]:
@@ -213,3 +225,11 @@ class SolveResult:
     @property
     def n_soft_conflicts(self) -> int:
         return len(self.violations)
+
+
+def capacity(ctx: ScheduleContext, class_id: Id, day: int) -> int:
+    """Lessons of the class on the day: 0 on a stage day (H5), else clamped 0-6."""
+    if day in ctx.stage_days.get(class_id, ()):
+        return 0
+    cap = ctx.class_capacity.get(class_id, {}).get(day, HOURS)
+    return max(0, min(HOURS, cap))

@@ -8,6 +8,7 @@ from config.env import (
     DEFAULT_SETUP_MAX_UPLOAD_BYTES,
     DEFAULT_SOLVER_TIMEOUT_SECONDS,
     get_bool,
+    get_explain_budget,
     get_hosts,
     get_positive_int,
     get_required,
@@ -22,6 +23,7 @@ ALLOWED_HOSTS = get_hosts(os.environ, "ALLOWED_HOSTS", required=not DEBUG)
 SOLVER_TIMEOUT_SECONDS = get_positive_int(
     os.environ, "SOLVER_TIMEOUT_SECONDS", DEFAULT_SOLVER_TIMEOUT_SECONDS
 )
+SOLVER_EXPLAIN_BUDGET_SECONDS = get_explain_budget(os.environ, SOLVER_TIMEOUT_SECONDS)
 SETUP_MAX_UPLOAD_BYTES = get_positive_int(
     os.environ, "SETUP_MAX_UPLOAD_BYTES", DEFAULT_SETUP_MAX_UPLOAD_BYTES
 )
