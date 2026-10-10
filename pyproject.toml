@@ -5,6 +5,7 @@ description = "Gestione docenti"
 requires-python = ">=3.13"
 dependencies = [
     "Django==5.2.18",
+    "pdfplumber==0.11.10",
     "psycopg[binary]==3.3.6",
 ]
 
@@ -12,6 +13,7 @@ dependencies = [
 dev = [
     "pytest==9.1.1",
     "pytest-django==4.14.0",
+    "reportlab==5.0.1",
     "ruff==0.16.10",
 ]
 
