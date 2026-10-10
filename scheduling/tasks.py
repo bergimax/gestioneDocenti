@@ -145,9 +145,8 @@ def run_job(job_id):
     except Exception as exc:
         logger.exception("Solve job %s failed", job_id)
         error = f"{ERROR_UNEXPECTED} ({exc})"
-    job.refresh_from_db()
-    if job.status == JobStatus.RUNNING:
-        job.transition_to(JobStatus.FAILED, error=error)
+    job.refresh_from_db()  # undo the in-memory DONE of a rolled-back write
+    job.transition_to(JobStatus.FAILED, error=error)
 
 
 @task
