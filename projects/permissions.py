@@ -65,6 +65,10 @@ def can_repair(user, timetable=None):
     return _allowed(user, ADMIN_ONLY)
 
 
+def can_choose_alternative(user, timetable=None):
+    return _allowed(user, ADMIN_ONLY)
+
+
 def can_run_setup(user, obj=None):
     return _allowed(user, ADMIN_ONLY)
 
@@ -92,6 +96,7 @@ PREDICATES = (
     can_decide_conflicts,
     can_apply_quick_action,
     can_repair,
+    can_choose_alternative,
     can_run_setup,
     can_edit_school_data,
     can_edit_teachers,

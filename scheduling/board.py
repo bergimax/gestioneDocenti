@@ -150,19 +150,27 @@ def is_best_effort(conflicts):
     )
 
 
-def build_board(school, week_start, timetable):
-    """Days -> rows (one per class) -> six cells, for `timetable`."""
+def build_board(school, week_start, timetable, slots=None, conflicts=None):
+    """Days -> rows (one per class) -> six cells, for `timetable`.
+
+    `slots` and `conflicts` show a week that is not stored (an alternative
+    before it is picked): unsaved Slots with `teacher` and `subject` set, and
+    the solver's conflict items; `timetable` is then not read.
+    """
     classes = list(Class.objects.filter(school=school).order_by("name", "pk"))
     dates = [week_start + datetime.timedelta(days=i) for i in range(5)]
     entries = list(CalendarEntry.objects.filter(school=school, date__in=dates))
     by_class, by_teacher, by_day, pratica_days = conflict_keys(
-        visible_conflicts(timetable)
+        visible_conflicts(timetable) if conflicts is None else conflicts
     )
 
     lessons = {}  # (class_id, day, hour) -> cell
-    slots = list(
-        Slot.objects.filter(timetable=timetable).select_related("teacher", "subject")
-    )
+    if slots is None:
+        slots = list(
+            Slot.objects.filter(timetable=timetable).select_related(
+                "teacher", "subject"
+            )
+        )
 
     def lesson_cell(slot, class_id):
         key = (class_id, slot.day, slot.start_hour)

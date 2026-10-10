@@ -1,0 +1,33 @@
+  {% for day in days %}
+  <section class="tt-day" aria-label="{{ day.label }}">
+    <h2>{{ day.label }} {{ day.date|date:"d/m" }}</h2>
+    <div class="tt-scroll">
+      <table class="tt-grid">
+        <thead>
+          <tr>
+            <th scope="col">Classe</th>
+            {% for cell in day.rows.0.cells %}<th scope="col">{{ cell.hour }}-{{ cell.hour|add:1 }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in day.rows %}
+          <tr>
+            <th scope="row">{{ row.school_class.name }}</th>
+            {% for cell in row.cells %}
+            {% if cell.kind == "lesson" %}
+            <td class="tt-lesson{% if cell.conflict %} tt-conflict{% endif %}"{% if cell.conflict %} data-conflict="true"{% endif %} data-day="{{ cell.day }}" data-hour="{{ cell.hour }}"{% if can_move %} data-drop="classe-{{ row.school_class.pk }}"{% endif %}><div class="tt-card{% if can_move %} tt-draggable{% endif %}"{% if can_move %} data-slot-id="{{ cell.slot_id }}"{% endif %}>{% if cell.conflict %}<span class="tt-flag" title="Conflitto"><span aria-hidden="true">!</span><span class="visually-hidden">Conflitto</span></span> {% endif %}<span class="tt-subject">{{ cell.subject }}</span> <span class="tt-teacher">{{ cell.teacher }}</span></div>{% if can_decide and cell.conflict %}<form class="tt-inline" method="post" action="{% url 'timetable_conflicts_reject' week.start|date:'Y-m-d' %}" hx-post="{% url 'timetable_conflicts_reject' week.start|date:'Y-m-d' %}" hx-target="#timetable-body" hx-swap="outerHTML"><input type="hidden" name="classe" value="{{ row.school_class.pk }}"><input type="hidden" name="giorno" value="{{ cell.day }}"><input type="hidden" name="ora_inizio" value="{{ cell.hour }}"><input type="hidden" name="version" value="{{ token }}"><button type="submit" class="tt-reject">Rifiuta</button></form>{% endif %}</td>
+            {% elif cell.kind == "stage" %}
+            <td class="tt-stage">STAGE</td>
+            {% else %}
+            <td class="tt-free{% if cell.conflict %} tt-conflict{% endif %}"{% if cell.conflict %} data-conflict="true"{% endif %} data-day="{{ cell.day }}" data-hour="{{ cell.hour }}"{% if can_move %} data-drop="classe-{{ row.school_class.pk }}"{% endif %}>{% if cell.conflict %}<span class="tt-flag" title="Conflitto"><span aria-hidden="true">!</span><span class="visually-hidden">Conflitto</span></span>{% endif %}{% if can_assign %}<button type="button" class="tt-assign-btn" hx-get="{% url 'timetable_assignable' week.start|date:'Y-m-d' row.school_class.pk %}?giorno={{ cell.day }}&amp;ora_inizio={{ cell.hour }}" hx-target="#tt-assign-panel" hx-swap="innerHTML">assegna</button>{% endif %}</td>
+            {% endif %}
+            {% endfor %}
+          </tr>
+          {% empty %}
+          <tr><td colspan="7">Nessuna classe.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endfor %}

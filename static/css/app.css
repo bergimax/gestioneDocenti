@@ -204,3 +204,10 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-diff-actions { display: flex; gap: .5rem; margin-top: .5rem; }
 .tt-deroga-help { margin: 0 0 .5rem; font-size: .85rem; }
 .tt-quick-btn { font-size: .75rem; padding: .1rem .4rem; }
+.tt-alternatives { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; margin: .75rem 0; }
+.tt-alternatives h2 { margin: 0 0 .25rem; font-size: 1.1rem; }
+.tt-alt-desc { font-weight: 400; font-size: .85rem; }
+.tt-alt-differs th, .tt-alt-differs td { font-weight: 700; background: var(--cal-short-bg); color: var(--fg); }
+.tt-alt-actions { white-space: nowrap; }
+.tt-alt-actions form { display: inline; }
+.tt-alt-option { display: inline-flex; gap: .35rem; align-items: center; margin-right: .75rem; }

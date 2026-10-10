@@ -9,7 +9,7 @@ from school.models import Assignment
 from school.selectors import current_school
 
 from .models import ACTIVE_JOB_STATUSES, JobKind, SolveJob, Timetable, TimetableState
-from .tasks import ERROR_APPROVED, ERROR_NO_ASSIGNMENTS, run_solve_job
+from .tasks import ALTERNATIVES_KEY, ERROR_APPROVED, ERROR_NO_ASSIGNMENTS, run_solve_job
 
 ERROR_ACTIVE_JOB = (
     "Una generazione di questa settimana è già in corso: attendi che finisca."
@@ -29,16 +29,20 @@ def _active_job(school, week_start):
     ).first()
 
 
-def enqueue_generation(week_start, user):
+def enqueue_generation(week_start, user, alternatives=False):
     """Create a PENDING job for the week and enqueue it; returns at once.
 
     Returns the already pending or running job of that week instead of a second
-    one. Raises PermissionDenied (user lacks can_generate), ValueError (not a
+    one. With `alternatives` the job solves up to three weight variations and
+    writes nothing until one is picked (scheduling.alternatives). Raises
+    PermissionDenied (user lacks can_generate), ValueError (not a
     Monday) or GenerationRefused (approved week, no assignments).
     """
     if not can_generate(user):
         raise PermissionDenied
-    return enqueue_job(week_start, user)
+    return enqueue_job(
+        week_start, user, {ALTERNATIVES_KEY: True} if alternatives else None
+    )
 
 
 def enqueue_job(week_start, user, params=None, refuse_active=False):

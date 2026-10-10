@@ -1,0 +1,44 @@
+<section class="tt-alternatives" aria-label="Alternative dell'orario">
+  <h2>Alternative ({{ panel.alternatives|length }})</h2>
+  {% if panel.stale %}
+  <div class="message message-error" role="alert"><span>L'orario è cambiato dopo il calcolo delle alternative: genera di nuovo le alternative.</span></div>
+  {% endif %}
+  <div class="tt-scroll">
+    <table class="tt-diff-table tt-alt-table">
+      <thead>
+        <tr>
+          <th scope="col">Confronto</th>
+          {% for alt in panel.alternatives %}<th scope="col">{{ alt.label }}<br><span class="tt-alt-desc">{{ alt.description }}</span></th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">Punteggio</th>{% for alt in panel.alternatives %}<td>{{ alt.score|floatformat:1 }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Livello</th>{% for alt in panel.alternatives %}<td>{{ alt.level }}</td>{% endfor %}</tr>
+        <tr><th scope="row">Conflitti morbidi</th>{% for alt in panel.alternatives %}<td>{{ alt.n_soft_conflicts }}</td>{% endfor %}</tr>
+        {% for row in panel.rows %}
+        <tr class="{% if row.differs %}tt-alt-differs{% endif %}"{% if row.differs %} data-differs="true"{% endif %}>
+          <th scope="row">{{ row.label }}{% if row.differs %} <span class="visually-hidden">(differisce)</span>{% endif %}</th>
+          {% for value in row.values %}<td>{{ value }}</td>{% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td></td>
+          {% for alt in panel.alternatives %}
+          <td class="tt-alt-actions">
+            <button type="button" class="tt-alt-view" hx-get="{% url 'timetable_alt_view' week.start|date:'Y-m-d' panel.job.pk alt.index %}" hx-target="#alt-preview" hx-swap="innerHTML">Vedi griglia</button>
+            {% if not panel.stale %}
+            <form class="tt-inline" method="post" action="{% url 'timetable_alt_choose' week.start|date:'Y-m-d' panel.job.pk alt.index %}" hx-post="{% url 'timetable_alt_choose' week.start|date:'Y-m-d' panel.job.pk alt.index %}" hx-target="#job-area" hx-swap="outerHTML">
+              {% csrf_token %}
+              <button type="submit">Scegli</button>
+            </form>
+            {% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <div id="alt-preview" aria-live="polite"></div>
+</section>

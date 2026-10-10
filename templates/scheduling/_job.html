@@ -5,9 +5,16 @@
   {% if error %}
   <div class="message message-error" role="alert"><span>{{ error }}</span></div>
   {% endif %}
+  {% if alt_notice %}
+  <div class="message message-info" role="status"><span>{{ alt_notice }}</span></div>
+  {% endif %}
+  {% if alt_panel %}{% include "scheduling/_alternatives.html" with panel=alt_panel %}{% endif %}
   {% if show_button %}
   <form method="post" action="{% url 'timetable_generate' week.start|date:'Y-m-d' %}" hx-post="{% url 'timetable_generate' week.start|date:'Y-m-d' %}" hx-target="#job-area" hx-swap="outerHTML">
     {% csrf_token %}
+    {% if can_alternatives %}
+    <label class="tt-alt-option"><input type="checkbox" name="alternative" value="1"> Genera alternative</label>
+    {% endif %}
     <button type="submit">Genera orario</button>
   </form>
   {% endif %}

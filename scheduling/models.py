@@ -301,3 +301,34 @@ class SolveJob(models.Model):
             raise InvalidJobTransition(f"{self.status} -> {status}")
         for name, value in fields.items():
             setattr(self, name, value)
+
+
+class AlternativePick(models.Model):
+    """The pairwise preference recorded when an ADMIN picks an alternative.
+
+    One per alternatives job (unique). `chosen` and each entry of `rejected`
+    are dicts with the alternative's label, weights, score, level, number of
+    soft conflicts and violation counts per constraint kind: the evidence the
+    weight proposals of #35 are computed from. Nothing here changes a weight.
+    """
+
+    job = models.OneToOneField(
+        SolveJob, on_delete=models.CASCADE, related_name="alternative_pick"
+    )
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT, related_name="alternative_picks"
+    )
+    week_start = models.DateField("inizio settimana")
+    picked_by = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    chosen = models.JSONField(default=dict)
+    rejected = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.week_start} {self.chosen.get('label', '')}"

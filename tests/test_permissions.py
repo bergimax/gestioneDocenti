@@ -25,6 +25,7 @@ MATRIX = {
     p.can_decide_conflicts: (True, False),
     p.can_apply_quick_action: (True, False),
     p.can_repair: (True, False),
+    p.can_choose_alternative: (True, False),
     p.can_run_setup: (True, False),
     p.can_edit_school_data: (True, False),
     p.can_edit_teachers: (True, False),

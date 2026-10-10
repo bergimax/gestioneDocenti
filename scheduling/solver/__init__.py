@@ -1,5 +1,15 @@
 """Framework-free timetable solver: standard library and OR-Tools only."""
 
+from .alternatives import (
+    MAX_ALTERNATIVES,
+    Alternative,
+    AlternativesOutcome,
+    Variation,
+    generate_alternatives,
+    lesson_set,
+    violation_counts,
+    weight_variations,
+)
 from .context import (
     ASSUNTO,
     AUTHORIZE_EARLY_EXIT,
@@ -54,6 +64,14 @@ from .repair import (
 from .weights import quality, resolve_weights, scaled_weight, scarcity_multiplier
 
 __all__ = [
+    "MAX_ALTERNATIVES",
+    "Alternative",
+    "AlternativesOutcome",
+    "Variation",
+    "generate_alternatives",
+    "lesson_set",
+    "violation_counts",
+    "weight_variations",
     "CLASS_CLOSED",
     "SLOT_REMOVED",
     "TEACHER_ABSENT",

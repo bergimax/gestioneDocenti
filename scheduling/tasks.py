@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 FIRST_CLOCK_HOUR = 8
 DAYS = list(Day.values)
+ALTERNATIVES_KEY = "alternatives"  # job param: solve weight variations
 
 # One solve at a time per worker process (1 GB memory target). The database
 # worker is already sequential; the lock keeps that true if tasks ever run on
@@ -83,6 +84,22 @@ def _build_slots(timetable, lessons, school_id):
     return slots
 
 
+def write_timetable(
+    locked, school_id, lessons, quality_score, quality_level, soft_conflicts, conflicts
+):
+    """Replace the slots, decisions, score and conflicts of a locked timetable."""
+    locked.slots.all().delete()
+    ConflictDecision.objects.filter(timetable=locked).delete()
+    Slot.objects.bulk_create(_build_slots(locked, lessons, school_id))
+    locked.quality_score = quality_score
+    locked.quality_level = quality_level
+    locked.soft_conflicts = soft_conflicts
+    locked.conflicts = conflicts
+    locked.save(
+        update_fields=["quality_score", "quality_level", "soft_conflicts", "conflicts"]
+    )
+
+
 def _write_result(job, result):
     """Replace slots, score and conflicts and bump the version, atomically."""
     with transaction.atomic():
@@ -91,22 +108,14 @@ def _write_result(job, result):
         )
 
         def change(locked):
-            locked.slots.all().delete()
-            ConflictDecision.objects.filter(timetable=locked).delete()
-            Slot.objects.bulk_create(
-                _build_slots(locked, result.lessons, job.school_id)
-            )
-            locked.quality_score = result.quality_score
-            locked.quality_level = result.quality_level
-            locked.soft_conflicts = result.n_soft_conflicts
-            locked.conflicts = result.conflict_items
-            locked.save(
-                update_fields=[
-                    "quality_score",
-                    "quality_level",
-                    "soft_conflicts",
-                    "conflicts",
-                ]
+            write_timetable(
+                locked,
+                job.school_id,
+                result.lessons,
+                result.quality_score,
+                result.quality_level,
+                result.n_soft_conflicts,
+                result.conflict_items,
             )
 
         written = apply_change(timetable.pk, change)
@@ -133,6 +142,11 @@ def run_job(job_id):
     job = SolveJob.objects.filter(pk=job_id).first()
     if job is None or job.status != JobStatus.PENDING:
         logger.warning("Solve job %s is missing or not pending: skipped", job_id)
+        return
+    if job.params.get(ALTERNATIVES_KEY):
+        from .alternatives import run_alternatives  # it imports this module
+
+        run_alternatives(job)
         return
     job.transition_to(JobStatus.RUNNING)
     try:

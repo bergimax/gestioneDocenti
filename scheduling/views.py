@@ -9,6 +9,7 @@ from availability.services import school_weeks
 from projects.permissions import (
     can_apply_quick_action,
     can_assign_slot,
+    can_choose_alternative,
     can_decide_conflicts,
     can_generate,
     can_move_lesson,
@@ -19,6 +20,7 @@ from projects.permissions import (
 from school.models import Class
 from school.selectors import current_school, today
 
+from . import alternatives
 from .assign import assign_lesson, assignable_pairs
 from .board import (
     DAY_LABELS,
@@ -178,14 +180,27 @@ def _latest_job(school, week):
     )
 
 
-def _job_context(school, week, user, error=None):
+def _job_context(school, week, user, error=None, message=None):
     job = _latest_job(school, week)
     timetable = _timetable(school, week)
     approved = timetable is not None and timetable.state == TimetableState.APPROVATO
     running = job is not None and job.status in ACTIVE_JOB_STATUSES
     if error is None and job is not None and job.status == JobStatus.FAILED:
         error = job.error
+    chooser = can_choose_alternative(user) and not approved
+    notice = message
+    if (
+        notice is None
+        and can_choose_alternative(user)
+        and alternatives.is_alternatives_job(job)
+        and job.status == JobStatus.DONE
+        and not job.result.get("meaningful")
+    ):
+        notice = job.result.get("message")
     return {
+        "alt_panel": alternatives.panel(job, timetable) if chooser else None,
+        "alt_notice": notice,
+        "can_alternatives": can_choose_alternative(user),
         "week": week,
         "job": job,
         "running": running,
@@ -251,8 +266,11 @@ def timetable_job(request, week):
 def timetable_generate(request, week):
     school = _school_or_404()
     week = _parse_week(school, week)
+    want_alternatives = request.POST.get("alternative") == "1" and (
+        can_choose_alternative(request.user)
+    )
     try:
-        enqueue_generation(week["start"], request.user)
+        enqueue_generation(week["start"], request.user, alternatives=want_alternatives)
     except GenerationRefused as exc:
         return _job_response(request, school, week, status=409, error=str(exc))
     return _job_response(request, school, week)
@@ -643,3 +661,68 @@ def timetable_repair_dismiss(request, week, job_id):
             request, school, week, status=exc.status, error=exc.message
         )
     return _repair_response(request, school, week, message=MSG_REPAIR_DISMISSED)
+
+
+# ---- alternatives and pairwise choice ---------------------------------------
+
+MSG_ALT_PICKED = "{label} scelta: l'orario della settimana è stato aggiornato."
+
+
+def _alt_refused(request, school, week, exc):
+    context = _job_context(school, week, request.user, error=exc.message)
+    return render(request, TPL + "_job.html", context, status=exc.status)
+
+
+@permission_required(can_choose_alternative)
+@require_POST
+def timetable_alt_choose(request, week, job_id, index):
+    """ "Scegli": write the alternative, store the pick, answer with job area + grid."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    job = SolveJob.objects.filter(
+        pk=job_id, school=school, week_start=week["start"]
+    ).first()
+    if job is None:
+        return _alt_refused(
+            request,
+            school,
+            week,
+            alternatives.AlternativeRefused(alternatives.MSG_NOT_FOUND, status=404),
+        )
+    try:
+        alternatives.choose_alternative(job_id, index, request.user)
+    except alternatives.AlternativeRefused as exc:
+        context = _job_context(school, week, request.user, error=exc.message)
+        context.update(_body_context(school, week, request.user, oob=True))
+        return render(request, TPL + "_job.html", context, status=exc.status)
+    label = f"Alternativa {alternatives.LETTERS[index]}"
+    context = _job_context(
+        school, week, request.user, message=MSG_ALT_PICKED.format(label=label)
+    )
+    context.update(_body_context(school, week, request.user, oob=True))
+    return render(request, TPL + "_job.html", context)
+
+
+@permission_required(can_choose_alternative)
+@require_GET
+def timetable_alt_view(request, week, job_id, index):
+    """One stored alternative as a read-only grid (nothing is written)."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    try:
+        job, alt = alternatives.get_alternative(job_id, index)
+    except alternatives.AlternativeRefused as exc:
+        raise Http404(exc.message) from None
+    if job.school_id != school.pk or job.week_start != week["start"]:
+        raise Http404(alternatives.MSG_NOT_FOUND)
+    slots = alternatives.preview_slots(job, alt)
+    days = build_board(
+        school, week["start"], None, slots=slots, conflicts=alt["conflict_items"]
+    )
+    context = {
+        "week": week,
+        "days": days,
+        "preview_label": alt["label"],
+        "preview_description": alternatives.describe(alt["variation"]),
+    }
+    return render(request, TPL + "_alt_preview.html", context)
