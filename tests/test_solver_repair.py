@@ -294,3 +294,21 @@ def test_a_paired_lesson_counts_in_both_classes():
     ctx = dataclasses.replace(ctx, current_lessons=current)
     res = solve(ctx)
     assert cells(res) == cells_of(current)
+
+
+def test_no_block_avoids_the_removed_cell_so_the_day_is_filled_around_it():
+    # Six lessons a day with the third one removed: no block of five fits, so the
+    # best-effort model fills what it can and never uses the removed cell.
+    ctx = ScheduleContext(
+        assignments=[A("a", "t", "c1"), A("b", "u", "c1")],
+        teacher_types={"t": "ASSUNTO", "u": "ASSUNTO"},
+        class_capacity={"c1": {0: 6, 1: 0, 2: 0, 3: 0, 4: 0}},
+        timeout_seconds=20,
+        current_lessons=[Lesson("a", 0, h) for h in range(6)],
+    )
+    pert = Perturbation(SLOT_REMOVED, class_id="c1", days=frozenset({0}), hour=2)
+    res = solve(apply_perturbation(ctx, pert))
+    assert res.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
+    assert not [le for le in res.lessons if le.hour == 2]
+    assert res.message
+    assert any(i["kind"] == CLASSE_UNFILLED for i in res.conflict_items)

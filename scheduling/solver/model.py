@@ -241,8 +241,6 @@ def _solve_mode(ctx, soft_weights, mode, pinned, probe=None) -> SolveResult:
             starts = list(range(min_hour, HOURS - cap + 1)) if cap else []
             # A block must not cover a cell that has to stay empty.
             starts = [s for s in starts if not any(s <= h < s + cap for h in blocked)]
-            for h in blocked:
-                _guard(probe, ("cap", class_id, d), m.add(occupied[h] == 0))
             if relaxed:
                 # The block must also cover the pinned hours.
                 starts = [
@@ -265,6 +263,8 @@ def _solve_mode(ctx, soft_weights, mode, pinned, probe=None) -> SolveResult:
                 # it, or it cannot fit): the lessons beyond the pinned ones
                 # fill what they can and the rest is uncovered.
                 for h in range(min_hour):
+                    m.add(occupied[h] <= pins[h])
+                for h in blocked:
                     m.add(occupied[h] <= pins[h])
                 need = max(0, cap - sum(1 for p in pins if p))
                 extra = _sum(occupied) - sum(pins)
