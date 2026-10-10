@@ -172,10 +172,15 @@ def test_approve_an_unknown_key_stores_nothing(w, admin):
 
 
 def test_an_unknown_key_does_not_hide_a_later_conflict(w, admin):
-    with_double_booking(w, admin)
-    ghost = "monte_ore_exceeded|%d|%d|MARTEDI|2" % (w.a.pk, w.rossi.pk)
-    approve(admin, [ghost], w.tt.version)
+    ghosts = [
+        f"docente_double_booking|{klass.pk}|{w.rossi.pk}|LUNEDI|2"
+        for klass in (w.a, w.b)
+    ]
+    approve(admin, ghosts, 1)  # nothing is reported yet: nothing is stored
     assert not ConflictDecision.objects.exists()
+    conflict = with_double_booking(w, admin)
+    assert conflict["chiave"] in ghosts
+    assert [c["chiave"] for c in visible_conflicts(w.tt)].count(conflict["chiave"]) == 1
 
 
 def test_a_duplicate_key_is_stored_once(w, admin):
