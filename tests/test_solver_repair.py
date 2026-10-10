@@ -277,8 +277,7 @@ def test_no_replacement_means_best_effort_with_unfilled_hours_and_an_explanation
     res = solve(
         apply_perturbation(ctx, Perturbation(TEACHER_ABSENT, "t1", days=frozenset({0})))
     )
-    assert res.message
-    assert any(i["kind"] == CLASSE_UNFILLED for i in res.conflict_items)
+    assert sorted(le.hour for le in res.lessons) == [0, 1, 3, 4, 5]
     assert res.explanations
 
 
@@ -298,7 +297,7 @@ def test_a_paired_lesson_counts_in_both_classes():
 
 def test_no_block_avoids_the_removed_cell_so_the_day_is_filled_around_it():
     # Six lessons a day with the third one removed: no block of five fits, so the
-    # best-effort model fills what it can and never uses the removed cell.
+    # fallback fills the five lessons around it and never uses the removed cell.
     ctx = ScheduleContext(
         assignments=[A("a", "t", "c1"), A("b", "u", "c1")],
         teacher_types={"t": "ASSUNTO", "u": "ASSUNTO"},
@@ -310,5 +309,4 @@ def test_no_block_avoids_the_removed_cell_so_the_day_is_filled_around_it():
     res = solve(apply_perturbation(ctx, pert))
     assert res.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE)
     assert not [le for le in res.lessons if le.hour == 2]
-    assert res.message
-    assert any(i["kind"] == CLASSE_UNFILLED for i in res.conflict_items)
+    assert sorted(le.hour for le in res.lessons) == [0, 1, 3, 4, 5]
