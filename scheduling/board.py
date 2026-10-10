@@ -5,6 +5,7 @@ import datetime
 from school.models import CalendarEntry, Class, SubjectKind
 
 from .context import _is_stage
+from .derogations import QUICK_ACTIONS, label_of
 from .models import ConflictDecision, Day, Slot
 from .solver.context import CLASSE_UNFILLED
 from .solver.model import NO_COMPLETE_MESSAGE
@@ -92,10 +93,31 @@ def conflict_descriptions(conflicts):
     ]
 
 
+def _quick(conflict):
+    """The suggested quick action of a conflict, or None.
+
+    assign_teacher and manual_edit are suggestions too, but not quick actions.
+    """
+    suggested = conflict.get("suggested_action") or {}
+    if suggested.get("action_type") not in QUICK_ACTIONS:
+        return None
+    return {
+        "action_type": suggested["action_type"],
+        "label": suggested.get("label") or label_of(suggested["action_type"]),
+        "classe": conflict.get("classe_id"),
+        "docente": conflict.get("docente_id"),
+        "giorno": conflict.get("giorno"),
+    }
+
+
 def conflict_rows(conflicts):
-    """(description, chiave) of each reported conflict, for the list."""
+    """Text, chiave and suggested quick action of each reported conflict."""
     return [
-        {"text": c["description"], "chiave": c.get("chiave", "")}
+        {
+            "text": c["description"],
+            "chiave": c.get("chiave", ""),
+            "quick": _quick(c),
+        }
         for c in conflicts or []
         if isinstance(c, dict) and c.get("description")
     ]

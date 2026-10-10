@@ -25,5 +25,10 @@ urlpatterns = [
         views.timetable_conflicts_reject,
         name="timetable_conflicts_reject",
     ),
+    path(
+        "orario/<str:week>/deroga/",
+        views.timetable_quick_action,
+        name="timetable_quick_action",
+    ),
     path("orario/<str:week>/stato/", views.timetable_job, name="timetable_job"),
 ]

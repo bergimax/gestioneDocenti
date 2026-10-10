@@ -1,0 +1,46 @@
+<div id="tt-deroga-panel"{% if deroga_oob %} hx-swap-oob="true"{% endif %}>
+{% if deroga_error %}
+  <div class="message message-error" role="alert"><span>{{ deroga_error }}</span></div>
+{% endif %}
+{% if deroga_message %}
+  <div class="message message-success" role="status"><span>{{ deroga_message }}</span></div>
+{% endif %}
+{% if deroga_visible %}
+  <details class="tt-deroga"{% if deroga_open %} open{% endif %}>
+    <summary>Deroga</summary>
+    <form method="post" novalidate action="{% url 'timetable_quick_action' week.start|date:'Y-m-d' %}" hx-post="{% url 'timetable_quick_action' week.start|date:'Y-m-d' %}" hx-target="#tt-deroga-panel" hx-swap="outerHTML" x-data="{ f: '', sync() { var o = this.$refs.azione.selectedOptions[0]; this.f = o ? (o.dataset.fields || '') : ''; }, shows(name) { return this.f.split(' ').indexOf(name) !== -1; } }" x-init="sync()">
+      {% csrf_token %}
+      {% for error in deroga_form.non_field_errors %}<p class="form-error" role="alert">{{ error }}</p>{% endfor %}
+      <div class="field{% if deroga_form.azione.errors %} has-error{% endif %}">
+        <label for="id_azione">Tipo di deroga</label>
+        <select name="azione" id="id_azione" x-ref="azione" @change="sync()">
+          {% for opt in deroga_options %}<option value="{{ opt.value }}" data-fields="{{ opt.fields }}"{% if opt.selected %} selected{% endif %}>{{ opt.label }}</option>{% endfor %}
+        </select>
+        {% for error in deroga_form.azione.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+      </div>
+      <div class="field{% if deroga_form.classe.errors %} has-error{% endif %}" data-param="classe" x-show="shows('classe')">
+        <label for="id_classe">Classe</label>
+        {{ deroga_form.classe }}
+        {% for error in deroga_form.classe.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+      </div>
+      <div class="field{% if deroga_form.docente.errors %} has-error{% endif %}" data-param="docente" x-show="shows('docente')">
+        <label for="id_docente">Docente</label>
+        {{ deroga_form.docente }}
+        {% for error in deroga_form.docente.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+      </div>
+      <div class="field{% if deroga_form.giorno.errors %} has-error{% endif %}" data-param="giorno" x-show="shows('giorno')">
+        <label for="id_giorno">Giorno</label>
+        {{ deroga_form.giorno }}
+        {% for error in deroga_form.giorno.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+      </div>
+      <div class="field{% if deroga_form.max_ore.errors %} has-error{% endif %}" data-param="max_ore" x-show="shows('max_ore')">
+        <label for="id_max_ore">Massimo di ore (1-30, facoltativo)</label>
+        {{ deroga_form.max_ore }}
+        {% for error in deroga_form.max_ore.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+      </div>
+      <p class="tt-deroga-help">Vale per una sola rigenerazione. Senza classe, docente e giorno vale per tutta la settimana.</p>
+      <button type="submit">Applica e rigenera</button>
+    </form>
+  </details>
+{% endif %}
+</div>

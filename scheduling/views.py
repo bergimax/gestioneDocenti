@@ -7,6 +7,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from availability.services import school_weeks
 from projects.permissions import (
+    can_apply_quick_action,
     can_assign_slot,
     can_decide_conflicts,
     can_generate,
@@ -27,6 +28,8 @@ from .board import (
     visible_conflicts,
 )
 from .decisions import approve_conflicts, reject_lesson
+from .derogations import QUICK_ACTIONS
+from .forms import QuickActionForm
 from .jobs import GenerationRefused, enqueue_generation
 from .models import (
     ACTIVE_JOB_STATUSES,
@@ -38,6 +41,7 @@ from .models import (
     TimetableState,
 )
 from .moves import InvalidMove, MoveRejected, move_lesson
+from .quick_actions import ERROR_NO_TIMETABLE, apply_quick_action
 from .services import TimetableLocked
 
 TPL = "scheduling/"
@@ -91,6 +95,7 @@ def _body_context(school, week, user, oob=False, move_error=None, clear_panel=Fa
         "can_move": False,
         "can_assign": False,
         "can_decide": False,
+        "can_quick": False,
         "clear_panel": clear_panel,
     }
     if timetable is not None:
@@ -100,12 +105,54 @@ def _body_context(school, week, user, oob=False, move_error=None, clear_panel=Fa
             can_move=can_move_lesson(user) and not approved,
             can_assign=can_assign_slot(user) and not approved,
             can_decide=can_decide_conflicts(user) and not approved,
+            can_quick=can_apply_quick_action(user, timetable) and not approved,
             days=build_board(school, week["start"], timetable),
             conflict_list=conflict_rows(visible),
             best_effort=is_best_effort(visible),
             no_complete_message=NO_COMPLETE_MESSAGE,
             approved=approved,
         )
+    return context
+
+
+def _deroga_context(
+    school,
+    week,
+    user,
+    form=None,
+    initial=None,
+    message=None,
+    error=None,
+    open_form=False,
+    oob=False,
+):
+    """The "Deroga" panel: shown to an ADMIN on a draft week only."""
+    timetable = _timetable(school, week)
+    visible = (
+        timetable is not None
+        and timetable.state == TimetableState.BOZZA
+        and can_apply_quick_action(user, timetable)
+    )
+    context = {
+        "week": week,
+        "deroga_visible": visible,
+        "deroga_oob": oob,
+        "deroga_message": message,
+        "deroga_error": error,
+        "deroga_open": open_form or form is not None or message is not None,
+    }
+    if visible:
+        context["deroga_form"] = form or QuickActionForm(school=school, initial=initial)
+        chosen = context["deroga_form"]["azione"].value()
+        context["deroga_options"] = [
+            {
+                "value": value,
+                "label": label,
+                "fields": " ".join(QUICK_ACTIONS[value][1]) if value else "",
+                "selected": value == chosen,
+            }
+            for value, label in context["deroga_form"].fields["azione"].choices
+        ]
     return context
 
 
@@ -155,6 +202,7 @@ def timetable_page(request):
     }
     context.update(_job_context(school, week, request.user))
     context.update(_body_context(school, week, request.user))
+    context.update(_deroga_context(school, week, request.user))
     return render(request, TPL + "page.html", context)
 
 
@@ -174,6 +222,7 @@ def _job_response(request, school, week, status=200, error=None):
     context = _job_context(school, week, request.user, error=error)
     if context["job_done"] and not context["running"]:
         context.update(_body_context(school, week, request.user, oob=True))
+        context.update(_deroga_context(school, week, request.user, oob=True))
     return render(request, TPL + "_job.html", context, status=status)
 
 
@@ -344,3 +393,67 @@ def timetable_conflicts_reject(request, week):
         reject_lesson(timetable.pk, class_id, day, hour, version)
 
     return _edit_response(request, week, edit)
+
+
+MSG_QUICK_STARTED = "Deroga «{label}» applicata a: {scope}. Rigenerazione avviata."
+
+
+def _deroga_response(request, school, week, status=200, **kw):
+    """The panel plus the job area (to start its polling) in one answer."""
+    context = _deroga_context(school, week, request.user, **kw)
+    context.update(_job_context(school, week, request.user))
+    context["job_oob"] = True
+    return render(request, TPL + "_deroga_response.html", context, status=status)
+
+
+@permission_required(can_apply_quick_action)
+def timetable_quick_action(request, week):
+    """GET: the form, pre-filled from a conflict. POST: apply the derogation."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    timetable = _timetable(school, week)
+    if request.method == "GET":
+        initial = {
+            "azione": request.GET.get("azione", ""),
+            "classe": request.GET.get("classe", ""),
+            "docente": request.GET.get("docente", ""),
+            "giorno": request.GET.get("giorno", ""),
+        }
+        context = _deroga_context(
+            school, week, request.user, initial=initial, open_form=True
+        )
+        status = 200
+        if not context["deroga_visible"]:
+            status = 409
+            context["deroga_error"] = _refusal(timetable)
+        return render(request, TPL + "_deroga.html", context, status=status)
+    if request.method != "POST":
+        return HttpResponse(status=405)
+    refusal = _refusal(timetable)
+    if refusal:
+        return _deroga_response(request, school, week, status=409, error=refusal)
+    form = QuickActionForm(request.POST, school=school)
+    if not form.is_valid():
+        return _deroga_response(request, school, week, status=400, form=form)
+    params = form.params()
+    try:
+        _, scope = apply_quick_action(week["start"], request.user, params)
+    except GenerationRefused as exc:
+        return _deroga_response(
+            request, school, week, status=409, error=str(exc), form=form
+        )
+    message = MSG_QUICK_STARTED.format(
+        label=QUICK_ACTIONS[params["action_type"]][0], scope=scope
+    )
+    return _deroga_response(request, school, week, message=message)
+
+
+def _refusal(timetable):
+    if timetable is None:
+        return ERROR_NO_TIMETABLE
+    if timetable.state == TimetableState.APPROVATO:
+        return MSG_QUICK_APPROVED
+    return None
+
+
+MSG_QUICK_APPROVED = "La settimana è approvata: l'orario non può essere rigenerato."

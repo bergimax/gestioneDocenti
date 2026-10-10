@@ -289,7 +289,8 @@ def test_lesson_shows_subject_and_teacher_surname_only(world, admin):
     text = html(admin.get(PAGE))
     assert '<span class="tt-subject">Matematica</span>' in text
     assert '<span class="tt-teacher">ROSSI</span>' in text
-    assert "MARIO" not in text
+    # the grid shows surnames; the Deroga form (admin only) lists full names
+    assert "MARIO" not in html(admin.get(GRID))
 
 
 def test_lesson_is_in_the_right_cell(world, admin):

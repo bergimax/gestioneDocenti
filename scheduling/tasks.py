@@ -11,6 +11,7 @@ from django_tasks import task
 from school.models import Assignment, ClassPairing
 
 from .context import build_week_context
+from .derogations import derogation_from_params
 from .models import (
     ConflictDecision,
     Day,
@@ -132,7 +133,9 @@ def run_job(job_id):
         return
     job.transition_to(JobStatus.RUNNING)
     try:
-        ctx = build_week_context(job.week_start, job.school)
+        derogation = derogation_from_params(job.params)
+        extra = {"derogations": [derogation]} if derogation else {}
+        ctx = build_week_context(job.week_start, job.school, **extra)
         ctx = dataclasses.replace(ctx, timeout_seconds=settings.SOLVER_TIMEOUT_SECONDS)
         result = solve_exclusive(ctx)
         if result.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE):

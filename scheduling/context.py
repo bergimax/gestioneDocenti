@@ -8,6 +8,7 @@ import datetime
 
 from availability import grid as grid_logic
 from availability.models import Availability
+from scheduling.derogations import REDUCE_CONTRACT_HOURS
 from scheduling.solver.context import (
     DAYS,
     FIRST_HOUR,
@@ -85,8 +86,24 @@ def _is_stage(rows, day, school_class):
     )
 
 
-def build_week_context(week_start, school=None):
-    """The solver input for the week starting on Monday ``week_start``."""
+def _reduces(derogations, assignment):
+    """The `reduce_contract_hours` derogations covering the assignment."""
+    return [
+        d
+        for d in derogations
+        if d.action_type == REDUCE_CONTRACT_HOURS
+        and d.class_id in (None, assignment.school_class_id)
+        and d.teacher_id in (None, assignment.teacher_id)
+    ]
+
+
+def build_week_context(week_start, school=None, derogations=()):
+    """The solver input for the week starting on Monday ``week_start``.
+
+    `derogations` (solver `Derogation`s of one quick action) are passed to the
+    solver as they are; `reduce_contract_hours` also lowers the targets here,
+    where they are computed (specs 8).
+    """
     grid_logic.check_monday(week_start)
     if school is None:
         school = current_school()
@@ -127,7 +144,7 @@ def build_week_context(week_start, school=None):
     weeks_left = max(1, (school.year_end - week_start).days // 7)
     for a in (
         Assignment.objects.filter(school=school, teacher__active=True)
-        .select_related("subject")
+        .select_related("subject", "teacher")
         .order_by("pk")
     ):
         remaining = a.ore_totali - delivered.get(a.pk, 0)
@@ -143,10 +160,20 @@ def build_week_context(week_start, school=None):
         )
         if not any(class_capacity[a.school_class_id].values()):
             continue
-        target = weekly_hours_target(remaining, week_start, school.year_end, "")
+        reducing = _reduces(derogations, a)
+        target = weekly_hours_target(
+            remaining,
+            week_start,
+            school.year_end,
+            a.teacher.type,
+            reduce_contract_hours=bool(reducing),
+            max_hours=reducing[0].max_hours if reducing else None,
+        )
         if target is not None:
             targets[a.pk] = target
             sources[a.pk] = f"residuo {remaining} ore su {weeks_left} settimane"
+            if reducing and a.teacher.type == TeacherType.CONTRATTO:
+                sources[a.pk] += ", ridotto per deroga"
 
     pairings = [
         Pairing(p.class_a_id, p.class_b_id, p.subject_id, p.teacher_id)
@@ -163,4 +190,5 @@ def build_week_context(week_start, school=None):
         availability=_availability(teachers, stored, week_start),
         targets=targets,
         target_sources=sources,
+        derogations=list(derogations),
     )

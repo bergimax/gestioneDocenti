@@ -1,4 +1,4 @@
-<div id="job-area" class="tt-job"{% if running %} hx-get="{% url 'timetable_job' week.start|date:'Y-m-d' %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+<div id="job-area" class="tt-job"{% if job_oob %} hx-swap-oob="true"{% endif %}{% if running %} hx-get="{% url 'timetable_job' week.start|date:'Y-m-d' %}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   {% if running %}
   <p class="tt-running" role="status">Generazione in corso&hellip;</p>
   {% endif %}
@@ -13,3 +13,4 @@
   {% endif %}
 </div>
 {% if oob %}{% include "scheduling/_body.html" %}{% endif %}
+{% if deroga_oob %}{% include "scheduling/_deroga.html" %}{% endif %}

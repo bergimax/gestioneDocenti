@@ -14,7 +14,7 @@
   <section class="tt-conflicts" aria-label="Conflitti">
     <h2>Conflitti ({{ conflict_list|length }})</h2>
     <ul>
-      {% for item in conflict_list %}<li>{{ item.text }}{% if can_decide and item.chiave %} <form class="tt-inline" method="post" action="{% url 'timetable_conflicts_approve' week.start|date:'Y-m-d' %}" hx-post="{% url 'timetable_conflicts_approve' week.start|date:'Y-m-d' %}" hx-target="#timetable-body" hx-swap="outerHTML"><input type="hidden" name="chiavi" value="{{ item.chiave }}"><input type="hidden" name="version" value="{{ token }}"><button type="submit" class="tt-approve">Approva</button></form>{% endif %}</li>{% endfor %}
+      {% for item in conflict_list %}<li>{{ item.text }}{% if can_quick and item.quick %} <button type="button" class="tt-quick-btn" hx-get="{% url 'timetable_quick_action' week.start|date:'Y-m-d' %}?azione={{ item.quick.action_type|urlencode }}&amp;classe={{ item.quick.classe|default_if_none:''|urlencode }}&amp;docente={{ item.quick.docente|default_if_none:''|urlencode }}&amp;giorno={{ item.quick.giorno|default_if_none:''|urlencode }}" hx-target="#tt-deroga-panel" hx-swap="outerHTML">{{ item.quick.label }}</button>{% endif %}{% if can_decide and item.chiave %} <form class="tt-inline" method="post" action="{% url 'timetable_conflicts_approve' week.start|date:'Y-m-d' %}" hx-post="{% url 'timetable_conflicts_approve' week.start|date:'Y-m-d' %}" hx-target="#timetable-body" hx-swap="outerHTML"><input type="hidden" name="chiavi" value="{{ item.chiave }}"><input type="hidden" name="version" value="{{ token }}"><button type="submit" class="tt-approve">Approva</button></form>{% endif %}</li>{% endfor %}
     </ul>
   </section>
   {% endif %}

@@ -190,3 +190,10 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-pairs form { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; }
 .tt-pair-subject { font-weight: 700; }
 .tt-assign-btn, .tt-approve, .tt-reject { font-size: .75rem; padding: .1rem .4rem; }
+
+/* Quick actions / deroghe (#31) */
+.tt-deroga { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; margin: .75rem 0; }
+.tt-deroga summary { font-weight: 700; cursor: pointer; }
+.tt-deroga form { margin-top: .5rem; max-width: 32rem; }
+.tt-deroga-help { margin: 0 0 .5rem; font-size: .85rem; }
+.tt-quick-btn { font-size: .75rem; padding: .1rem .4rem; }
