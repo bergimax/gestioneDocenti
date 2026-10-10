@@ -308,6 +308,18 @@ def test_start_hour_limit_passed(school, klass):
     assert ctx.class_min_start == {klass.pk: 10}
 
 
+def test_start_hour_limit_is_the_strictest_of_the_week(school, klass):
+    entry(school, MON, max_hours=4, start_hour_min=9)
+    entry(school, TUE, max_hours=4, start_hour_min=11)
+    assert build_week_context(MON, school).class_min_start == {klass.pk: 11}
+
+
+def test_start_hour_limit_ignored_on_zero_hour_days(school, klass):
+    entry(school, MON, max_hours=0, start_hour_min=12)
+    entry(school, TUE, max_hours=4, start_hour_min=9)
+    assert build_week_context(MON, school).class_min_start == {klass.pk: 9}
+
+
 def test_start_hour_limit_only_for_that_group(school):
     prima = make_class(school, "1A", "PRIME")
     terza = make_class(school, "3A", "TERZE")
@@ -408,13 +420,13 @@ def test_contractor_partial_slots_map_to_hour_indexes(school):
     t = teacher(school, type="CONTRATTO")
     grid = grid_with("lunedi")
     grid["lunedi"] = [
-        {"ora_inizio": "09:00", "ora_fine": "11:00", "disponibile": True},
-        {"ora_inizio": "11:00", "ora_fine": "12:30", "disponibile": False},
-        {"ora_inizio": "12:30", "ora_fine": "14:00", "disponibile": True},
+        {"ora_inizio": "09:00", "ora_fine": "10:30", "disponibile": True},
+        {"ora_inizio": "10:30", "ora_fine": "12:00", "disponibile": False},
+        {"ora_inizio": "12:00", "ora_fine": "14:00", "disponibile": True},
     ]
     save(t, MON, grid)
     got = {h for d, h in build_week_context(MON, school).availability[t.pk] if d == 0}
-    assert got == {1, 2, 4, 5}
+    assert got == {1, 2, 4, 5}  # 09-10:30 covers hours 1 and 2
 
 
 def test_contractor_slots_outside_school_hours_clipped(school):
