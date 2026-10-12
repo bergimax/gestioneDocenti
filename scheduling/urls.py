@@ -66,5 +66,10 @@ urlpatterns = [
     path(
         "orario/<str:week>/approva/", views.timetable_approve, name="timetable_approve"
     ),
+    path(
+        "orario/<str:week>/annulla-approvazione/",
+        views.timetable_undo_approval,
+        name="timetable_undo_approval",
+    ),
     path("orario/<str:week>/stato/", views.timetable_job, name="timetable_job"),
 ]

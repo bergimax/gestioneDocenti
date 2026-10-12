@@ -367,6 +367,43 @@ class AssignmentHoursForm(_AriaForm, forms.Form):
         self._init_hints()
 
 
+class DeliveredAdjustForm(_AriaForm, forms.Form):
+    """Correct the delivered hours of an assignment (#37)."""
+
+    nuove_ore = forms.IntegerField(
+        label="Nuove ore erogate",
+        min_value=0,
+        error_messages={
+            "required": "Inserisci le nuove ore erogate.",
+            "invalid": "Inserisci un numero intero.",
+            "min_value": "Le ore erogate non possono essere negative.",
+        },
+    )
+    motivo = forms.CharField(
+        label="Motivo",
+        max_length=300,
+        required=False,
+        error_messages={"max_length": "Il motivo non può superare 300 caratteri."},
+    )
+
+    def __init__(self, *args, current=0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.current = current
+        self._init_hints()
+
+    def clean(self):
+        data = super().clean()
+        new = data.get("nuove_ore")
+        if (
+            new is not None
+            and new != self.current
+            and not (data.get("motivo") or "").strip()
+            and "motivo" not in self.errors
+        ):
+            self.add_error("motivo", "Indica il motivo della correzione.")
+        return data
+
+
 class PairingForm(_AriaForm, forms.ModelForm):
     """Create or edit a pairing; the two classes may be picked in any order."""
 

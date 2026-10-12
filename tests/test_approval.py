@@ -8,12 +8,12 @@ from django.test import Client
 
 from accounts.models import User
 from ledger.models import LedgerEntry
-from projects.permissions import PREDICATES, can_approve
+from projects.permissions import PREDICATES, can_approve, can_undo_approval
 from scheduling import audit
 from scheduling.context import build_week_context
 from scheduling.models import Slot, Timetable, TimetableState
-from scheduling.services import approve_timetable
-from school.assignment_hours import delivered_hours_map
+from scheduling.services import approve_timetable, undo_approval
+from school.assignment_hours import adjust_delivered_hours, delivered_hours_map
 from school.models import Assignment, Class
 
 D = datetime.date
@@ -198,7 +198,8 @@ def test_only_approve_timetable_sets_approved_state():
         hits += [path for _ in pattern.findall(path.read_text())]
     assert hits == [pathlib.Path("scheduling/services.py")]
     body = pathlib.Path("scheduling/services.py").read_text()
-    assert "BOZZA" not in body.split("def approve_timetable")[1]
+    approve_body = body.split("def approve_timetable")[1].split("def undo_approval")[0]
+    assert "BOZZA" not in approve_body
 
 
 # --- endpoint -------------------------------------------------------------
@@ -296,3 +297,185 @@ def test_approved_week_refuses_edits(w, user, path, data):
     assert Timetable.objects.values().get(pk=w.tt.pk) == before
     assert list(Slot.objects.order_by("pk").values()) == slots
     assert Class.objects.count() == 2
+
+
+# --- undo_approval (#37) --------------------------------------------------
+
+UNDO = f"/orario/{MON:%Y-%m-%d}/annulla-approvazione/"
+WEEK2 = D(2026, 10, 19)
+
+
+def delivered_by_name(w):
+    d = delivered_hours_map(w.school)
+    return {name: d.get(a.pk, 0) for name, a in w.asg.items()}
+
+
+def test_undo_restores_every_assignment_including_paired(w, user, audit_mock):
+    Slot.objects.all().delete()
+    w.slot(w.a, w.rossi, w.mat, "LUNEDI", 8, paired=True, paired_class=w.b)
+    w.slot(w.a, w.bianchi, w.ita, "LUNEDI", 9)
+    before = delivered_by_name(w)
+    approve_timetable(w.tt.pk, user)
+    assert delivered_by_name(w) != before
+    audit_mock.reset_mock()
+    undo_approval(w.tt.pk, user, "errore")
+    assert delivered_by_name(w) == before
+    w.tt.refresh_from_db()
+    assert w.tt.state == TimetableState.BOZZA and w.tt.approved_at is None
+    assert w.tt.version == 3
+    assert audit_mock.call_count == 1
+    assert audit_mock.call_args.args[:3] == (audit.APPROVAL_UNDONE, user, MON)
+    assert audit_mock.call_args.args[3]["motivo"] == "errore"
+
+
+def test_undo_adds_reversals_and_keeps_rows(w, user):
+    approve_timetable(w.tt.pk, user)
+    ids = list(entries().order_by("pk").values_list("pk", "hours", "kind"))
+    undo_approval(w.tt.pk, user, "  errore  ")
+    assert (
+        list(entries().order_by("pk").values_list("pk", "hours", "kind"))[: len(ids)]
+        == ids
+    )
+    reversals = entries().filter(kind="REVERSAL")
+    assert reversals.count() == 4
+    assert {(e.reason, e.created_by_id, e.week, e.timetable_id) for e in reversals} == {
+        ("errore", user.pk, MON, w.tt.pk)
+    }
+    assert all(e.hours < 0 for e in reversals)
+
+
+def test_undo_reapprove_undo_again(w, user):
+    before = delivered_by_name(w)
+    approve_timetable(w.tt.pk, user)
+    once = delivered_by_name(w)
+    undo_approval(w.tt.pk, user, "uno")
+    approve_timetable(w.tt.pk, user)
+    assert delivered_by_name(w) == once
+    undo_approval(w.tt.pk, user, "due")
+    assert delivered_by_name(w) == before
+    approve_timetable(w.tt.pk, user)
+    assert approve_timetable(w.tt.pk, user)["ore_scalate"] == 0
+
+
+def test_undo_refused_on_draft_writes_nothing(w, user, audit_mock):
+    from scheduling.services import NotApproved
+
+    with pytest.raises(NotApproved):
+        undo_approval(w.tt.pk, user, "x")
+    w.tt.refresh_from_db()
+    assert w.tt.version == 1 and not entries().exists()
+    audit_mock.assert_not_called()
+
+
+@pytest.mark.parametrize("reason", ["", "   ", None])
+def test_undo_blank_reason_writes_nothing(w, user, audit_mock, reason):
+    from scheduling.services import ReasonRequired
+
+    approve_timetable(w.tt.pk, user)
+    audit_mock.reset_mock()
+    with pytest.raises(ReasonRequired):
+        undo_approval(w.tt.pk, user, reason)
+    w.tt.refresh_from_db()
+    assert w.tt.state == TimetableState.APPROVATO and w.tt.version == 2
+    assert entries().count() == 8
+    audit_mock.assert_not_called()
+
+
+def test_undo_earlier_week_leaves_later_week(w, user):
+    tt2 = Timetable.objects.create(school=w.school, week_start=WEEK2, version=1)
+    Slot.objects.create(
+        timetable=tt2,
+        school_class=w.a,
+        teacher=w.rossi,
+        subject=w.mat,
+        day="LUNEDI",
+        start_hour=8,
+        end_hour=9,
+    )
+    approve_timetable(w.tt.pk, user)
+    approve_timetable(tt2.pk, user)
+    undo_approval(w.tt.pk, user, "errore")
+    assert not entries().filter(timetable=tt2, kind="REVERSAL").exists()
+    assert delivered_by_name(w)["a_mat"] == 1
+    tt2.refresh_from_db()
+    assert tt2.state == TimetableState.APPROVATO
+
+
+def test_undo_keeps_adjustments(w, user):
+    a = w.asg["a_mat"]
+    adjust_delivered_hours(a, 3, user, "pregresso")
+    before = delivered_by_name(w)
+    approve_timetable(w.tt.pk, user)
+    undo_approval(w.tt.pk, user, "errore")
+    assert delivered_by_name(w) == before
+    assert entries().filter(kind="ADJUSTMENT").count() == 1
+
+
+def test_undo_can_leave_negative_after_adjustment_down(w, user):
+    a = w.asg["a_mat"]
+    approve_timetable(w.tt.pk, user)
+    adjust_delivered_hours(a, 0, user, "azzera")
+    undo_approval(w.tt.pk, user, "errore")
+    assert delivered_by_name(w)["a_mat"] == -2
+
+
+# --- undo endpoint --------------------------------------------------------
+
+
+def test_admin_undoes_via_endpoint(w, user):
+    approve_timetable(w.tt.pk, user)
+    c = admin_client(user)
+    page = c.get(f"/orario/{MON:%Y-%m-%d}/griglia/").content.decode()
+    assert "Annulla approvazione" in page
+    r = c.post(UNDO, {"motivo": "sbagliato"})
+    assert r.status_code == 200
+    body = r.content.decode()
+    assert "Approvata" not in body and "Annulla approvazione" not in body
+    w.tt.refresh_from_db()
+    assert w.tt.state == TimetableState.BOZZA
+
+
+def test_endpoint_blank_reason_is_field_error(w, user):
+    approve_timetable(w.tt.pk, user)
+    r = admin_client(user).post(UNDO, {"motivo": "  "})
+    assert r.status_code == 400
+    assert "Indica il motivo" in r.content.decode()
+    w.tt.refresh_from_db()
+    assert w.tt.state == TimetableState.APPROVATO and w.tt.version == 2
+
+
+def test_endpoint_draft_is_refused_with_message(w, user):
+    r = admin_client(user).post(UNDO, {"motivo": "x"})
+    assert r.status_code == 409
+    assert "non è approvata" in r.content.decode()
+    w.tt.refresh_from_db()
+    assert w.tt.version == 1 and not entries().exists()
+
+
+def test_endpoint_unknown_week_404(w, user):
+    Timetable.objects.all().delete()
+    assert admin_client(user).post(UNDO, {"motivo": "x"}).status_code == 404
+
+
+def test_endpoint_secretary_forbidden_and_button_absent(w, user, seg):
+    approve_timetable(w.tt.pk, user)
+    assert seg.post(UNDO, {"motivo": "x"}).status_code == 403
+    assert (
+        "Annulla approvazione"
+        not in seg.get(f"/orario/{MON:%Y-%m-%d}/griglia/").content.decode()
+    )
+    w.tt.refresh_from_db()
+    assert w.tt.state == TimetableState.APPROVATO and w.tt.version == 2
+
+
+def test_endpoint_anonymous_redirected(w, user):
+    approve_timetable(w.tt.pk, user)
+    r = Client().post(UNDO, {"motivo": "x"})
+    assert r.status_code == 302 and "login" in r["Location"]
+    assert entries().count() == 8
+
+
+def test_can_undo_approval_is_listed_and_admin_only(user, seg):
+    assert can_undo_approval in PREDICATES
+    assert can_undo_approval(user) and not can_undo_approval(None)
+    assert not can_undo_approval(User.objects.get(email="segreteria@example.com"))

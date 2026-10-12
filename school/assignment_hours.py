@@ -32,3 +32,67 @@ def set_assignment_total_hours(assignment, hours):
         assignment.ore_totali = hours
         assignment.save(update_fields=["ore_totali"])
     return assignment
+
+
+class NegativeDelivered(Exception):
+    """The new delivered value is below zero."""
+
+
+class AdjustmentReasonRequired(Exception):
+    """A changed value needs a reason."""
+
+
+def adjust_delivered_hours(assignment, new_delivered, user, reason):
+    """Set the delivered hours of `assignment` with an ADJUSTMENT entry (#37).
+
+    The only writer of manual corrections. Locks the Assignment row, computes
+    the delta against the current ledger sum and writes one entry when it is
+    not zero. Returns `{"changed", "old", "new", "hours"}`.
+    """
+    from ledger.models import EntryKind, LedgerEntry
+    from scheduling import audit
+
+    from .models import Assignment
+
+    reason = (reason or "").strip()
+    with transaction.atomic():
+        Assignment.objects.select_for_update().get(pk=assignment.pk)
+        current = (
+            LedgerEntry.objects.filter(assignment_id=assignment.pk).aggregate(
+                total=Sum("hours")
+            )["total"]
+            or 0
+        )
+        delta = new_delivered - current
+        result = {
+            "changed": delta != 0,
+            "old": current,
+            "new": new_delivered,
+            "hours": delta,
+        }
+        if delta == 0:
+            return result
+        if new_delivered < 0:
+            raise NegativeDelivered(new_delivered)
+        if not reason:
+            raise AdjustmentReasonRequired
+        LedgerEntry.objects.create(
+            assignment_id=assignment.pk,
+            hours=delta,
+            kind=EntryKind.ADJUSTMENT,
+            reason=reason,
+            created_by=user,
+        )
+        audit.record_audit(
+            audit.HOURS_ADJUSTED,
+            user,
+            None,
+            {
+                "assegnazione": assignment.pk,
+                "ore_erogate_prima": current,
+                "ore_erogate_dopo": new_delivered,
+                "ore": delta,
+                "motivo": reason,
+            },
+        )
+        return result

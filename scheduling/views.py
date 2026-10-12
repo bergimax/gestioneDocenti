@@ -17,6 +17,7 @@ from projects.permissions import (
     can_manage_soft_weights,
     can_move_lesson,
     can_repair,
+    can_undo_approval,
     can_view_timetable,
     permission_required,
 )
@@ -58,7 +59,13 @@ from .repair import (
     dismiss_repair,
     enqueue_repair,
 )
-from .services import TimetableLocked, approve_timetable
+from .services import (
+    NotApproved,
+    ReasonRequired,
+    TimetableLocked,
+    approve_timetable,
+    undo_approval,
+)
 from .solver import DEFAULT_SOFT_WEIGHTS
 
 TPL = "scheduling/"
@@ -100,7 +107,16 @@ def _version_token(timetable):
     return NO_TIMETABLE_TOKEN if timetable is None else str(timetable.version)
 
 
-def _body_context(school, week, user, oob=False, move_error=None, clear_panel=False):
+def _body_context(
+    school,
+    week,
+    user,
+    oob=False,
+    move_error=None,
+    clear_panel=False,
+    undo_error=None,
+    undo_reason="",
+):
     timetable = _timetable(school, week)
     context = {
         "week": week,
@@ -129,6 +145,9 @@ def _body_context(school, week, user, oob=False, move_error=None, clear_panel=Fa
             explanations=explanations(timetable),
             no_complete_message=NO_COMPLETE_MESSAGE,
             approved=approved,
+            can_undo=can_undo_approval(user, timetable) and approved,
+            undo_error=undo_error,
+            undo_reason=undo_reason,
         )
     return context
 
@@ -452,6 +471,38 @@ def timetable_approve(request, week):
         approve_timetable(timetable.pk, request.user)
     context = _body_context(school, week, request.user, move_error=error)
     return render(request, TPL + "_body.html", context, status=409 if error else 200)
+
+
+MSG_NOT_APPROVED = "La settimana non è approvata: non c'è nulla da annullare."
+MSG_UNDO_REASON = "Indica il motivo dell'annullamento (massimo 300 caratteri)."
+
+
+@permission_required(can_undo_approval)
+@require_POST
+def timetable_undo_approval(request, week):
+    """Return an approved week to BOZZA; the reason is mandatory."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    timetable = _timetable(school, week)
+    if timetable is None:
+        raise Http404("Nessun orario per questa settimana.")
+    reason = request.POST.get("motivo", "")
+    error, undo_error, status = None, None, 200
+    try:
+        undo_approval(timetable.pk, request.user, reason)
+    except NotApproved:
+        error, status = MSG_NOT_APPROVED, 409
+    except ReasonRequired:
+        undo_error, status = MSG_UNDO_REASON, 400
+    context = _body_context(
+        school,
+        week,
+        request.user,
+        move_error=error,
+        undo_error=undo_error,
+        undo_reason=reason,
+    )
+    return render(request, TPL + "_body.html", context, status=status)
 
 
 MSG_QUICK_STARTED = "Deroga «{label}» applicata a: {scope}. Rigenerazione avviata."

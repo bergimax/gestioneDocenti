@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}{% if creating %}Nuova assegnazione{% else %}Modifica assegnazione{% endif %}{% endblock %}
+{% block title %}{% if adjusting %}Correggi ore erogate{% elif creating %}Nuova assegnazione{% else %}Modifica assegnazione{% endif %}{% endblock %}
 {% block content %}
 <p><a href="{% url 'assignment_list' %}">&larr; Assegnazioni</a></p>
-{% include "school/assignments/_form.html" %}
+{% if adjusting %}{% include "school/assignments/_adjust.html" %}{% else %}{% include "school/assignments/_form.html" %}{% endif %}
 {% endblock %}

@@ -1,7 +1,7 @@
 """Writes to a timetable. All board mutations go through apply_change."""
 
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Sum
 from django.utils import timezone
 
 from ledger.models import EntryKind, LedgerEntry
@@ -17,6 +17,14 @@ class TimetableLocked(Exception):
 
 class ForbiddenTimetableChange(Exception):
     """A change function touched state or approved_at."""
+
+
+class NotApproved(Exception):
+    """The week is not APPROVATO: there is nothing to undo."""
+
+
+class ReasonRequired(Exception):
+    """A reason is mandatory and was empty."""
 
 
 def apply_change(timetable_id, change_fn):
@@ -91,4 +99,57 @@ def approve_timetable(timetable_id, user):
             "senza_monte_ore": missing,
         }
         audit.record_audit(audit.SCHEDULE_APPROVED, user, locked.week_start, result)
+        return result
+
+
+def undo_approval(timetable_id, user, reason):
+    """Return an approved week to BOZZA with compensating ledger entries.
+
+    One transaction on the locked row. For each assignment, one REVERSAL
+    entry of minus the net DELIVERED + REVERSAL hours of this timetable
+    (zero nets are skipped); entries are never edited or deleted and
+    ADJUSTMENT rows are untouched. Raises NotApproved on a draft week and
+    ReasonRequired on a blank reason, writing nothing. Returns the number of
+    reversed hours and assignments.
+    """
+    reason = (reason or "").strip()
+    if not reason or len(reason) > 300:
+        raise ReasonRequired
+    with transaction.atomic():
+        locked = Timetable.objects.select_for_update().get(pk=timetable_id)
+        if locked.state != TimetableState.APPROVATO:
+            raise NotApproved(timetable_id)
+        nets = (
+            LedgerEntry.objects.filter(
+                timetable=locked, kind__in=[EntryKind.DELIVERED, EntryKind.REVERSAL]
+            )
+            .values("assignment_id")
+            .annotate(total=Sum("hours"))
+            .order_by("assignment_id")
+        )
+        entries = [
+            LedgerEntry(
+                assignment_id=row["assignment_id"],
+                timetable=locked,
+                week=locked.week_start,
+                hours=-row["total"],
+                kind=EntryKind.REVERSAL,
+                reason=reason,
+                created_by=user,
+            )
+            for row in nets
+            if row["total"] != 0
+        ]
+        LedgerEntry.objects.bulk_create(entries)
+        Timetable.objects.filter(pk=timetable_id).update(
+            state=TimetableState.BOZZA,
+            approved_at=None,
+            version=F("version") + 1,
+        )
+        result = {
+            "ore_annullate": -sum(e.hours for e in entries),
+            "assegnazioni_aggiornate": len(entries),
+            "motivo": reason,
+        }
+        audit.record_audit(audit.APPROVAL_UNDONE, user, locked.week_start, result)
         return result

@@ -1,0 +1,32 @@
+<div class="form-panel" role="group" aria-labelledby="history-title">
+  <h2 id="history-title">Storico correzioni di {{ assignment }}</h2>
+  {% if history %}
+  <div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th scope="col">Data</th>
+        <th scope="col">Utente</th>
+        <th scope="col">Tipo</th>
+        <th scope="col">Ore</th>
+        <th scope="col">Motivo</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in history %}
+      <tr>
+        <td>{{ e.created_at|date:"d/m/Y H:i" }}</td>
+        <td>{{ e.created_by.email|default:"-" }}</td>
+        <td>{{ e.get_kind_display }}</td>
+        <td>{{ e.hours }}</td>
+        <td>{{ e.reason }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p>Nessuna correzione registrata.</p>
+  {% endif %}
+  <p><a href="{% url 'assignment_list' %}">Chiudi</a></p>
+</div>

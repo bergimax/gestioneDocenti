@@ -73,6 +73,14 @@ def can_approve(user, timetable=None):
     return _allowed(user, ADMIN_ONLY)
 
 
+def can_undo_approval(user, timetable=None):
+    return _allowed(user, ADMIN_ONLY)
+
+
+def can_adjust_hours(user, assignment=None):
+    return _allowed(user, ADMIN_ONLY)
+
+
 def can_run_setup(user, obj=None):
     return _allowed(user, ADMIN_ONLY)
 
@@ -102,6 +110,8 @@ PREDICATES = (
     can_repair,
     can_choose_alternative,
     can_approve,
+    can_undo_approval,
+    can_adjust_hours,
     can_run_setup,
     can_edit_school_data,
     can_edit_teachers,

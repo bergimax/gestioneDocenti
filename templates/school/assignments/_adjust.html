@@ -1,0 +1,22 @@
+<form method="post" class="form-panel" novalidate
+      action="{% url 'assignment_adjust' assignment.pk %}"
+      hx-post="{% url 'assignment_adjust' assignment.pk %}"
+      hx-target="#assignment-section" hx-swap="outerHTML">
+  {% csrf_token %}
+  <h2>Correggi ore erogate di {{ assignment }}</h2>
+  <dl class="readonly">
+    <dt>Ore erogate attuali</dt><dd>{{ current_delivered }}</dd>
+  </dl>
+  {% if form.errors %}<p class="form-error" role="alert">Controlla i campi evidenziati.</p>{% endif %}
+  {% for field in form.visible_fields %}
+  <div class="field{% if field.errors %} has-error{% endif %}">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.errors %}<p class="field-error" id="{{ field.id_for_label }}-error">{{ field.errors|join:" " }}</p>{% endif %}
+  </div>
+  {% endfor %}
+  <p>
+    <button type="submit">Salva</button>
+    <a href="{% url 'assignment_list' %}">Annulla</a>
+  </p>
+</form>

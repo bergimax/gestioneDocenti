@@ -620,3 +620,114 @@ def test_names_are_escaped_everywhere(school, admin):
     r = admin.post(delete(a), **HX)
     assert "<script>alert" not in r.content.decode()
     assert "&lt;script&gt;" in r.content.decode()
+
+
+# --- delivered hours correction (#37) --------------------------------------
+
+
+def adjust_url(a):
+    return f"/dati-scuola/assegnazioni/{a.pk}/correggi-ore/"
+
+
+def history_url(a):
+    return f"/dati-scuola/assegnazioni/{a.pk}/storico-ore/"
+
+
+def test_admin_sees_adjust_action_secretary_does_not(school, admin, seg):
+    a = assign(school)
+    assert "Correggi ore erogate" in text(admin.get(LIST))
+    assert "Correggi ore erogate" not in text(seg.get(LIST))
+    assert seg.post(adjust_url(a), {"nuove_ore": "3", "motivo": "x"}).status_code == 403
+    assert seg.get(adjust_url(a)).status_code == 403
+    assert Client().post(adjust_url(a), {}).status_code == 302
+
+
+def test_adjust_form_shows_current_value(school, admin):
+    a = assign(school)
+    r = admin.get(adjust_url(a), **HX)
+    assert r.status_code == 200 and "Ore erogate attuali" in text(r)
+
+
+def test_adjust_saves_and_row_shows_values(school, admin):
+    from ledger.models import LedgerEntry
+
+    a = assign(school, hours=10)
+    r = admin.post(adjust_url(a), {"nuove_ore": "4", "motivo": "recupero"}, **HX)
+    assert r.status_code == 200
+    entry = LedgerEntry.objects.get()
+    assert entry.hours == 4 and entry.reason == "recupero" and entry.created_by
+    row = re.search(r"<td>10</td>\s*<td>4</td>\s*<td>6</td>", r.content.decode())
+    assert row
+
+
+def test_adjust_unchanged_and_errors_write_nothing(school, admin):
+    from ledger.models import LedgerEntry
+
+    a = assign(school)
+    assert (
+        admin.post(adjust_url(a), {"nuove_ore": "0", "motivo": ""}).status_code == 302
+    )
+    r = admin.post(adjust_url(a), {"nuove_ore": "3", "motivo": "  "})
+    assert r.status_code == 200 and "Indica il motivo" in text(r)
+    r = admin.post(adjust_url(a), {"nuove_ore": "abc", "motivo": "x"})
+    assert "numero intero" in text(r)
+    r = admin.post(adjust_url(a), {"nuove_ore": "-2", "motivo": "x"})
+    assert "negative" in text(r)
+    assert not LedgerEntry.objects.exists()
+
+
+def test_adjust_above_total_is_accepted(school, admin):
+    a = assign(school, hours=5)
+    admin.post(adjust_url(a), {"nuove_ore": "9", "motivo": "extra"})
+    r = admin.get(LIST)
+    assert re.search(r"<td>5</td>\s*<td>9</td>\s*<td>-4</td>", r.content.decode())
+
+
+def test_history_lists_entries_newest_first(school, admin):
+    a = assign(school)
+    admin.post(adjust_url(a), {"nuove_ore": "4", "motivo": "primo"})
+    admin.post(adjust_url(a), {"nuove_ore": "1", "motivo": "secondo"})
+    body = text(admin.get(history_url(a), **HX))
+    assert body.index("secondo") < body.index("primo")
+    assert "Correzione" in body and "admin@example.com" in body
+
+
+def test_history_query_count_is_constant(school, admin):
+    def count(n):
+        a = assign(
+            school,
+            t=teacher(school, f"T{n}"),
+            c=klass(school, f"C{n}"),
+            s=subj(school, f"M{n}"),
+        )
+        for i in range(n):
+            admin.post(adjust_url(a), {"nuove_ore": str(i + 1), "motivo": "m"})
+        with CaptureQueriesContext(connection) as ctx:
+            admin.get(history_url(a), **HX)
+        return len(ctx)
+
+    assert count(1) == count(5)
+
+
+def test_list_query_count_constant_with_adjustments(school, admin):
+    def count():
+        with CaptureQueriesContext(connection) as ctx:
+            admin.get(LIST)
+        return len(ctx)
+
+    for i in range(3):
+        assign(
+            school,
+            t=teacher(school, f"A{i}"),
+            c=klass(school, f"A{i}"),
+            s=subj(school, f"A{i}"),
+        )
+    small = count()
+    for i in range(27):
+        assign(
+            school,
+            t=teacher(school, f"B{i}"),
+            c=klass(school, f"B{i}"),
+            s=subj(school, f"B{i}"),
+        )
+    assert count() == small

@@ -72,6 +72,16 @@ urlpatterns = [
         name="assignment_edit",
     ),
     path(
+        "dati-scuola/assegnazioni/<int:pk>/correggi-ore/",
+        assignments.assignment_adjust,
+        name="assignment_adjust",
+    ),
+    path(
+        "dati-scuola/assegnazioni/<int:pk>/storico-ore/",
+        assignments.assignment_history,
+        name="assignment_history",
+    ),
+    path(
         "dati-scuola/assegnazioni/<int:pk>/elimina/",
         assignments.assignment_delete,
         name="assignment_delete",

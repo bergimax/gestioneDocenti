@@ -1,1 +1,1 @@
-{% if form %}{% include "school/assignments/_form.html" %}{% else %}{% include "school/assignments/_delete.html" %}{% endif %}
+{% if adjusting %}{% include "school/assignments/_adjust.html" %}{% elif history_panel %}{% include "school/assignments/_history.html" %}{% elif form %}{% include "school/assignments/_form.html" %}{% else %}{% include "school/assignments/_delete.html" %}{% endif %}

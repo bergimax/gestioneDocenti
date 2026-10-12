@@ -7,6 +7,20 @@
   {% else %}
   <div class="tt-summary">
     {% if approved %}<span class="cal-badge tt-approved">Approvata</span>{% endif %}
+    {% if can_undo %}
+    <form class="tt-undo" method="post" novalidate action="{% url 'timetable_undo_approval' week.start|date:'Y-m-d' %}" hx-post="{% url 'timetable_undo_approval' week.start|date:'Y-m-d' %}" hx-target="#timetable-body" hx-swap="outerHTML">
+      {% csrf_token %}
+      <details{% if undo_error %} open{% endif %}>
+        <summary>Annulla approvazione</summary>
+        <div class="field{% if undo_error %} has-error{% endif %}">
+          <label for="undo-motivo">Motivo</label>
+          <input type="text" id="undo-motivo" name="motivo" maxlength="300" value="{{ undo_reason }}"{% if undo_error %} aria-invalid="true" aria-describedby="undo-motivo-error"{% endif %}>
+          {% if undo_error %}<p class="field-error" id="undo-motivo-error">{{ undo_error }}</p>{% endif %}
+        </div>
+        <button type="submit">Annulla approvazione</button>
+      </details>
+    </form>
+    {% endif %}
     {% if timetable.quality_level %}<p class="tt-quality">Qualit&agrave;: livello <strong>{{ timetable.quality_level }}</strong>{% if timetable.quality_score is not None %} (punteggio {{ timetable.quality_score|floatformat:1 }}){% endif %}</p>{% endif %}
     {% if best_effort %}<p class="message message-info" role="status">{{ no_complete_message }}</p>{% endif %}
   </div>

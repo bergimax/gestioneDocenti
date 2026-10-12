@@ -3,14 +3,22 @@ from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
+from ledger.models import LedgerEntry
 from projects.permissions import (
+    can_adjust_hours,
     can_edit_school_data,
     can_view_school_data,
     permission_required,
 )
 
-from ..assignment_hours import set_assignment_total_hours
-from ..forms import AssignmentForm, AssignmentHoursForm
+from ..assignment_hours import (
+    AdjustmentReasonRequired,
+    NegativeDelivered,
+    adjust_delivered_hours,
+    delivered_hours_map,
+    set_assignment_total_hours,
+)
+from ..forms import AssignmentForm, AssignmentHoursForm, DeliveredAdjustForm
 from ..selectors import (
     assignment_rows,
     assignments_of,
@@ -31,6 +39,7 @@ def _section(request, school, status=200):
         "school": school,
         "assignments": assignment_rows(school) if school else [],
         "can_edit": can_edit_school_data(request.user),
+        "can_adjust": can_adjust_hours(request.user),
         "flash": True,
     }
     return render(request, TPL + "_section.html", context, status=status)
@@ -67,6 +76,7 @@ def assignment_list(request):
         "school": school,
         "assignments": assignment_rows(school) if school else [],
         "can_edit": can_edit_school_data(request.user),
+        "can_adjust": can_adjust_hours(request.user),
         "can_open_hub": can_edit_school_data(request.user),
     }
     return render(request, TPL + "list.html", context)
@@ -136,3 +146,67 @@ def assignment_delete(request, pk):
         )
     context = {"school": school, "assignment": obj, "blockers": blockers}
     return _form_response(request, TPL + "delete_page.html", context)
+
+
+@permission_required(can_adjust_hours)
+@require_http_methods(["GET", "POST"])
+def assignment_adjust(request, pk):
+    school = current_school()
+    if school is None:
+        return _no_school(request)
+    obj = get_object_or_404(assignments_of(school), pk=pk)
+    current = delivered_hours_map(school).get(obj.pk, 0)
+    if request.method == "POST":
+        form = DeliveredAdjustForm(request.POST, current=current)
+        if form.is_valid():
+            try:
+                result = adjust_delivered_hours(
+                    obj,
+                    form.cleaned_data["nuove_ore"],
+                    request.user,
+                    form.cleaned_data["motivo"],
+                )
+            except NegativeDelivered:
+                form.add_error(
+                    "nuove_ore", "Le ore erogate non possono essere negative."
+                )
+            except AdjustmentReasonRequired:
+                form.add_error("motivo", "Indica il motivo della correzione.")
+            else:
+                if result["changed"]:
+                    old, new = result["old"], result["new"]
+                    msg = f"Ore erogate di {obj} corrette: {old} → {new}."
+                else:
+                    msg = f"Ore erogate di {obj} invariate."
+                return _done(request, school, msg)
+    else:
+        form = DeliveredAdjustForm(initial={"nuove_ore": current}, current=current)
+    context = {
+        "school": school,
+        "form": form,
+        "assignment": obj,
+        "adjusting": True,
+        "current_delivered": current,
+    }
+    return _form_response(request, TPL + "form_page.html", context)
+
+
+@permission_required(can_view_school_data)
+@require_http_methods(["GET"])
+def assignment_history(request, pk):
+    school = current_school()
+    if school is None:
+        return _no_school(request)
+    obj = get_object_or_404(assignments_of(school), pk=pk)
+    entries = (
+        LedgerEntry.objects.filter(assignment=obj, kind__in=["ADJUSTMENT", "REVERSAL"])
+        .select_related("created_by")
+        .order_by("-created_at", "-pk")
+    )
+    context = {
+        "school": school,
+        "assignment": obj,
+        "history": entries,
+        "history_panel": True,
+    }
+    return _form_response(request, TPL + "history_page.html", context)

@@ -27,7 +27,7 @@
         <th scope="col">Ore totali</th>
         <th scope="col">Ore erogate</th>
         <th scope="col">Ore residue</th>
-        {% if can_edit %}<th scope="col">Azioni</th>{% endif %}
+        <th scope="col">Azioni</th>
       </tr>
     </thead>
     <tbody>
@@ -39,12 +39,14 @@
         <td>{{ a.ore_totali }}</td>
         <td>{{ a.delivered }}</td>
         <td>{{ a.remaining }}</td>
-        {% if can_edit %}
         <td class="actions">
+          <a href="{% url 'assignment_history' a.pk %}" hx-get="{% url 'assignment_history' a.pk %}" hx-target="#assignment-form-area" hx-swap="innerHTML" aria-label="Storico ore {{ a }}">Storico</a>
+          {% if can_adjust %}<a href="{% url 'assignment_adjust' a.pk %}" hx-get="{% url 'assignment_adjust' a.pk %}" hx-target="#assignment-form-area" hx-swap="innerHTML" aria-label="Correggi ore erogate {{ a }}">Correggi ore erogate</a>{% endif %}
+          {% if can_edit %}
           <a href="{% url 'assignment_edit' a.pk %}" hx-get="{% url 'assignment_edit' a.pk %}" hx-target="#assignment-form-area" hx-swap="innerHTML" aria-label="Modifica assegnazione {{ a }}">Modifica</a>
           <a href="{% url 'assignment_delete' a.pk %}" hx-get="{% url 'assignment_delete' a.pk %}" hx-target="#assignment-form-area" hx-swap="innerHTML" aria-label="Elimina assegnazione {{ a }}">Elimina</a>
+          {% endif %}
         </td>
-        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
