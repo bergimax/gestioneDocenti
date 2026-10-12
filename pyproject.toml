@@ -10,6 +10,7 @@ dependencies = [
     "ortools==9.15.6755",
     "pdfplumber==0.11.10",
     "psycopg[binary]==3.3.6",
+    "weasyprint==70.0",
 ]
 
 [dependency-groups]
