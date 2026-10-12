@@ -75,9 +75,9 @@ class CaptureCtx:
         self.ctxs = []
         self._real = tasks.solve_exclusive
 
-    def __call__(self, ctx, pinned=None):
+    def __call__(self, ctx, pinned=None, weights=None):
         self.ctxs.append(ctx)
-        return self._real(ctx, pinned)
+        return self._real(ctx, pinned, weights)
 
 
 @pytest.fixture

@@ -371,7 +371,7 @@ def test_run_passes_the_timeout_from_settings(week):
     school, _ = week
     seen = []
 
-    def fake(ctx):
+    def fake(ctx, weights=None):
         seen.append(ctx.timeout_seconds)
         return SolveResult(SolveStatus.OPTIMAL)
 
