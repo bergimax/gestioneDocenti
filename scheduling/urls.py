@@ -1,5 +1,7 @@
 from django.urls import path
 
+from export.views import export_pdf
+
 from . import views
 
 urlpatterns = [
@@ -71,5 +73,6 @@ urlpatterns = [
         views.timetable_undo_approval,
         name="timetable_undo_approval",
     ),
+    path("orario/<str:week>/export-pdf/", export_pdf, name="timetable_export_pdf"),
     path("orario/<str:week>/stato/", views.timetable_job, name="timetable_job"),
 ]

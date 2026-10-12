@@ -69,6 +69,10 @@ def can_choose_alternative(user, timetable=None):
     return _allowed(user, ADMIN_ONLY)
 
 
+def can_export_timetable(user, timetable=None):
+    return _allowed(user, ALL_ROLES)
+
+
 def can_approve(user, timetable=None):
     return _allowed(user, ADMIN_ONLY)
 
@@ -109,6 +113,7 @@ PREDICATES = (
     can_apply_quick_action,
     can_repair,
     can_choose_alternative,
+    can_export_timetable,
     can_approve,
     can_undo_approval,
     can_adjust_hours,

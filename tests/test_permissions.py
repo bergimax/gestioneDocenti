@@ -26,6 +26,7 @@ MATRIX = {
     p.can_apply_quick_action: (True, False),
     p.can_repair: (True, False),
     p.can_choose_alternative: (True, False),
+    p.can_export_timetable: (True, True),
     p.can_approve: (True, False),
     p.can_undo_approval: (True, False),
     p.can_adjust_hours: (True, False),
