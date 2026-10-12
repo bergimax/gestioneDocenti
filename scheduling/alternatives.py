@@ -28,6 +28,7 @@ from .models import (
     Timetable,
     TimetableState,
 )
+from .proposals import active_weights
 from .services import TimetableLocked, apply_change
 from .solver import (
     CLASSE_DOUBLE_BOOKING,
@@ -37,7 +38,6 @@ from .solver import (
     CLASSE_STAGE_DAY,
     CLASSE_UNFILLED,
     CONTRACTOR_GAP,
-    DEFAULT_SOFT_WEIGHTS,
     DOCENTE_DOUBLE_BOOKING,
     MONTE_ORE_EXCEEDED,
     ORE_TARGET_DEVIATION,
@@ -104,12 +104,9 @@ class AlternativeRefused(Exception):
 
 
 def active_soft_weights(school):
-    """The weights the alternatives start from.
-
-    #35 replaces the body with the accepted adjustments; until then the
-    defaults are the active weights.
-    """
-    return dict(DEFAULT_SOFT_WEIGHTS)
+    """The weights generation and the alternatives start from: the newest
+    adjustment of each kind (scheduling.proposals), else the default."""
+    return active_weights(school)
 
 
 def kind_label(kind):

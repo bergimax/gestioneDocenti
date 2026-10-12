@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Pesi{% endblock %}
+{% block content %}
+<h1>Pesi delle preferenze</h1>
+
+<h2>Proposte</h2>
+{% if proposals %}
+<form method="post" action="{% url 'soft_weights_apply' %}">
+  {% csrf_token %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col"><span class="visually-hidden">Seleziona</span></th>
+          <th scope="col">Preferenza</th>
+          <th scope="col">Peso attuale</th>
+          <th scope="col">Peso proposto</th>
+          <th scope="col">A favore</th>
+          <th scope="col">Contro</th>
+          <th scope="col">Settimane</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in proposals %}
+        <tr>
+          <td><input type="checkbox" name="kind" value="{{ p.kind }}" id="kind-{{ p.kind }}" aria-label="Seleziona {{ p.name }}"></td>
+          <th scope="row">{{ p.name }}</th>
+          <td>{{ p.old_weight }}</td>
+          <td>{{ p.new_weight }}</td>
+          <td>{{ p.supporting|length }}</td>
+          <td>{{ p.contradicting|length }}</td>
+          <td>{% for d in p.supporting %}{{ d|date:"d/m/Y" }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p>
+    <button type="submit">Applica</button>
+    <button type="submit" name="all" value="1">Applica tutte</button>
+  </p>
+</form>
+{% else %}
+<p>Nessuna proposta</p>
+{% endif %}
+
+<h2>Pesi attuali</h2>
+<form method="post" action="{% url 'soft_weights_reset' %}">
+  {% csrf_token %}
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Preferenza</th>
+          <th scope="col">Peso attuale</th>
+          <th scope="col">Predefinito</th>
+          <th scope="col"><span class="visually-hidden">Azioni</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in weights %}
+        <tr>
+          <th scope="row">{{ w.name }}</th>
+          <td>{{ w.active }}</td>
+          <td>{{ w.default }}</td>
+          <td><button type="submit" name="kind" value="{{ w.kind }}">Ripristina default</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p><button type="submit" name="all" value="1">Ripristina tutti i default</button></p>
+</form>
+
+<h2>Storico</h2>
+{% if history %}
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th scope="col">Data</th>
+        <th scope="col">Preferenza</th>
+        <th scope="col">Da</th>
+        <th scope="col">A</th>
+        <th scope="col">Utente</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row, name in history %}
+      <tr>
+        <td>{{ row.created_at|date:"d/m/Y H:i" }}</td>
+        <th scope="row">{{ name }}</th>
+        <td>{{ row.old_weight }}</td>
+        <td>{{ row.new_weight }}{% if row.evidence.reset %} (ripristino){% endif %}</td>
+        <td>{{ row.user.email|default:"-" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p>Nessuna modifica ai pesi.</p>
+{% endif %}
+{% endblock %}

@@ -129,9 +129,9 @@ def test_the_job_gives_the_solver_the_configured_budget(week):
     school, _ = week
     seen = []
 
-    def spy(ctx, pinned=None):
+    def spy(ctx, pinned=None, weights=None):
         seen.append(ctx.explain_budget_seconds)
-        return tasks.solve(ctx)
+        return tasks.solve(ctx, weights=weights)
 
     with override_settings(SOLVER_EXPLAIN_BUDGET_SECONDS=7):
         with mock.patch.object(tasks, "solve_exclusive", spy):

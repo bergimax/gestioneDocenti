@@ -20,6 +20,7 @@ from .models import (
     SolveJob,
     Timetable,
 )
+from .proposals import active_weights
 from .services import TimetableLocked, apply_change
 from .solver import SolveStatus, solve
 
@@ -50,12 +51,13 @@ def infeasible_message():
     return "Nessun orario possibile per questa settimana."
 
 
-def solve_exclusive(ctx, pinned=None):
+def solve_exclusive(ctx, pinned=None, weights=None):
     """Run the solver, one at a time in this process."""
+    extra = {"weights": weights} if weights is not None else {}
     with _SOLVE_LOCK:
         if pinned:
-            return solve(ctx, pinned=pinned)
-        return solve(ctx)
+            return solve(ctx, pinned=pinned, **extra)
+        return solve(ctx, **extra)
 
 
 def _build_slots(timetable, lessons, school_id):
@@ -158,7 +160,7 @@ def run_job(job_id):
             timeout_seconds=settings.SOLVER_TIMEOUT_SECONDS,
             explain_budget_seconds=settings.SOLVER_EXPLAIN_BUDGET_SECONDS,
         )
-        result = solve_exclusive(ctx)
+        result = solve_exclusive(ctx, weights=active_weights(job.school))
         if result.status in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE):
             _write_result(job, result)
             return

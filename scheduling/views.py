@@ -1,8 +1,9 @@
 import datetime
 import re
 
-from django.http import Http404, HttpResponse
-from django.shortcuts import render
+from django.contrib import messages
+from django.http import Http404, HttpResponse, HttpResponseBadRequest
+from django.shortcuts import redirect, render
 from django.views.decorators.http import require_GET, require_POST
 
 from availability.services import school_weeks
@@ -12,6 +13,7 @@ from projects.permissions import (
     can_choose_alternative,
     can_decide_conflicts,
     can_generate,
+    can_manage_soft_weights,
     can_move_lesson,
     can_repair,
     can_view_timetable,
@@ -20,7 +22,7 @@ from projects.permissions import (
 from school.models import Class
 from school.selectors import current_school, today
 
-from . import alternatives
+from . import alternatives, proposals
 from .assign import assign_lesson, assignable_pairs
 from .board import (
     DAY_LABELS,
@@ -56,6 +58,7 @@ from .repair import (
     enqueue_repair,
 )
 from .services import TimetableLocked
+from .solver import DEFAULT_SOFT_WEIGHTS
 
 TPL = "scheduling/"
 NO_TIMETABLE_TOKEN = "-1"
@@ -724,3 +727,85 @@ def timetable_alt_view(request, week, job_id, index):
         "preview_description": alternatives.describe(alt["variation"]),
     }
     return render(request, TPL + "_alt_preview.html", context)
+
+
+# ---- weight proposals -------------------------------------------------------
+
+MSG_APPLIED = "Pesi aggiornati: {kinds}."
+MSG_NOTHING_TO_APPLY = "Nessuna proposta da applicare (già applicata o non più valida)."
+MSG_RESET = "Ripristinato il valore predefinito: {kinds}."
+MSG_ALREADY_DEFAULT = "Già al valore predefinito: {kinds}."
+MSG_PICK_KINDS = "Seleziona almeno un peso."
+
+
+def _names(kinds):
+    return ", ".join(proposals.KIND_NAMES[k] for k in kinds)
+
+
+def _requested_kinds(request):
+    """None for "all", else the list of kinds posted; ValueError if invalid."""
+    if request.POST.get("all") == "1":
+        return None
+    kinds = request.POST.getlist("kind")
+    if not kinds:
+        raise ValueError(MSG_PICK_KINDS)
+    proposals.check_kinds(kinds)
+    return kinds
+
+
+@permission_required(can_manage_soft_weights)
+@require_GET
+def weights_page(request):
+    school = current_school()
+    active = proposals.active_weights(school)
+    context = {
+        "proposals": proposals.compute_proposals(school),
+        "weights": [
+            {
+                "kind": k,
+                "name": proposals.KIND_NAMES[k],
+                "default": DEFAULT_SOFT_WEIGHTS[k],
+                "active": active[k],
+            }
+            for k in proposals.ADJUSTABLE_KINDS
+        ],
+        "history": [
+            (row, proposals.KIND_NAMES.get(row.kind, row.kind))
+            for row in proposals.history(school)
+        ],
+    }
+    return render(request, TPL + "weights.html", context)
+
+
+@permission_required(can_manage_soft_weights)
+@require_POST
+def weights_apply(request):
+    try:
+        kinds = _requested_kinds(request)
+    except ValueError:
+        return HttpResponseBadRequest("Peso non modificabile.")
+    rows = proposals.apply_proposals(current_school(), request.user, kinds)
+    if rows:
+        messages.success(
+            request, MSG_APPLIED.format(kinds=_names([r.kind for r in rows]))
+        )
+    else:
+        messages.info(request, MSG_NOTHING_TO_APPLY)
+    return redirect("soft_weights")
+
+
+@permission_required(can_manage_soft_weights)
+@require_POST
+def weights_reset(request):
+    try:
+        kinds = _requested_kinds(request)
+    except ValueError:
+        return HttpResponseBadRequest("Peso non modificabile.")
+    rows, skipped = proposals.reset_weights(current_school(), request.user, kinds)
+    if rows:
+        messages.success(
+            request, MSG_RESET.format(kinds=_names([r.kind for r in rows]))
+        )
+    if skipped:
+        messages.info(request, MSG_ALREADY_DEFAULT.format(kinds=_names(skipped)))
+    return redirect("soft_weights")

@@ -3,6 +3,9 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    path("pesi/", views.weights_page, name="soft_weights"),
+    path("pesi/applica/", views.weights_apply, name="soft_weights_apply"),
+    path("pesi/ripristina/", views.weights_reset, name="soft_weights_reset"),
     path("orario/", views.timetable_page, name="timetable"),
     path("orario/<str:week>/griglia/", views.timetable_grid, name="timetable_grid"),
     path(

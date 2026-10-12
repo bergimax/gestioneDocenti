@@ -332,3 +332,52 @@ class AlternativePick(models.Model):
 
     def __str__(self):
         return f"{self.week_start} {self.chosen.get('label', '')}"
+
+
+class _AppendOnlyQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise NotImplementedError("soft_weight_adjustment rows are never updated")
+
+    def delete(self):
+        raise NotImplementedError("soft_weight_adjustment rows are never deleted")
+
+
+class SoftWeightAdjustment(models.Model):
+    """One applied or reset weight of a kind, append-only (specs section 3).
+
+    The newest row of a kind is its active weight; no row means the default.
+    `evidence` holds the supporting and contradicting picks behind an apply
+    (empty `reset: true` marker for a reset).
+    """
+
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT, related_name="weight_adjustments"
+    )
+    kind = models.CharField(max_length=40)
+    old_weight = models.PositiveIntegerField()
+    new_weight = models.PositiveIntegerField()
+    evidence = models.JSONField(default=dict)
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = _AppendOnlyQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-pk"]
+
+    def __str__(self):
+        return f"{self.kind} {self.old_weight} -> {self.new_weight}"
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise NotImplementedError("soft_weight_adjustment rows are never updated")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise NotImplementedError("soft_weight_adjustment rows are never deleted")
