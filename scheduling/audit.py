@@ -5,6 +5,7 @@ import logging
 logger = logging.getLogger("scheduling.audit")
 
 QUICK_ACTION = "QUICK_ACTION"
+SCHEDULE_APPROVED = "SCHEDULE_APPROVED"
 
 
 def record_audit(action, user, week, params):

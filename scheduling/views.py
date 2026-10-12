@@ -9,6 +9,7 @@ from django.views.decorators.http import require_GET, require_POST
 from availability.services import school_weeks
 from projects.permissions import (
     can_apply_quick_action,
+    can_approve,
     can_assign_slot,
     can_choose_alternative,
     can_decide_conflicts,
@@ -57,7 +58,7 @@ from .repair import (
     dismiss_repair,
     enqueue_repair,
 )
-from .services import TimetableLocked
+from .services import TimetableLocked, approve_timetable
 from .solver import DEFAULT_SOFT_WEIGHTS
 
 TPL = "scheduling/"
@@ -425,6 +426,32 @@ def timetable_conflicts_reject(request, week):
         reject_lesson(timetable.pk, class_id, day, hour, version)
 
     return _edit_response(request, week, edit)
+
+
+MSG_EMPTY_WEEK = "Nessuna lezione: approvare comunque?"
+MSG_CONFLICTS = "La settimana ha {count} conflitti non risolti: approvare comunque?"
+
+
+@permission_required(can_approve)
+@require_POST
+def timetable_approve(request, week):
+    """Approve the week. An empty week or unresolved conflicts need `confirm`."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    timetable = _timetable(school, week)
+    if timetable is None:
+        raise Http404("Nessun orario per questa settimana.")
+    error = None
+    if timetable.state != TimetableState.APPROVATO and "confirm" not in request.POST:
+        conflicts = visible_conflicts(timetable)
+        if not timetable.slots.exists():
+            error = MSG_EMPTY_WEEK
+        elif conflicts:
+            error = MSG_CONFLICTS.format(count=len(conflicts))
+    if error is None:
+        approve_timetable(timetable.pk, request.user)
+    context = _body_context(school, week, request.user, move_error=error)
+    return render(request, TPL + "_body.html", context, status=409 if error else 200)
 
 
 MSG_QUICK_STARTED = "Deroga «{label}» applicata a: {scope}. Rigenerazione avviata."

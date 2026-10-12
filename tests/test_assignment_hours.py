@@ -27,11 +27,29 @@ def assignment(db):
     )
 
 
-def test_delivered_map_is_empty_and_runs_no_query(
+def test_delivered_map_is_empty_without_ledger_entries(assignment):
+    assert delivered_hours_map(assignment.school) == {}
+
+
+def test_delivered_map_sums_ledger_hours_in_one_query(
     assignment, django_assert_num_queries
 ):
-    with django_assert_num_queries(0):
-        assert delivered_hours_map(assignment.school) == {}
+    from ledger.models import LedgerEntry
+    from scheduling.models import Timetable
+
+    tt = Timetable.objects.create(
+        school=assignment.school, week_start=datetime.date(2026, 10, 12)
+    )
+    for hours in (1, 1, 2):
+        LedgerEntry.objects.create(
+            assignment=assignment,
+            timetable=tt,
+            week=tt.week_start,
+            hours=hours,
+            kind="DELIVERED",
+        )
+    with django_assert_num_queries(1):
+        assert delivered_hours_map(assignment.school) == {assignment.pk: 4}
 
 
 def test_set_total_hours_saves_only_that_column(assignment):
