@@ -583,7 +583,9 @@ def test_the_diff_lists_every_change_with_a_count_and_the_two_buttons(admin, rw)
     assert 'hx-trigger="every 2s"' not in page
     assert "<strong>4</strong> lezioni da modificare" in page
     assert page.count("rimossa") == 4
-    assert "1B" in page and "Mat0" in page and "DOC0 NOME" in page
+    # Which teacher teaches 1B on Thursday depends on the primary keys the
+    # solver sees, so only the shape of the rows is asserted.
+    assert "1B" in page and re.search(r"Mat\d", page) and re.search(r"DOC\d NOME", page)
     assert re.search(r"Gioved&igrave;|Giovedì", page)
     assert "Conferma" in page and "Annulla" in page
     assert f'action="{confirm_url(job)}"' in page
