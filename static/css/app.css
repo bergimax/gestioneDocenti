@@ -212,3 +212,12 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-alt-actions form { display: inline; }
 .tt-alt-option { display: inline-flex; gap: .35rem; align-items: center; margin-right: .75rem; }
 [x-cloak] { display: none !important; }
+
+/* Natural-language instruction box (#42) */
+.tt-instruction { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; margin: .75rem 0; }
+.tt-instruction form { max-width: 32rem; }
+.tt-instruction textarea { width: 100%; }
+.tt-instruction-card h2 { margin: .5rem 0 .25rem; font-size: 1.1rem; }
+.tt-instruction-card dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem .75rem; margin: 0 0 .5rem; }
+.tt-instruction-card dt { font-weight: 700; }
+.tt-instruction-card dd { margin: 0; }

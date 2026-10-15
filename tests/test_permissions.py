@@ -24,6 +24,7 @@ MATRIX = {
     p.can_assign_slot: (True, False),
     p.can_decide_conflicts: (True, False),
     p.can_apply_quick_action: (True, False),
+    p.can_use_ai_instructions: (True, False),
     p.can_repair: (True, False),
     p.can_choose_alternative: (True, False),
     p.can_export_timetable: (True, True),

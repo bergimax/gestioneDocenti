@@ -367,6 +367,7 @@ class Draft(models.Model):
 
     class Kind(models.TextChoices):
         CALENDAR_ROWS = "calendar_rows", "Righe di calendario"
+        INSTRUCTION = "instruction", "Istruzione in linguaggio naturale"
 
     class Status(models.TextChoices):
         DRAFT = "DRAFT", "Bozza"

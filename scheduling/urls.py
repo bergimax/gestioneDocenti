@@ -2,7 +2,7 @@ from django.urls import path
 
 from export.views import export_excel, export_pdf
 
-from . import audit_views, views
+from . import audit_views, instruction_views, views
 
 urlpatterns = [
     path("audit/", audit_views.audit_page, name="audit_log"),
@@ -35,6 +35,21 @@ urlpatterns = [
         "orario/<str:week>/deroga/",
         views.timetable_quick_action,
         name="timetable_quick_action",
+    ),
+    path(
+        "orario/<str:week>/istruzione/",
+        instruction_views.instruction_create,
+        name="instruction_create",
+    ),
+    path(
+        "orario/<str:week>/istruzione/<int:draft_id>/conferma/",
+        instruction_views.instruction_confirm,
+        name="instruction_confirm",
+    ),
+    path(
+        "orario/<str:week>/istruzione/<int:draft_id>/scarta/",
+        instruction_views.instruction_discard,
+        name="instruction_discard",
     ),
     path(
         "orario/<str:week>/sostituzione/",

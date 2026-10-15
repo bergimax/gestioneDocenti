@@ -61,6 +61,10 @@ def can_apply_quick_action(user, timetable=None):
     return _allowed(user, ADMIN_ONLY)
 
 
+def can_use_ai_instructions(user, timetable=None):
+    return _allowed(user, ADMIN_ONLY)
+
+
 def can_repair(user, timetable=None):
     return _allowed(user, ADMIN_ONLY)
 
@@ -119,6 +123,7 @@ PREDICATES = (
     can_assign_slot,
     can_decide_conflicts,
     can_apply_quick_action,
+    can_use_ai_instructions,
     can_repair,
     can_choose_alternative,
     can_export_timetable,

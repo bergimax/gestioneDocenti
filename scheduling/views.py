@@ -25,7 +25,7 @@ from projects.permissions import (
 from school.models import Class
 from school.selectors import current_school, today
 
-from . import alternatives, proposals
+from . import alternatives, instruction, proposals
 from .assign import assign_lesson, assignable_pairs
 from .board import (
     DAY_LABELS,
@@ -255,6 +255,7 @@ def timetable_page(request):
     context.update(_job_context(school, week, request.user))
     context.update(_body_context(school, week, request.user))
     context.update(_deroga_context(school, week, request.user))
+    context.update(instruction.panel_context(school, week, request.user))
     context.update(_repair_context(school, week, request.user))
     return render(request, TPL + "page.html", context)
 
@@ -276,6 +277,7 @@ def _job_response(request, school, week, status=200, error=None):
     if context["job_done"] and not context["running"]:
         context.update(_body_context(school, week, request.user, oob=True))
         context.update(_deroga_context(school, week, request.user, oob=True))
+        context.update(instruction.panel_context(school, week, request.user, oob=True))
     return render(request, TPL + "_job.html", context, status=status)
 
 
