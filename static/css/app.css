@@ -211,3 +211,4 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-alt-actions { white-space: nowrap; }
 .tt-alt-actions form { display: inline; }
 .tt-alt-option { display: inline-flex; gap: .35rem; align-items: center; margin-right: .75rem; }
+[x-cloak] { display: none !important; }

@@ -7,7 +7,12 @@ import re
 _TOKEN_PATH = re.compile(r"(/l/)([A-Za-z0-9_-]{0,6})[^\s\"'?]*")
 
 
+# Path of a calendar feed (feeds/urls.py): /feeds/<token>.ics
+_FEED_PATH = re.compile(r"(/feeds/)([A-Za-z0-9_-]{0,6})[A-Za-z0-9_-]*\.ics")
+
+
 def redact(text):
+    text = _FEED_PATH.sub(r"\1\2....ics", text)
     return _TOKEN_PATH.sub(r"\1\2...", text)
 
 

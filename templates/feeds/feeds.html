@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Feed{% endblock %}
+{% block content %}
+<h1>Feed del calendario</h1>
+{% if not school %}
+<p>Nessuna scuola configurata: esegui prima il setup.</p>
+{% else %}
+<p>Chi ha l'indirizzo vede le settimane approvate senza accedere. Copia l'indirizzo e invialo a mano.</p>
+{% include "feeds/_table.html" with title="Docenti" rows=teachers empty="Nessun docente attivo." %}
+{% include "feeds/_table.html" with title="Classi" rows=classes empty="Nessuna classe presente." %}
+{% endif %}
+{% endblock %}

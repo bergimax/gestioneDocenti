@@ -31,6 +31,7 @@ MATRIX = {
     p.can_undo_approval: (True, False),
     p.can_adjust_hours: (True, False),
     p.can_view_audit_log: (True, False),
+    p.can_manage_feeds: (True, False),
     p.can_run_setup: (True, False),
     p.can_edit_school_data: (True, False),
     p.can_edit_teachers: (True, False),

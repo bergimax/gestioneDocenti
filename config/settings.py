@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "school",
     "availability",
     "scheduling",
+    "feeds",
     "ledger",
     "django_tasks",
     "django_tasks_db",

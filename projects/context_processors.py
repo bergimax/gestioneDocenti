@@ -6,6 +6,7 @@ Visibility comes only from the predicates of ``projects.permissions``.
 from projects.permissions import (
     can_edit_availability,
     can_edit_school_data,
+    can_manage_feeds,
     can_manage_soft_weights,
     can_run_setup,
     can_view_audit_log,
@@ -19,6 +20,7 @@ MENU = (
     ("Setup", "setup", can_run_setup),
     ("Dati scuola", "school_data", can_edit_school_data),
     ("Pesi", "soft_weights", can_manage_soft_weights),
+    ("Feed", "feeds", can_manage_feeds),
     ("Registro", "audit_log", can_view_audit_log),
 )
 

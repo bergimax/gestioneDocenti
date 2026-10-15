@@ -9,6 +9,7 @@ urlpatterns = [
     path("partials/ping/", views.overview_ping, name="overview_ping"),
     path("", include("availability.urls")),
     path("", include("scheduling.urls")),
+    path("", include("feeds.urls")),
     path("", include("school.urls")),
     path("", include("accounts.urls")),
 ]

@@ -15,6 +15,7 @@ ALL = [
     "Setup",
     "Dati scuola",
     "Pesi",
+    "Feed",
     "Registro",
 ]
 PAGES = {

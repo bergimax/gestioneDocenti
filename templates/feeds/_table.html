@@ -1,0 +1,36 @@
+<h2>{{ title }}</h2>
+{% if rows %}
+<div class="table-wrap">
+  <table class="data-table">
+    <caption class="visually-hidden">Feed: {{ title }}</caption>
+    <thead>
+      <tr>
+        <th scope="col">Nome</th>
+        <th scope="col">Indirizzo del feed</th>
+        <th scope="col">Azioni</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr x-data="{ confirming: false, copied: false }">
+        <th scope="row">{{ r.name }}</th>
+        <td><input type="text" readonly size="60" value="{{ r.url }}" x-ref="url" aria-label="Indirizzo del feed di {{ r.name }}"></td>
+        <td class="actions">
+          <button type="button" @click="navigator.clipboard.writeText($refs.url.value); copied = true" aria-label="Copia l'indirizzo di {{ r.name }}">Copia</button>
+          <span x-show="copied" x-cloak role="status">Copiato</span>
+          <button type="button" x-show="!confirming" @click="confirming = true" aria-label="Rigenera il feed di {{ r.name }}">Rigenera</button>
+          <form method="post" action="{% url 'feed_regenerate' r.kind r.pk %}" x-show="confirming" x-cloak>
+            {% csrf_token %}
+            <p>Il vecchio indirizzo smettera di funzionare subito. Rigenerare?</p>
+            <button type="submit">Conferma</button>
+            <button type="button" @click="confirming = false">Annulla</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p>{{ empty }}</p>
+{% endif %}
