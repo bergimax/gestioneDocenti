@@ -6,6 +6,7 @@ decision records it. Stored scores and conflicts are never recomputed to hide
 a conflict: reading filters the list by the decisions.
 """
 
+from . import audit
 from .board import FIRST_HOUR, decided_keys
 from .context import build_week_context
 from .models import ConflictDecision, Day, DecisionAction, Slot, Timetable
@@ -29,7 +30,7 @@ def free_key(class_id, day, hour_index):
     return chiave(CLASSE_UNFILLED, class_id, None, DAYS.index(day), hour_index)
 
 
-def approve_conflicts(timetable_id, chiavi, version):
+def approve_conflicts(timetable_id, chiavi, version, user=None):
     """Store one APPROVATO decision per known, not yet decided key.
 
     Returns ``(timetable, changed)``. Unknown and repeated keys are ignored;
@@ -50,19 +51,26 @@ def approve_conflicts(timetable_id, chiavi, version):
     def change(locked):
         if locked.version != version:
             raise MoveRejected(MSG_STALE)
+        keys = new_keys(locked)
         ConflictDecision.objects.bulk_create(
             [
                 ConflictDecision(
                     timetable=locked, chiave=k, action=DecisionAction.APPROVATO
                 )
-                for k in new_keys(locked)
+                for k in keys
             ]
+        )
+        audit.record_audit(
+            audit.CONFLICT_DECISION,
+            user,
+            locked.week_start,
+            {"azione": "approva", "chiavi": keys},
         )
 
     return apply_change(timetable_id, change), True
 
 
-def reject_lesson(timetable_id, class_id, day, hour, version):
+def reject_lesson(timetable_id, class_id, day, hour, version, user=None):
     """Remove the lesson of a class cell (and its paired row) and keep it free."""
     timetable = Timetable.objects.select_related("school").get(pk=timetable_id)
     if not timetable.school.classes.filter(pk=class_id).exists():
@@ -98,5 +106,11 @@ def reject_lesson(timetable_id, class_id, day, hour, version):
         remaining = [s for s in slots if s.pk not in gone]
         ctx = build_week_context(locked.week_start, locked.school)
         reevaluate(locked, ctx, remaining)
+        audit.record_audit(
+            audit.CONFLICT_DECISION,
+            user,
+            locked.week_start,
+            {"azione": "rifiuta", "classe": class_id, "giorno": day, "ora": hour},
+        )
 
     return apply_change(timetable_id, change)

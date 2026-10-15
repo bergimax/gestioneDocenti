@@ -1070,3 +1070,28 @@ def test_a_paired_lesson_is_repaired_and_written_for_both_classes(admin, rw):
     assert not [
         c for c in cells(rw) if c[1] == rw.teachers[1].pk and c[3] == "MERCOLEDI"
     ]
+
+
+def test_confirm_writes_one_audit_entry_and_a_refusal_none(admin, rw):
+    from scheduling.models import AuditLog
+
+    job = start(admin, absent(rw))
+    before = AuditLog.objects.count()  # the preview records nothing
+    assert admin.post(confirm_url(job)).status_code == 200
+    assert AuditLog.objects.count() == before + 1
+    entry = AuditLog.objects.first()
+    assert entry.action == "REPAIR_CONFIRMED"
+    assert (entry.week_start, entry.timetable_id) == (rw.tt.week_start, rw.tt.pk)
+    assert entry.user.role == "ADMIN"
+    assert entry.details["job"] == job.pk
+    assert admin.post(confirm_url(job)).status_code == 409  # already applied
+    assert AuditLog.objects.count() == before + 1
+
+
+def test_dismiss_writes_no_audit_entry(admin, rw):
+    from scheduling.models import AuditLog
+
+    job = start(admin, absent(rw))
+    before = AuditLog.objects.count()
+    admin.post(dismiss_url(job))
+    assert AuditLog.objects.count() == before

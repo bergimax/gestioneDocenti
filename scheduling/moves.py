@@ -12,6 +12,7 @@ from django.conf import settings
 
 from school.models import Assignment
 
+from . import audit
 from .board import FIRST_HOUR, HOURS
 from .context import build_week_context
 from .models import Day, Slot, Timetable
@@ -126,7 +127,7 @@ def reevaluate(locked, ctx, slots, moving=None):
     )
 
 
-def move_lesson(timetable_id, slot_id, day, hour, version):
+def move_lesson(timetable_id, slot_id, day, hour, version, user=None):
     """Move one lesson (and its partner row when paired) to `day`/`hour`.
 
     Returns ``(timetable, moved)``; `moved` is False for a move onto the
@@ -134,6 +135,7 @@ def move_lesson(timetable_id, slot_id, day, hour, version):
     ``InvalidMove`` (400) when the slot is not in this timetable and
     ``MoveRejected`` (409) for a stale version, a refused target, an approved
     week (``TimetableLocked`` from ``apply_change``) or a failed evaluation.
+    A successful move writes one audit entry for `user`.
     Any error rolls back the whole write.
     """
     timetable = Timetable.objects.get(pk=timetable_id)
@@ -161,5 +163,11 @@ def move_lesson(timetable_id, slot_id, day, hour, version):
             s.day, s.start_hour, s.end_hour = day, hour, hour + 1
         reevaluate(locked, ctx, slots, moving)
         Slot.objects.bulk_update(group, ["day", "start_hour", "end_hour"])
+        audit.record_audit(
+            audit.MODIFY_SLOT,
+            user,
+            locked.week_start,
+            {"azione": "sposta", "slot": slot_id, "giorno": day, "ora": hour},
+        )
 
     return apply_change(timetable_id, change), True

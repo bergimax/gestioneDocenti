@@ -357,7 +357,7 @@ def timetable_move(request, week):
 
     def edit(timetable):
         slot_id, day, hour, version = _parse_move(request.POST)
-        move_lesson(timetable.pk, slot_id, day, hour, version)
+        move_lesson(timetable.pk, slot_id, day, hour, version, request.user)
 
     return _edit_response(request, week, edit)
 
@@ -418,7 +418,14 @@ def timetable_assign(request, week):
         subject_id = _int_field(request.POST, "materia")
         version = _int_field(request.POST, "version")
         assign_lesson(
-            timetable.pk, class_id, day, hour, teacher_id, subject_id, version
+            timetable.pk,
+            class_id,
+            day,
+            hour,
+            teacher_id,
+            subject_id,
+            version,
+            request.user,
         )
 
     return _edit_response(request, week, edit)
@@ -431,7 +438,9 @@ def timetable_conflicts_approve(request, week):
 
     def edit(timetable):
         version = _int_field(request.POST, "version")
-        approve_conflicts(timetable.pk, request.POST.getlist("chiavi"), version)
+        approve_conflicts(
+            timetable.pk, request.POST.getlist("chiavi"), version, request.user
+        )
 
     return _edit_response(request, week, edit)
 
@@ -444,7 +453,7 @@ def timetable_conflicts_reject(request, week):
     def edit(timetable):
         class_id, day, hour = _parse_cell(request.POST)
         version = _int_field(request.POST, "version")
-        reject_lesson(timetable.pk, class_id, day, hour, version)
+        reject_lesson(timetable.pk, class_id, day, hour, version, request.user)
 
     return _edit_response(request, week, edit)
 

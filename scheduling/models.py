@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.core.serializers.json import DjangoJSONEncoder
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import F, Q
@@ -381,3 +382,57 @@ class SoftWeightAdjustment(models.Model):
 
     def delete(self, *args, **kwargs):
         raise NotImplementedError("soft_weight_adjustment rows are never deleted")
+
+
+class _AuditQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise NotImplementedError("audit_log rows are never updated")
+
+    def delete(self):
+        raise NotImplementedError("audit_log rows are never deleted")
+
+
+class AuditLog(models.Model):
+    """One append-only entry of what a user did to a week (specs section 3).
+
+    Written only by `scheduling.audit.record_audit`, inside the transaction of
+    the action, so a rollback removes the entry.
+    """
+
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT, related_name="audit_entries"
+    )
+    timetable = models.ForeignKey(
+        Timetable,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    week_start = models.DateField("inizio settimana", null=True, blank=True)
+    action = models.CharField(max_length=40)
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    details = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = _AuditQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.created_at} {self.action}"
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise NotImplementedError("audit_log rows are never updated")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise NotImplementedError("audit_log rows are never deleted")

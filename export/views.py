@@ -5,10 +5,12 @@ from projects.permissions import can_export_timetable, permission_required
 from scheduling.models import Timetable
 from scheduling.views import _parse_week, _school_or_404
 
+from .excel import render_xlsx
 from .layout import build_layout
 from .pdf import render_pdf
 
 MSG_NO_TIMETABLE = "Nessun orario per questa settimana."
+XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 @permission_required(can_export_timetable)
@@ -28,5 +30,25 @@ def export_pdf(request, week):
     )
     response["Content-Disposition"] = (
         f'attachment; filename="orario_{start:%Y-%m-%d}.pdf"'
+    )
+    return response
+
+
+@permission_required(can_export_timetable)
+@require_GET
+def export_excel(request, week):
+    """Download the week as an xlsx, in any state. Reads only: no audit, no bump."""
+    school = _school_or_404()
+    start = _parse_week(school, week)["start"]
+    timetable = Timetable.objects.filter(school=school, week_start=start).first()
+    if timetable is None:
+        return HttpResponse(
+            MSG_NO_TIMETABLE, status=404, content_type="text/plain; charset=utf-8"
+        )
+    response = HttpResponse(
+        render_xlsx(build_layout(school, start, timetable)), content_type=XLSX_TYPE
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="orario_{start:%Y-%m-%d}.xlsx"'
     )
     return response

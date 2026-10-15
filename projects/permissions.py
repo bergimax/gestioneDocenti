@@ -85,6 +85,10 @@ def can_adjust_hours(user, assignment=None):
     return _allowed(user, ADMIN_ONLY)
 
 
+def can_view_audit_log(user, obj=None):
+    return _allowed(user, ADMIN_ONLY)
+
+
 def can_run_setup(user, obj=None):
     return _allowed(user, ADMIN_ONLY)
 
@@ -117,6 +121,7 @@ PREDICATES = (
     can_approve,
     can_undo_approval,
     can_adjust_hours,
+    can_view_audit_log,
     can_run_setup,
     can_edit_school_data,
     can_edit_teachers,

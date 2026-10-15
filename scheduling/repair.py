@@ -19,6 +19,7 @@ from projects.permissions import can_repair
 from school.models import Class, Subject, Teacher
 from school.selectors import current_school
 
+from . import audit
 from .board import DAY_LABELS
 from .context import build_week_context
 from .models import (
@@ -409,6 +410,16 @@ def confirm_repair(job_id, user):
         except MoveRejected:
             raise RepairRefused(MSG_NOT_EVALUATED) from None
         _updated_result(fresh, applied=True)
+        audit.record_audit(
+            audit.REPAIR_CONFIRMED,
+            user,
+            locked.week_start,
+            {
+                "job": job_id,
+                "modifiche": len(rows),
+                "sostituzione": job.params[PARAMS_KEY],
+            },
+        )
 
     try:
         return apply_change(timetable_id, change)

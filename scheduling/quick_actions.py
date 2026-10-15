@@ -1,6 +1,7 @@
 """Applying a quick action (derogation): one regeneration of a draft week."""
 
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 
 from projects.permissions import can_apply_quick_action
 from school.models import Class, Teacher
@@ -32,8 +33,9 @@ def apply_quick_action(week_start, user, params):
         raise GenerationRefused(ERROR_NO_TIMETABLE)
     if timetable.state == TimetableState.APPROVATO:
         raise GenerationRefused(ERROR_APPROVED)
-    job = enqueue_job(week_start, user, {PARAMS_KEY: params}, refuse_active=True)
-    audit.record_audit(audit.QUICK_ACTION, user, week_start, params)
+    with transaction.atomic():  # no enqueued job without its entry
+        job = enqueue_job(week_start, user, {PARAMS_KEY: params}, refuse_active=True)
+        audit.record_audit(audit.QUICK_ACTION, user, week_start, params)
     school_class = Class.objects.filter(pk=params["class_id"]).first()
     teacher = Teacher.objects.filter(pk=params["teacher_id"]).first()
     words = scope_words(

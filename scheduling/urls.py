@@ -1,10 +1,11 @@
 from django.urls import path
 
-from export.views import export_pdf
+from export.views import export_excel, export_pdf
 
-from . import views
+from . import audit_views, views
 
 urlpatterns = [
+    path("audit/", audit_views.audit_page, name="audit_log"),
     path("pesi/", views.weights_page, name="soft_weights"),
     path("pesi/applica/", views.weights_apply, name="soft_weights_apply"),
     path("pesi/ripristina/", views.weights_reset, name="soft_weights_reset"),
@@ -74,5 +75,10 @@ urlpatterns = [
         name="timetable_undo_approval",
     ),
     path("orario/<str:week>/export-pdf/", export_pdf, name="timetable_export_pdf"),
+    path(
+        "orario/<str:week>/export-excel/",
+        export_excel,
+        name="timetable_export_excel",
+    ),
     path("orario/<str:week>/stato/", views.timetable_job, name="timetable_job"),
 ]

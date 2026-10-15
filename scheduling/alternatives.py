@@ -19,6 +19,7 @@ from projects.permissions import can_choose_alternative
 from school.models import Subject, Teacher
 from school.selectors import current_school
 
+from . import audit
 from .context import build_week_context
 from .models import (
     AlternativePick,
@@ -329,6 +330,18 @@ def choose_alternative(job_id, index, user):
                 )
                 fresh.result = {**fresh.result, "picked": True, "chosen": index}
                 fresh.save(update_fields=["result"])
+                audit.record_audit(
+                    audit.ALTERNATIVE_CHOSEN,
+                    user,
+                    locked.week_start,
+                    {
+                        "job": job_id,
+                        "indice": index,
+                        "etichetta": chosen["label"],
+                        "punteggio": chosen["score"],
+                        "livello": chosen["level"],
+                    },
+                )
 
             return apply_change(timetable.pk, change)
     except TimetableLocked:

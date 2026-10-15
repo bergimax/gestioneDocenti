@@ -9,6 +9,7 @@ one ``apply_change`` transaction that bumps ``Timetable.version`` once.
 from school import assignment_hours
 from school.models import Assignment, ClassPairing
 
+from . import audit
 from .board import FIRST_HOUR, HOURS
 from .context import build_week_context
 from .decisions import free_key
@@ -102,7 +103,9 @@ def _check_cell(ctx, slots, class_id, day, hour):
         raise MoveRejected(MSG_FULL)
 
 
-def assign_lesson(timetable_id, class_id, day, hour, teacher_id, subject_id, version):
+def assign_lesson(
+    timetable_id, class_id, day, hour, teacher_id, subject_id, version, user=None
+):
     """Place a (teacher, subject) lesson of class `class_id` at `day`/`hour`.
 
     Returns the refreshed timetable. Raises ``InvalidMove`` (400) for a class,
@@ -169,5 +172,18 @@ def assign_lesson(timetable_id, class_id, day, hour, teacher_id, subject_id, ver
             chiave__in=[free_key(cid, day, hour - FIRST_HOUR) for cid in class_ids],
         ).delete()
         reevaluate(locked, ctx, slots + created, created[0])
+        audit.record_audit(
+            audit.MODIFY_SLOT,
+            user,
+            locked.week_start,
+            {
+                "azione": "assegna",
+                "classe": class_id,
+                "docente": teacher_id,
+                "materia": subject_id,
+                "giorno": day,
+                "ora": hour,
+            },
+        )
 
     return apply_change(timetable_id, change)

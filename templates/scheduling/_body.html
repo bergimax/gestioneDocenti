@@ -6,7 +6,8 @@
   <p class="tt-empty">Nessun orario per questa settimana.</p>
   {% else %}
   <div class="tt-summary">
-    {% if can_export %}<a class="tt-export" href="{% url 'timetable_export_pdf' week.start|date:'Y-m-d' %}" download>Esporta PDF</a>{% endif %}
+    {% if can_export %}<a class="tt-export" href="{% url 'timetable_export_pdf' week.start|date:'Y-m-d' %}" download>Esporta PDF</a>
+    <a class="tt-export" href="{% url 'timetable_export_excel' week.start|date:'Y-m-d' %}" download>Esporta Excel</a>{% endif %}
     {% if approved %}<span class="cal-badge tt-approved">Approvata</span>{% endif %}
     {% if can_undo %}
     <form class="tt-undo" method="post" novalidate action="{% url 'timetable_undo_approval' week.start|date:'Y-m-d' %}" hx-post="{% url 'timetable_undo_approval' week.start|date:'Y-m-d' %}" hx-target="#timetable-body" hx-swap="outerHTML">

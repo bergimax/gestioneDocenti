@@ -10,6 +10,7 @@ from django_tasks import task
 
 from school.models import Assignment, ClassPairing
 
+from . import audit
 from .context import build_week_context
 from .derogations import derogation_from_params
 from .models import (
@@ -121,6 +122,18 @@ def _write_result(job, result):
             )
 
         written = apply_change(timetable.pk, change)
+        audit.record_audit(
+            audit.GENERATE,
+            job.requested_by,
+            job.week_start,
+            {
+                "job": job.pk,
+                "slot": len(result.lessons),
+                "conflitti": len(result.conflict_items),
+                "punteggio": result.quality_score,
+                "livello": result.quality_level,
+            },
+        )
         job.transition_to(
             JobStatus.DONE,
             result={

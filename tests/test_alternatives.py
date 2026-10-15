@@ -802,3 +802,18 @@ def test_the_real_solver_job_stores_only_valid_alternatives(admin, rw):
             )
         assert set(per_class_day.values()) == {4}
         assert len(per_class_day) == 15
+
+
+def test_choosing_writes_one_audit_entry_and_a_repeat_none(admin, rw):
+    from scheduling.models import AuditLog
+
+    job = start(admin, fake=distinct(rw))
+    before = AuditLog.objects.count()  # solving the alternatives writes none
+    assert admin.post(choose_url(job, 1)).status_code == 200
+    assert AuditLog.objects.count() == before + 1
+    entry = AuditLog.objects.first()
+    assert entry.action == "ALTERNATIVE_CHOSEN"
+    assert entry.week_start == rw.tt.week_start
+    assert entry.details["job"] == job.pk and entry.details["indice"] == 1
+    assert admin.post(choose_url(job, 1)).status_code == 409
+    assert AuditLog.objects.count() == before + 1

@@ -1,5 +1,4 @@
 import datetime
-import logging
 from unittest import mock
 
 import pytest
@@ -269,10 +268,17 @@ def test_audit_is_called_once_with_the_parameters(admin, w, audit_mock):
     }
 
 
-def test_record_audit_placeholder_logs_and_returns_none(caplog):
-    caplog.set_level(logging.INFO, logger="scheduling.audit")
+def test_record_audit_writes_a_row(w, admin):
+    from scheduling.models import AuditLog
+
     assert audit.record_audit("QUICK_ACTION", None, MON, {"a": 1}) is None
-    assert "QUICK_ACTION" in caplog.text
+    entry = AuditLog.objects.get()
+    assert (entry.action, entry.week_start, entry.details) == (
+        "QUICK_ACTION",
+        MON,
+        {"a": 1},
+    )
+    assert entry.timetable_id == w.tt.pk and entry.user is None
 
 
 # ---- validation ----

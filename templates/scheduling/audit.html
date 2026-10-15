@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Registro{% endblock %}
+{% block content %}
+<h1>Registro delle modifiche</h1>
+
+<form class="form-panel" method="get" action="{% url 'audit_log' %}">
+  <p>
+    <label for="audit-week">Settimana</label>
+    <input type="date" id="audit-week" name="settimana" value="{{ week_value }}">
+  </p>
+  <p>
+    <label for="audit-action">Azione</label>
+    <select id="audit-action" name="azione">
+      <option value="">Tutte</option>
+      {% for key, label in actions %}
+      <option value="{{ key }}"{% if key == action_value %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </p>
+  <p>
+    <button type="submit">Filtra</button>
+    {% if filtered %}<a href="{% url 'audit_log' %}">Azzera i filtri</a>{% endif %}
+  </p>
+</form>
+
+{% if rows %}
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th scope="col">Data e ora</th>
+        <th scope="col">Utente</th>
+        <th scope="col">Azione</th>
+        <th scope="col">Settimana</th>
+        <th scope="col">Dettagli</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.entry.created_at|date:"d/m/Y H:i" }}</td>
+        <td>{{ row.entry.user.email|default:"(utente rimosso)" }}</td>
+        <td>{{ row.label }}</td>
+        <td>{% if row.entry.week_start %}{{ row.entry.week_start|date:"d/m/Y" }}{% else %}-{% endif %}</td>
+        <td>{% for key, value in row.details %}{{ key }}: {{ value }}{% if not forloop.last %}; {% endif %}{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if page.has_other_pages %}
+<nav aria-label="Pagine del registro">
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}{% if keep %}&amp;{{ keep }}{% endif %}">Precedente</a>{% endif %}
+  <span>Pagina {{ page.number }} di {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}{% if keep %}&amp;{{ keep }}{% endif %}">Successiva</a>{% endif %}
+</nav>
+{% endif %}
+{% elif filtered %}
+<p>Nessuna voce corrisponde ai filtri scelti.</p>
+{% else %}
+<p>Il registro è vuoto: nessuna modifica registrata finora.</p>
+{% endif %}
+{% endblock %}

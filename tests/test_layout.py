@@ -8,7 +8,15 @@ from django.test import Client
 
 User = get_user_model()
 PW = "correct-horse"
-ALL = ["Panoramica", "Disponibilita", "Orario", "Setup", "Dati scuola", "Pesi"]
+ALL = [
+    "Panoramica",
+    "Disponibilita",
+    "Orario",
+    "Setup",
+    "Dati scuola",
+    "Pesi",
+    "Registro",
+]
 PAGES = {
     "/disponibilita/": "Disponibilita",
     "/orario/": "Orario",
