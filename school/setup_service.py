@@ -8,14 +8,19 @@ restart in the middle of a setup loses nothing. No module-level state.
 import csv
 import datetime
 import io
+import logging
 import re
 
+import pdfplumber
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import connection, transaction
 
+from ai.calendar_pdf import AiError, read_calendar_pdf
+
 from .importers import (
     CalendarPdfError,
+    CalendarPdfNoDatesError,
     normalize_name,
     parse_assignments,
     parse_calendar,
@@ -26,17 +31,20 @@ from .importers import (
     parse_teachers,
     validate_all,
 )
-from .importers.parsers import FILE_TYPES, MAX_HOURS_VALUES
+from .importers.parsers import FILE_TYPES, GROUPS, MAX_HOURS_VALUES, TRUE_VALUES
 from .models import (
     Assignment,
     CalendarEntry,
     Class,
     ClassPairing,
+    Draft,
     ParkedUpload,
     School,
     Subject,
     Teacher,
 )
+
+logger = logging.getLogger(__name__)
 
 SETUP_LOCK_ID = 7_160_016
 
@@ -101,10 +109,12 @@ _DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 class SetupError(Exception):
     """A rejected setup action; `details` lists the specific problems."""
 
-    def __init__(self, message, details=()):
+    def __init__(self, message, details=(), no_dates=False):
         super().__init__(message)
         self.message = message
         self.details = list(details)
+        # The deterministic PDF parser found no date row (an AI read may help).
+        self.no_dates = no_dates
 
 
 # --- rows <-> JSON ------------------------------------------------------------
@@ -125,7 +135,12 @@ def load_rows(upload):
     for row in upload.rows:
         row = dict(row)
         if upload.file_type == "calendar" and isinstance(row.get("data"), str):
-            row["data"] = datetime.date.fromisoformat(row["data"])
+            # An AI row may hold a date that does not exist; it stays a string
+            # and the validator lists it on its row.
+            try:
+                row["data"] = datetime.date.fromisoformat(row["data"])
+            except ValueError:
+                pass
         rows.append(row)
     return rows
 
@@ -177,7 +192,9 @@ def read_upload(file_type, filename, content, max_bytes):
         try:
             result = parse_calendar_pdf(content)
         except CalendarPdfError as exc:
-            raise _rejected(f"PDF del calendario non utilizzabile: {exc}") from exc
+            error = _rejected(f"PDF del calendario non utilizzabile: {exc}")
+            error.no_dates = isinstance(exc, CalendarPdfNoDatesError)
+            raise error from exc
         for number, row in enumerate(result.rows, start=1):
             row["row"] = number
         return "pdf", result
@@ -196,6 +213,8 @@ def park_upload(file_type, source, filename, result, user=None):
     rows = _dump_rows(file_type, result.rows)
     messages = _message_dicts(file_type, result.messages)
     with transaction.atomic():
+        if file_type == "calendar":
+            _discard_calendar_drafts()
         upload, _ = ParkedUpload.objects.update_or_create(
             file_type=file_type,
             defaults={
@@ -207,6 +226,157 @@ def park_upload(file_type, source, filename, result, user=None):
             },
         )
     return upload
+
+
+# --- AI calendar read ---------------------------------------------------------
+
+
+def _discard_calendar_drafts():
+    Draft.objects.filter(
+        kind=Draft.Kind.CALENDAR_ROWS, status=Draft.Status.DRAFT
+    ).update(status=Draft.Status.DISCARDED)
+
+
+def read_ai_calendar(filename, content, max_bytes):
+    """Read the calendar PDF with the AI; return the proposed rows.
+
+    Raise SetupError for an unusable upload, an AI failure or an empty
+    result. Nothing is written and the bytes are not kept anywhere.
+    """
+    if not filename.lower().endswith(".pdf"):
+        raise _rejected(f"Estensione non valida per «{filename}»: serve un file .pdf.")
+    if len(content) > max_bytes:
+        raise _rejected(
+            f"Il file «{filename}» supera la dimensione massima consentita "
+            f"({max_bytes} byte)."
+        )
+    if not content.strip():
+        raise _rejected(f"Il file «{filename}» è vuoto.")
+    try:
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            pages = len(pdf.pages)
+    except Exception:
+        raise _rejected(f"Il file «{filename}» non è un PDF leggibile.") from None
+    if pages == 0:
+        raise _rejected(f"Il PDF «{filename}» non contiene pagine.")
+    try:
+        rows = read_calendar_pdf(content)
+    except AiError as exc:
+        raise _rejected(str(exc)) from None
+    except Exception as exc:
+        # Never log the message: it could echo the request.
+        logger.error("AI calendar read failed: %s", type(exc).__name__)
+        raise _rejected(
+            "Lettura con AI non riuscita: riprova o carica il calendario in CSV."
+        ) from None
+    if not rows:
+        raise _rejected(f"Lettura con AI di «{filename}»: nessuna riga letta.")
+    return rows
+
+
+def park_ai_calendar(filename, rows, user=None):
+    """Park the AI rows as the calendar upload and record them as one DRAFT.
+
+    The previous calendar DRAFT, if any, is DISCARDED in the same transaction.
+    """
+    owner = user if getattr(user, "pk", None) else None
+    parked = []
+    for number, row in enumerate(rows, start=1):
+        row = dict(row)
+        if isinstance(row.get("gruppo"), str):
+            row["gruppo"] = row["gruppo"].strip().upper() or None
+        row["row"] = number
+        parked.append(row)
+    with transaction.atomic():
+        _discard_calendar_drafts()
+        Draft.objects.create(
+            kind=Draft.Kind.CALENDAR_ROWS,
+            payload=_dump_rows("calendar", rows),
+            source=filename[:255],
+            created_by=owner,
+        )
+        upload, _ = ParkedUpload.objects.update_or_create(
+            file_type="calendar",
+            defaults={
+                "source": "ai",
+                "filename": filename[:255],
+                "rows": _dump_rows("calendar", parked),
+                "messages": [],
+                "uploaded_by": owner,
+            },
+        )
+    return upload
+
+
+def _is_valid_ai_row(row):
+    hours = row.get("ore_max_giornata")
+    return (
+        isinstance(row.get("data"), datetime.date)
+        and row.get("gruppo") in (*GROUPS, None)
+        and isinstance(hours, int)
+        and not isinstance(hours, bool)
+        and 0 <= hours <= 8
+    )
+
+
+def _ai_calendar_messages(rows):
+    """Errors for AI rows: the CSV validator (#14) on the rows rendered as CSV,
+    plus the hours range the database enforces."""
+    messages = []
+    text, lines = _csv_text("calendar", rows, None, None, None)
+    row_of = dict(zip(lines, (r["row"] for r in rows), strict=True))
+    for m in parse_calendar(text).messages:
+        if m.severity != "error":
+            continue
+        body = re.sub(
+            r"duplicate of row (\d+)",
+            lambda g: f"duplicate of row {row_of.get(int(g.group(1)), g.group(1))}",
+            m.text,
+        )
+        messages.append({"severity": "error", "row": row_of.get(m.row), "text": body})
+    for r in rows:
+        hours = r.get("ore_max_giornata")
+        if not (isinstance(hours, int) and not isinstance(hours, bool)) or not (
+            0 <= hours <= 8
+        ):
+            messages.append(
+                {
+                    "severity": "error",
+                    "row": r["row"],
+                    "text": f"ore_max_giornata '{hours}' must be between 0 and 8",
+                }
+            )
+        elif r.get("flag_stage_gruppo") and not r.get("gruppo"):
+            messages.append(
+                {
+                    "severity": "error",
+                    "row": r["row"],
+                    "text": "lo stage di gruppo richiede un gruppo",
+                }
+            )
+    return messages
+
+
+def _ai_cell_value(field, value):
+    """The stored value for a corrected cell of an AI row; SetupError if bad."""
+    if field == "data":
+        if _DATE.fullmatch(value):
+            try:
+                return datetime.date.fromisoformat(value).isoformat()
+            except ValueError:
+                pass
+        raise SetupError("Data non valida: usa il formato AAAA-MM-GG.")
+    if field == "gruppo":
+        if value and value.upper() not in GROUPS:
+            raise SetupError("Gruppo non valido: " + ", ".join(GROUPS) + ".")
+        return value.upper() or None
+    if field == "ore_max_giornata":
+        if not (value.isascii() and value.isdigit() and int(value) <= 8):
+            raise SetupError("Le ore massime devono essere un numero da 0 a 8.")
+        return int(value)
+    if field == "flag_chiusura":
+        return value.lower() in TRUE_VALUES
+    return value or None
 
 
 # --- validation ---------------------------------------------------------------
@@ -247,8 +417,12 @@ def collect_issues(uploads):
     parsed = {}
     for file_type, upload in uploads.items():
         rows = load_rows(upload)
+        own = upload.messages
+        if file_type == "calendar" and upload.source == "ai":
+            own = _ai_calendar_messages(rows)
+            rows = [r for r in rows if _is_valid_ai_row(r)]
         parsed[file_type] = rows
-        for m in [*upload.messages, *_model_checks(file_type, rows)]:
+        for m in [*own, *_model_checks(file_type, rows)]:
             key = "errors" if m["severity"] == "error" else "warnings"
             issues[file_type][key].append({"row": m["row"], "text": m["text"]})
     if len(parsed) > 1:
@@ -303,6 +477,7 @@ def build_sections(uploads, issues):
             "errors": issues[file_type]["errors"],
             "warnings": issues[file_type]["warnings"],
             "upload": upload,
+            "is_ai": bool(upload and upload.source == "ai"),
             "rows": [],
         }
         if upload:
@@ -370,6 +545,12 @@ def apply_correction(file_type, row_number, field, value):
                 raise SetupError(
                     "Una riga di stage di gruppo non può avere una classe in stage."
                 )
+        if file_type == "calendar" and upload.source == "ai":
+            # A row may hold several bad cells; only the edited one is checked.
+            rows[index] = {**old, field: _ai_cell_value(field, value)}
+            upload.rows = _dump_rows(file_type, rows)
+            upload.save(update_fields=["rows", "updated_at"])
+            return upload
         text, lines = _csv_text(file_type, rows, index, field, value)
         line = lines[index]
         result = PARSERS[file_type](text)
@@ -446,7 +627,7 @@ def add_manual_date(date_text, hours_text, is_closure, stage_class_text):
                 "row": max((r["row"] for r in rows), default=0) + 1,
             }
         )
-        rows.sort(key=lambda r: (r["data"], r["row"]))
+        rows.sort(key=lambda r: (_cell(r["data"]), r["row"]))
         calendar.rows = _dump_rows("calendar", rows)
         calendar.save(update_fields=["rows", "updated_at"])
     return date
@@ -457,7 +638,11 @@ def add_manual_date(date_text, hours_text, is_closure, stage_class_text):
 
 def calendar_bounds(uploads):
     upload = uploads.get("calendar")
-    dates = [r["data"] for r in load_rows(upload)] if upload else []
+    dates = [
+        r["data"]
+        for r in (load_rows(upload) if upload else [])
+        if isinstance(r["data"], datetime.date)
+    ]
     return (min(dates), max(dates)) if dates else (None, None)
 
 
@@ -608,6 +793,10 @@ def save_setup(name, year, start, end):
             school, rows["assignments"], teachers, classes, subjects
         )
         pairings = _create_pairings(school, rows["pairings"], classes, subjects)
+        if uploads["calendar"].source == "ai":
+            Draft.objects.filter(
+                kind=Draft.Kind.CALENDAR_ROWS, status=Draft.Status.DRAFT
+            ).update(status=Draft.Status.CONFIRMED)
         ParkedUpload.objects.all().delete()
     return {
         "Classi": len(classes),

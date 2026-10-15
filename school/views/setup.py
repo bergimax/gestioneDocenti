@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 TPL = "school/setup/"
 
 
+def _ai_enabled():
+    return bool(settings.ANTHROPIC_API_KEY)
+
+
 def _is_htmx(request):
     return request.headers.get("HX-Request") == "true"
 
@@ -42,6 +46,7 @@ def _context(request, notices=(), form=None):
         "calendar_high": high,
         "school_exists": School.objects.exists(),
         "max_upload_bytes": settings.SETUP_MAX_UPLOAD_BYTES,
+        "ai_enabled": _ai_enabled(),
     }
 
 
@@ -67,23 +72,42 @@ def setup_page(request):
 def setup_upload(request, file_type):
     if file_type not in FILE_TYPES:
         raise Http404("Tipo di file sconosciuto.")
+    use_ai = request.POST.get("ai") == "1"
+    if use_ai and (file_type != "calendar" or not _ai_enabled()):
+        notices = [("error", "La lettura con AI non è disponibile.", [])]
+        return _respond(request, notices, status=422)
     uploaded = request.FILES.get("file")
     if uploaded is None:
         notices = [("error", "Seleziona un file da caricare.", [])]
         return _respond(request, notices, status=422)
     limit = settings.SETUP_MAX_UPLOAD_BYTES
     content = uploaded.read(limit + 1)
+    if use_ai:
+        return _ai_upload(request, uploaded.name or "", content, limit)
     try:
         source, result = service.read_upload(
             file_type, uploaded.name or "", content, limit
         )
     except service.SetupError as exc:
+        if exc.no_dates and _ai_enabled():
+            exc.message += " Puoi riprovare con «Leggi con AI»."
         return _respond(request, _error_notices(exc), status=422)
     service.park_upload(file_type, source, uploaded.name, result, request.user)
     label = service.LABELS[file_type]
     return _respond(
         request, [("success", f"{label}: caricate {len(result.rows)} righe.", [])]
     )
+
+
+def _ai_upload(request, filename, content, limit):
+    """Read the calendar PDF with the AI; the bytes are dropped on return."""
+    try:
+        rows = service.read_ai_calendar(filename, content, limit)
+    except service.SetupError as exc:
+        return _respond(request, _error_notices(exc), status=422)
+    service.park_ai_calendar(filename, rows, request.user)
+    text = f"Calendario: letta dall'AI una bozza di {len(rows)} righe, da controllare."
+    return _respond(request, [("success", text, [])])
 
 
 @permission_required(can_run_setup)

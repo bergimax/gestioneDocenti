@@ -140,7 +140,9 @@ def read_calendar_pdf(pdf_bytes):
     except anthropic.APIError as exc:
         # Only the class name: the message could echo request details.
         logger.warning("Anthropic call failed: %s", type(exc).__name__)
-        raise AiError("Il servizio AI non è raggiungibile: riprova più tardi.") from None
+        raise AiError(
+            "Il servizio AI non è raggiungibile: riprova più tardi."
+        ) from None
     text = "".join(
         block.text for block in response.content if getattr(block, "type", "") == "text"
     )

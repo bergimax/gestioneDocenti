@@ -119,3 +119,18 @@ def w(db):
         w.slots[day, "b_ita"] = w.slot(w.b, w.bianchi, w.ita, day, 8)
         w.slots[day, "b_mat"] = w.slot(w.b, w.rossi, w.mat, day, 9)
     return w
+
+
+@pytest.fixture(autouse=True)
+def no_real_anthropic_client(monkeypatch):
+    """A test fails if any code builds a real Anthropic client.
+
+    Tests of the AI features mock `ai.calendar_pdf.build_client` or
+    `school.setup_service.read_calendar_pdf` instead.
+    """
+    import anthropic
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a real Anthropic client was built in a test")
+
+    monkeypatch.setattr(anthropic, "Anthropic", refuse)

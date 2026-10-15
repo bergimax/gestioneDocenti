@@ -25,6 +25,10 @@
         <input type="file" id="file-{{ s.type }}" name="file" accept="{{ s.accept }}" required>
       </div>
       <button type="submit">Carica</button>
+      {% if ai_enabled and s.type == "calendar" %}
+      <button type="submit" name="ai" value="1">Leggi con AI</button>
+      <p class="hint">«Leggi con AI» invia il PDF a un servizio esterno e propone una bozza da controllare.</p>
+      {% endif %}
     </form>
     {% if s.upload %}
     <p class="setup-status"><strong>{{ s.upload.filename }}</strong>: {{ s.row_count }} righe</p>
@@ -55,7 +59,7 @@
         <tbody>
           {% for r in s.rows %}
           <tr>
-            <th scope="row">{{ r.row }}{% if r.stage %} <span class="cal-badge">stage</span>{% endif %}</th>
+            <th scope="row">{{ r.row }}{% if r.stage %} <span class="cal-badge">stage</span>{% endif %}{% if s.is_ai %} <span class="cal-badge">bozza AI</span>{% endif %}</th>
             {% for c in r.cells %}
             <td><input type="text" name="value" value="{{ c.value }}" class="setup-cell"
                        aria-label="{{ s.label }} riga {{ r.row }}, {{ c.field }}"
