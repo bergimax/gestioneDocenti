@@ -11,6 +11,8 @@ DEFAULT_AVAILABILITY_LINK_TTL_HOURS = 72
 DEFAULT_LINK_LOOKUP_MAX_FAILURES = 10
 DEFAULT_LINK_LOOKUP_WINDOW_SECONDS = 300
 DEFAULT_SETUP_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5"
+DEFAULT_ANTHROPIC_TIMEOUT_SECONDS = 60
 
 
 def get_required(env: Mapping[str, str], name: str) -> str:
@@ -18,6 +20,12 @@ def get_required(env: Mapping[str, str], name: str) -> str:
     if not value:
         raise ImproperlyConfigured(f"{name} is required but not set.")
     return value
+
+
+def get_optional_str(env: Mapping[str, str], name: str, default: str = "") -> str:
+    """A stripped string; unset or blank gives the default."""
+    value = env.get(name, "").strip()
+    return value or default
 
 
 def get_bool(env: Mapping[str, str], name: str, default: bool = False) -> bool:

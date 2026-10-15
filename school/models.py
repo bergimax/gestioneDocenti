@@ -356,3 +356,37 @@ class ParkedUpload(models.Model):
 
     def __str__(self):
         return f"{self.file_type}: {self.filename}"
+
+
+class Draft(models.Model):
+    """An AI-produced proposal, never authoritative until a person confirms it.
+
+    `payload` is JSON (dates as ISO strings). The status moves DRAFT to
+    CONFIRMED when the proposal is applied, or DISCARDED when it is replaced.
+    """
+
+    class Kind(models.TextChoices):
+        CALENDAR_ROWS = "calendar_rows", "Righe di calendario"
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "Bozza"
+        CONFIRMED = "CONFIRMED", "Confermata"
+        DISCARDED = "DISCARDED", "Scartata"
+
+    kind = models.CharField(max_length=30, choices=Kind.choices)
+    payload = models.JSONField(default=list)
+    source = models.CharField(max_length=255)
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.DRAFT
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.kind} {self.status}: {self.source}"

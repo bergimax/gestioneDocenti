@@ -13,6 +13,9 @@ os.environ["SOLVER_EXPLAIN_BUDGET_SECONDS"] = "10"
 os.environ["AVAILABILITY_LINK_TTL_HOURS"] = "72"
 os.environ["LINK_LOOKUP_MAX_FAILURES"] = "10"
 os.environ["LINK_LOOKUP_WINDOW_SECONDS"] = "300"
+os.environ["ANTHROPIC_API_KEY"] = ""
+os.environ["ANTHROPIC_MODEL"] = "claude-haiku-4-5"
+os.environ["ANTHROPIC_TIMEOUT_SECONDS"] = "30"
 os.environ.setdefault(
     "DATABASE_URL", "postgres://postgres:postgres@localhost:5432/gestione_docenti"
 )
