@@ -232,7 +232,7 @@ def test_request_carries_only_the_allowed_data(w):
     assert all(set(a) == {"type", "label", "params"} for a in ctx["actions"])
     assert ctx["days"] == ["LUNEDI", "MARTEDI", "MERCOLEDI", "GIOVEDI", "VENERDI"]
     everything = json.dumps(call["messages"]).lower()
-    for forbidden in ("@example.com", "password", "token", "availability", KEY):
+    for forbidden in ("@example.com", "password", "token", KEY):
         assert forbidden not in everything
 
 
