@@ -57,3 +57,7 @@ user's password and role.
 A forgotten password is reset by an operator with
 
     uv run manage.py changepassword <email>
+
+## Deploy
+
+Production containers, proxy and scripts: see [deploy/README.md](deploy/README.md).

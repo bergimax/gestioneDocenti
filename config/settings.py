@@ -10,6 +10,7 @@ from config.env import (
     DEFAULT_SETUP_MAX_UPLOAD_BYTES,
     DEFAULT_SOLVER_TIMEOUT_SECONDS,
     get_bool,
+    get_domain,
     get_explain_budget,
     get_hosts,
     get_optional_str,
@@ -23,6 +24,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = get_required(os.environ, "SECRET_KEY")
 DEBUG = get_bool(os.environ, "DEBUG", default=False)
 ALLOWED_HOSTS = get_hosts(os.environ, "ALLOWED_HOSTS", required=not DEBUG)
+# Public host name; TLS ends at the reverse proxy. Required in production.
+DOMAIN = get_domain(os.environ, required=not DEBUG)
 SOLVER_TIMEOUT_SECONDS = get_positive_int(
     os.environ, "SOLVER_TIMEOUT_SECONDS", DEFAULT_SOLVER_TIMEOUT_SECONDS
 )
@@ -102,6 +105,8 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+# collectstatic target; the proxy serves it, Django does not.
+STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -113,6 +118,14 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "accounts.validators.MinimumLengthItalian"},
 ]
 SESSION_COOKIE_AGE = 7 * 24 * 60 * 60  # 7 days, specs §4
+
+# Behind the TLS-terminating proxy Django sees plain HTTP: trust its
+# forwarded-proto header, accept the public origin, mark cookies secure.
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+CSRF_TRUSTED_ORIGINS = [f"https://{DOMAIN}"] if DOMAIN else []
 
 # Magic-link tokens travel in URL paths: redact them from request logs.
 LOGGING = {

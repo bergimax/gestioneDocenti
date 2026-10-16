@@ -1,12 +1,14 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
 from config.env import (
     get_bool,
+    get_domain,
     get_hosts,
     get_positive_int,
     get_required,
@@ -97,6 +99,7 @@ def _check(env_overrides, drop=()):
         SECRET_KEY="x",
         DEBUG="false",
         ALLOWED_HOSTS="localhost",
+        DOMAIN="school.test",
         DATABASE_URL="postgres://u:p@localhost:5432/d",
         DJANGO_SETTINGS_MODULE="config.settings",
     )
@@ -124,3 +127,33 @@ def test_startup_fails_without_hosts_unless_debug():
     assert result.returncode != 0
     assert "ALLOWED_HOSTS" in result.stderr
     assert _check({"DEBUG": "true"}, drop=("ALLOWED_HOSTS",)).returncode == 0
+
+
+def test_domain_required_in_production():
+    result = _check({}, drop=("DOMAIN",))
+    assert result.returncode != 0
+    assert "DOMAIN" in result.stderr
+    assert _check({"DEBUG": "true"}, drop=("DOMAIN",)).returncode == 0
+
+
+@pytest.mark.parametrize("raw", ["https://a.test", "a.test/x", "a b"])
+def test_domain_rejects_non_host(raw):
+    with pytest.raises(ImproperlyConfigured, match="DOMAIN"):
+        get_domain({"DOMAIN": raw}, required=True)
+
+
+def test_domain_normalised():
+    assert get_domain({"DOMAIN": " Example.COM "}, required=True) == "example.com"
+
+
+def test_proxy_settings_in_production(settings):
+    assert settings.SECURE_PROXY_SSL_HEADER == ("HTTP_X_FORWARDED_PROTO", "https")
+    assert settings.SESSION_COOKIE_SECURE is True
+    assert settings.CSRF_COOKIE_SECURE is True
+    assert "https://school.test" in settings.CSRF_TRUSTED_ORIGINS
+    assert settings.STATIC_ROOT.name == "staticfiles"
+
+
+def test_env_example_lists_new_variables():
+    text = (Path(__file__).resolve().parent.parent / ".env.example").read_text()
+    assert "\nDOMAIN=" in text

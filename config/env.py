@@ -51,6 +51,20 @@ def get_hosts(env: Mapping[str, str], name: str, required: bool) -> list[str]:
     return hosts
 
 
+def get_domain(env: Mapping[str, str], required: bool) -> str:
+    """DOMAIN: a bare host name, no scheme or path."""
+    value = env.get("DOMAIN", "").strip().lower()
+    if not value:
+        if required:
+            raise ImproperlyConfigured("DOMAIN is required when DEBUG is false.")
+        return ""
+    if "://" in value or "/" in value or " " in value:
+        raise ImproperlyConfigured(
+            f"DOMAIN must be a bare host name without scheme or path (got {value!r})."
+        )
+    return value
+
+
 def get_positive_int(env: Mapping[str, str], name: str, default: int) -> int:
     raw = env.get(name)
     if raw is None or not raw.strip():

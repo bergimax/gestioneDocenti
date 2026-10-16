@@ -7,6 +7,7 @@ import os
 
 os.environ["SECRET_KEY"] = "test-only-not-a-secret"
 os.environ["DEBUG"] = "false"
+os.environ["DOMAIN"] = "school.test"
 os.environ["ALLOWED_HOSTS"] = "localhost,testserver"
 os.environ["SOLVER_TIMEOUT_SECONDS"] = "60"
 os.environ["SOLVER_EXPLAIN_BUDGET_SECONDS"] = "10"

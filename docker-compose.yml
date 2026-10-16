@@ -1,0 +1,72 @@
+# Production stack. Always run with the env file, e.g. through deploy/*.sh
+# (they export COMPOSE_ENV_FILES=.env.production).
+x-app-environment: &app-environment
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:?ALLOWED_HOSTS is required}
+  DOMAIN: ${DOMAIN:?DOMAIN is required}
+  DEBUG: ${DEBUG:-false}
+  DATABASE_URL: postgres://${POSTGRES_USER:-gestione}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-gestione_docenti}
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gestione}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-gestione_docenti}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    image: gestione-docenti:latest
+    restart: unless-stopped
+    command: ["gunicorn", "config.wsgi:application", "--workers", "2", "--bind", "0.0.0.0:8000"]
+    env_file: .env.production
+    environment: *app-environment
+    expose:
+      - "8000"
+    volumes:
+      - static:/app/staticfiles
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    image: gestione-docenti:latest
+    restart: unless-stopped
+    command: ["python", "manage.py", "solve_worker"]
+    env_file: .env.production
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - static:/srv/static:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  static:
+  caddy_data:
+  caddy_config:
