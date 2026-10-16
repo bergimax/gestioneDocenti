@@ -27,6 +27,7 @@ dev = [
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings_test"
 testpaths = ["tests"]
+markers = ["benchmark: slow solver benchmark, skip with -m \"not benchmark\""]
 
 [tool.uv]
 package = false
