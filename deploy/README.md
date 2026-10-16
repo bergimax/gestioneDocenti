@@ -73,6 +73,76 @@ A forgotten password is reset with
 Note: until the token-redaction work lands, the Caddy and gunicorn access
 logs record magic-link paths (`/l/<token>/`).
 
+## Backups and restore
+
+Dumps are made on the VM host through the `postgres` container
+(`docker compose exec -T postgres pg_dump`), so no Postgres client is needed.
+They are `pg_dump --format=custom` files (already compressed), checked with
+`pg_restore --list` before they are kept.
+
+- Where: `BACKUP_DIR` (default `./backups` in the repository, git-ignored),
+  files `gestione-docenti-YYYYmmdd-HHMMSS-<pid>-<random>.dump`. The dump is
+  written as `.partial` and renamed only after verification; a failed run
+  removes it and prunes nothing.
+- Retention: after a successful dump only the newest `BACKUP_KEEP` (default
+  14, positive integer) dumps are kept, the one just written always among
+  them. Other files in the directory are never touched.
+- Manual backup: `deploy/backup.sh` (exit 0 and a "backup written" line on success).
+- Schedule: `deploy/cron.example` runs the backup nightly (02:30) and the
+  off-site copy weekly (Sunday 03:30), appending to `backups/cron.log`.
+  Install: `mkdir -p backups`, `crontab -e`, paste the two lines with the
+  right path. Check it ran: `ls -lt backups | head` (newest dump should be from
+  last night) and `tail backups/cron.log`.
+
+### Off-site copy
+
+`deploy/backup-offsite.sh` copies the newest dump with `rclone` (installed on the
+host, nothing else is installed or added to the image). It prints
+`off-site not configured, skipped` and exits 0 unless `OFFSITE_RCLONE_REMOTE`
+(e.g. `oracle:bucket/path`) is set in `.env.production`. Credentials: either
+`OFFSITE_RCLONE_CONFIG` (path of an rclone config file) or standard
+`RCLONE_CONFIG_<REMOTE>_*` variables in the same file (for example
+`RCLONE_CONFIG_ORACLE_TYPE=s3`, `..._PROVIDER`, `..._ACCESS_KEY_ID`,
+`..._SECRET_ACCESS_KEY`, `..._ENDPOINT`). They are passed to rclone through
+its environment, never on a command line. A missing `rclone`, a failed copy
+or an empty `BACKUP_DIR` exits non-zero.
+
+**The bucket must be private**: the dumps contain personal data of teachers.
+Expiry of old off-site copies is set with a lifecycle rule on the bucket.
+
+### Restore
+
+    docker compose stop web worker
+    deploy/restore.sh backups/gestione-docenti-<...>.dump
+    docker compose start web worker
+
+then log in through the login page. `restore.sh` refuses a missing, unreadable
+or non-dump file, and refuses a database that already has tables (nothing is
+changed). To replace the current content pass `--yes-overwrite`: this is
+**destructive**, it drops and recreates the `public` schema first. To restore
+into a really empty database instead, drop and recreate it first, or use
+`docker compose down` and `docker volume rm` of `pgdata` (only if you mean it),
+then `deploy/up.sh`, which migrates, and `--yes-overwrite`. If `pg_restore`
+stops on an error the database may be half restored: empty it and retry.
+After a restore `manage.py migrate` reports `No migrations to apply`.
+
+### Restore test
+
+`deploy/test-restore.sh` starts a throwaway `postgres:15-alpine` container
+(never the real database), migrates a database, creates a user, an assignment
+and ledger entries, dumps with `backup.sh`, restores with `restore.sh` into a
+second empty database, compares count and a hash of the rows of every table,
+runs `migrate` and a login, and removes the container. Needs docker and uv.
+`tests/test_backup_scripts.py` covers retention, failures, off-site and the
+restore refusals with a fake docker and rclone.
+
+Result: 2026-10-16, `deploy/test-restore.sh`, PASSED (32 tables identical,
+migrate clean, login works).
+
+Not verified without a real server: that the real bucket receives the weekly
+copy, the schedule firing at the real hour and surviving a reboot, behaviour
+and disk use on the 1 GB VM.
+
 ## Data
 
 Postgres data lives in the `pgdata` volume. `docker compose down` keeps it;

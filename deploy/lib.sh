@@ -47,3 +47,40 @@ deploy_stack() {
     dc run --rm --no-deps web python manage.py collectstatic --noinput
     dc up -d
 }
+
+# Value of NAME: the process environment wins, then the env file, then DEFAULT.
+setting() {
+    local name="$1" default="${2:-}" value="${!1:-}"
+    if [ -z "$value" ] && [ -f "$ENV_FILE" ]; then
+        value="$(env_value "$name")"
+    fi
+    printf '%s' "${value:-$default}"
+}
+
+# Run a command inside the postgres container, stdin passed through, no TTY.
+# PG_CONTAINER (a container name) replaces the compose service; the tests use it.
+pg_exec() {
+    if [ -n "${PG_CONTAINER:-}" ]; then
+        docker exec -i "$PG_CONTAINER" "$@"
+    else
+        dc exec -T postgres "$@"
+    fi
+}
+
+PG_USER="$(setting POSTGRES_USER gestione)"
+PG_DB="$(setting POSTGRES_DB gestione_docenti)"
+
+# Absolute backup directory (BACKUP_DIR, default ./backups under the repository).
+backup_dir() {
+    local dir
+    dir="$(setting BACKUP_DIR ./backups)"
+    case "$dir" in
+        /*) printf '%s' "$dir" ;;
+        *) printf '%s' "$ROOT/$dir" ;;
+    esac
+}
+
+# Dump files in DIR written by backup.sh (never .partial or foreign files), newest name first.
+list_dumps() {
+    find "$1" -maxdepth 1 -type f -name 'gestione-docenti-[0-9]*-[0-9]*-*.dump' | sort -r
+}
