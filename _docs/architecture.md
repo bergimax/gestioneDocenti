@@ -42,6 +42,7 @@ is templates with HTMX.
 
 ```
 config/            settings (env-driven), settings_test.py, urls, wsgi
+projects/          cross-cutting: permissions.py (every authorization predicate, §5), context_processors.py (navigation)
 accounts/          users, roles, magic-link tokens
 school/            school, classes, teachers, subjects, assignments, pairings, calendar
 availability/      weekly availability grids, magic-link entry pages
@@ -76,7 +77,7 @@ now as Django models with real migrations, with these changes:
 
 ## 5. Authorization
 
-All authorization lives in one module of predicate functions taking a user and a domain object (for example
+All authorization lives in one module (`projects/permissions.py`) of predicate functions taking a user and a domain object (for example
 `can_generate(user, week)`, `can_edit_availability(user, teacher)`). Views, templates and tasks call predicates; there
 are no inline role checks. The permission matrix is the one in `specs.md` §4. The UI hides what a role cannot do, but
 enforcement is always server-side.
