@@ -175,6 +175,14 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-grid tbody th { text-align: left; white-space: nowrap; background: #eef0f4; }
 .tt-subject { display: block; }
 .tt-teacher { display: block; font-weight: 700; }
+.tt-teacher-btn { display: block; margin: 0 auto; padding: 0 .25rem; border: 0; background: transparent; color: inherit; font-size: inherit; cursor: pointer; text-decoration: underline dotted; }
+.tt-card { border-radius: 3px; padding: .1rem .2rem; }
+.tt-card[data-kind="TEORIA"], .tt-swatch-teoria { background: #dbeafe; }
+.tt-card[data-kind="PRATICA"], .tt-swatch-pratica { background: #dcfce7; }
+.tt-conflict .tt-card[data-kind] { background: transparent; }
+.tt-card.tt-highlight { outline: 3px solid #5b21b6; outline-offset: -1px; box-shadow: 0 0 0 2px #fff inset; font-weight: 700; }
+.tt-legend { list-style: none; display: flex; gap: 1rem; margin: .5rem 0; padding: 0; font-size: .85rem; }
+.tt-swatch { display: inline-block; width: .9rem; height: .9rem; border: 1px solid var(--border); vertical-align: middle; }
 .tt-free { background: #d9d9d9; }
 .tt-stage { background: #ffff00; border-color: #c9a800; font-weight: 700; }
 .tt-conflict { border: 2px dashed #b42318; background: #fde8e6; }

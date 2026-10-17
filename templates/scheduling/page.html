@@ -25,7 +25,15 @@
   {% include "scheduling/_instruction.html" %}
   {% include "scheduling/_repair.html" %}
   <div id="tt-assign-panel" aria-live="polite"></div>
-  {% include "scheduling/_body.html" %}
+  <div id="tt-display" x-data="{ teacher: null }">
+    {% if timetable %}
+    <ul class="tt-legend" aria-label="Legenda">
+      <li><span class="tt-swatch tt-swatch-teoria" aria-hidden="true"></span> Teoria</li>
+      <li><span class="tt-swatch tt-swatch-pratica" aria-hidden="true"></span> Pratica</li>
+    </ul>
+    {% endif %}
+    {% include "scheduling/_body.html" %}
+  </div>
   {% include "scheduling/_feedback.html" %}
 </section>
 <script>

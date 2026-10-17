@@ -179,6 +179,8 @@ def build_board(school, week_start, timetable, slots=None, conflicts=None):
             "slot_id": slot.pk,
             "subject": slot.subject.name,
             "teacher": surname(slot.teacher),
+            "teacher_id": slot.teacher_id,
+            "subject_kind": slot.subject.kind,
             "paired": slot.paired,
             "conflict": key in by_class
             or (slot.teacher_id, slot.day, slot.start_hour) in by_teacher
