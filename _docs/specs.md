@@ -344,14 +344,14 @@ docente→tipo, mappa classe→gruppo, `anno_fine`.
 | H6 | Docente ASSUNTO: ore settimanali per assegnazione ≤ residuo (vedi §8) |
 | H7/H8 | Esclusioni e tetti richiesti dalla chat per la sola esecuzione (giorno escluso per un docente; massimo di ore settimanali) |
 
-### 9.3 Vincoli «quasi rigidi» (rilassabili solo a peso 1000, sempre segnalati)
+### 9.3 Vincoli «quasi rigidi» (rilassabili solo a peso `RELAX_WEIGHT` = 10_000_000_000, sempre segnalati)
 
-Ognuno ha una variabile `override` con peso **`RELAX_WEIGHT = 1000`**: il solver li viola solo se non esiste
+Ognuno ha una variabile `override` con peso **`RELAX_WEIGHT = 10_000_000_000`**: il solver li viola solo se non esiste
 alternativa e ogni violazione compare tra i conflitti con la deroga corrispondente (nessuna violazione silenziosa).
 
 | Id | Regola | Deroga che la autorizza |
 |---|---|---|
-| H4 | **Disponibilità contrattisti**: nessuna lezione dove `disponibile=false`. In generazione è **rigido** (non si forza mai); la penalità 1000 esiste solo per modifiche manuali dell'admin (modalità *forced*, §10) | `override_availability` |
+| H4 | **Disponibilità contrattisti**: nessuna lezione dove `disponibile=false`. In generazione è **rigido** (non si forza mai); la penalità (`RELAX_WEIGHT`, 10_000_000_000) esiste solo per modifiche manuali dell'admin (modalità *forced*, §10) | `override_availability` |
 | H9 | Venerdì: il blocco di lezioni di una classe **inizia alle 8:00** (decisione admin 2026-09-23); non applicato se la classe non ha lezioni o ha un `ora_inizio_min` | `authorize_friday_late_start` |
 | H10 | **Pratica**: le ore di una materia PRATICA formano **un blocco di almeno `min(3, capienza)` ore** nel giorno, oppure nessuna (decisione admin 2026-09-23) | `authorize_short_pratica_block` |
 | H11 | Un docente tiene al massimo **4 ore** (`MAX_HOURS_PER_CLASSE_DAY`) con la stessa classe nello stesso giorno; si applica ai docenti con ≥ 2 classi; le lezioni accoppiate contano una volta | `authorize_single_classe_day` |
@@ -396,7 +396,7 @@ Se il solver non trova soluzione: score 0, livello C. `n_soft_conflicts = numero
 ### 9.7 Fallback e deroghe
 
 `_solve_with_fallback`: (1) modello rigido (H2 uguaglianza); se `INFEASIBLE` (2) **modalità best-effort**: le ore non
-coperte diventano penalità a 1500 (`classe_unfilled`) e si restituisce il miglior orario possibile con messaggio «Nessun
+coperte diventano penalità a `FIXED_PENALTY_WEIGHT` = 1_000_000_000_000 (`classe_unfilled`) e si restituisce il miglior orario possibile con messaggio «Nessun
 orario completo possibile…»; (3) per un orario forzato a mano (`solve_fixed` con assegnazione pinnata) ulteriore modalità
 **forced** in cui capienza, doppia prenotazione, monte ore, inizio e stage diventano conflitti segnalati invece di errori.
 
@@ -458,7 +458,7 @@ Le modifiche manuali e le deroghe scrivono in `audit_log`.
   `contractor_gap`, `single_classe_day`, `ore_target_deviation`, `classe_unfilled`, `altro`. Ognuno è collegato a una
   penalità del solver (`MOTIVO_CONSTRAINTS`); solo cinque hanno un peso regolabile.
 - **Proposte** (`GET /soft-weights`): per un motivo con ≥ **2** valutazioni basse (voto ≤ 3) si propone di **alzare** il
-  peso: passo `+10% × gravità` (1 stella = 3, 2 = 2, 3 = 1), al massimo **+50%** per passo e mai oltre 200. Ogni
+  peso: passo `+10% × gravità` (1 stella = 3, 2 = 2, 3 = 1), al massimo **+50%** per passo e mai oltre `MAX_SOFT_WEIGHT` = 1_000. Ogni
   valutazione conta una volta (dopo un adeguamento o un reset contano solo quelle successive).
 - `POST /soft-weights/apply {kinds?}` accetta le proposte (tutte o alcune); `POST /soft-weights/reset {kind?}` ripristina il
   default di un peso o di tutti. Ogni cambiamento è una riga in `soft_weight_adjustment` (storico). Nulla cambia da solo.

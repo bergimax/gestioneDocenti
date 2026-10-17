@@ -150,7 +150,7 @@ def friday_ctx(**kw):
 
 
 def test_s1_is_not_double_counted_with_a_friday_h9_conflict():
-    # The late Friday start is already the H9 penalty (1000): S1 stays silent.
+    # The late Friday start is already the H9 penalty (RELAX_WEIGHT): S1 stays silent.
     res = solved(friday_ctx())
     assert [c.kind for c in res.conflicts] == ["H9"]
     assert of(res, CLASSE_LATE_START) == []
