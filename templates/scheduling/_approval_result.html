@@ -1,0 +1,9 @@
+<div id="tt-approval-result" role="status" aria-live="polite"{% if approval_result %} hx-swap-oob="true"{% endif %}>
+  {% if approval_result %}
+  <dl class="tt-approval-figures">
+    <div><dt>Ore scalate</dt><dd>{{ approval_result.ore_scalate }}</dd></div>
+    <div><dt>Assegnazioni aggiornate</dt><dd>{{ approval_result.assegnazioni_aggiornate }}</dd></div>
+    <div><dt>Lezioni senza monte ore</dt><dd>{{ approval_result.senza_monte_ore }}</dd></div>
+  </dl>
+  {% endif %}
+</div>

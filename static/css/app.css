@@ -237,3 +237,8 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-feedback-list li { border-top: 1px solid var(--border); padding: .4rem 0; }
 .tt-feedback-meta { margin: 0; font-size: .85rem; }
 .tt-feedback-note { margin: .2rem 0 0; white-space: pre-line; }
+
+.tt-approve-form { display: inline; margin: 0; }
+.tt-approval-figures { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; margin: .5rem 0; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; }
+.tt-approval-figures dt { font-size: .85rem; }
+.tt-approval-figures dd { margin: 0; font-weight: 600; font-size: 1.15rem; }

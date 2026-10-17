@@ -291,7 +291,9 @@ def test_alternatives_are_not_lessons_of_the_grid(admin, rw):
     grid_url = f"/orario/{WEEK}/griglia/"
 
     def grid():
-        return re.sub(r'data-csrf="[^"]*"', "", html(admin.get(grid_url)))
+        page = html(admin.get(grid_url))
+        page = re.sub(r'name="csrfmiddlewaretoken" value="[^"]*"', "", page)
+        return re.sub(r'data-csrf="[^"]*"', "", page)
 
     before = grid()
     assert 'class="tt-card' in before

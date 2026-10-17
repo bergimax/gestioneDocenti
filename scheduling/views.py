@@ -120,6 +120,8 @@ def _body_context(
     clear_panel=False,
     undo_error=None,
     undo_reason="",
+    approve_confirm=False,
+    clear_result=False,
 ):
     timetable = _timetable(school, week)
     context = {
@@ -134,6 +136,9 @@ def _body_context(
         "can_decide": False,
         "can_quick": False,
         "clear_panel": clear_panel,
+        "approve_confirm": approve_confirm,
+        "clear_result": clear_result,
+        "can_approve": False,
     }
     if timetable is not None:
         approved = timetable.state == TimetableState.APPROVATO
@@ -151,6 +156,7 @@ def _body_context(
             no_complete_message=NO_COMPLETE_MESSAGE,
             approved=approved,
             can_undo=can_undo_approval(user, timetable) and approved,
+            can_approve=can_approve(user) and not approved,
             undo_error=undo_error,
             undo_reason=undo_reason,
         )
@@ -497,16 +503,27 @@ def timetable_approve(request, week):
     if timetable is None:
         raise Http404("Nessun orario per questa settimana.")
     error = None
-    if timetable.state != TimetableState.APPROVATO and "confirm" not in request.POST:
+    was_approved = timetable.state == TimetableState.APPROVATO
+    if not was_approved and "confirm" not in request.POST:
         conflicts = visible_conflicts(timetable)
         if not timetable.slots.exists():
             error = MSG_EMPTY_WEEK
         elif conflicts:
             error = MSG_CONFLICTS.format(count=len(conflicts))
-    if error is None:
-        approve_timetable(timetable.pk, request.user)
-    context = _body_context(school, week, request.user, move_error=error)
-    return render(request, TPL + "_body.html", context, status=409 if error else 200)
+    if error is not None:
+        context = _body_context(
+            school, week, request.user, move_error=error, approve_confirm=True
+        )
+        return render(request, TPL + "_body.html", context, status=409)
+    result = approve_timetable(timetable.pk, request.user)
+    context = _body_context(school, week, request.user)
+    context.update(_job_context(school, week, request.user))
+    context["job_oob"] = True
+    context.update(_deroga_context(school, week, request.user, oob=True))
+    context.update(instruction.panel_context(school, week, request.user, oob=True))
+    context.update(_repair_context(school, week, request.user, oob=True))
+    context["approval_result"] = None if was_approved else result
+    return render(request, TPL + "_approve_response.html", context)
 
 
 MSG_NOT_APPROVED = "La settimana non è approvata: non c'è nulla da annullare."
@@ -537,6 +554,7 @@ def timetable_undo_approval(request, week):
         move_error=error,
         undo_error=undo_error,
         undo_reason=reason,
+        clear_result=status == 200,
     )
     return render(request, TPL + "_body.html", context, status=status)
 
