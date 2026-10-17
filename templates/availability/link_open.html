@@ -3,6 +3,23 @@
 {% block content %}
 <h1>Disponibilita</h1>
 <p class="av-who"><strong>{{ teacher.name }}</strong><br>Settimana dal {{ link.week_start|date:"d/m/Y" }} al {{ week_end|date:"d/m/Y" }}</p>
+{% if read_only %}
+<p class="av-message av-message-error" role="alert">{{ approved_notice }}</p>
+<div class="av-public-grid" role="group" aria-label="Disponibilita settimanale">
+  <div class="av-public-row av-public-head">
+    <span class="visually-hidden">Giorno</span>
+    {% for h in hours %}<span>{{ h }}</span>{% endfor %}
+  </div>
+  {% for day in days %}
+  <div class="av-public-row">
+    <span class="av-public-day">{{ day.label }} {{ day.date|date:"d/m" }}</span>
+    {% for slot in day.slots %}
+    <span class="av-pcell {% if slot.available %}av-on{% else %}av-off{% endif %}">{% if slot.available %}&#10003; Si{% else %}&#10007; No{% endif %}</span>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
 <p class="hint">Tocca una casella per cambiare: &#10003; Si = disponibile, &#10007; No = non disponibile. Poi premi Salva.</p>
 {{ grid|json_script:"grid-data" }}
 <form class="av-link-form" hx-post="{{ save_url }}" hx-target="#av-result" hx-swap="outerHTML" x-data="{ grid: JSON.parse(document.getElementById('grid-data').textContent) }">
@@ -24,4 +41,5 @@
   <button type="submit" class="button av-save">Salva</button>
   <div id="av-result" aria-live="polite"></div>
 </form>
+{% endif %}
 {% endblock %}

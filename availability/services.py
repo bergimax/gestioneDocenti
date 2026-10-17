@@ -2,10 +2,23 @@
 
 from django.db import transaction
 
+from scheduling.models import Timetable, TimetableState
 from school.models import Teacher
 
 from . import grid as grid_logic
 from .models import Availability
+
+
+def week_is_approved(school, week_start, lock=False):
+    """True when the timetable of `school` for `week_start` is APPROVATO.
+
+    With `lock` the Timetable row is locked (select_for_update, as
+    approve_timetable does) so the caller must be inside a transaction.
+    """
+    qs = Timetable.objects.filter(school=school, week_start=week_start)
+    if lock:
+        qs = qs.select_for_update()
+    return any(t.state == TimetableState.APPROVATO for t in qs)
 
 
 def resolve_teacher_grid(teacher, week_start):

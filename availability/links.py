@@ -15,6 +15,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from . import grid as grid_logic
+from . import services
 from .models import AvailabilityLink, LinkLookupFailure
 
 TOKEN_FORMAT = re.compile(r"[A-Za-z0-9_-]{43}")  # token_urlsafe(32)
@@ -56,6 +57,8 @@ def create_link(teacher, week_start, user):
     Returns (link, token). Raises LinkError (nothing is written).
     """
     validate_request(teacher, week_start)
+    if services.week_is_approved(teacher.school, week_start):
+        raise LinkError("Settimana gia approvata: non si possono creare link.")
     current = now()
     AvailabilityLink.objects.filter(
         teacher=teacher, week_start=week_start, revoked_at__isnull=True

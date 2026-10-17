@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import (
     Http404,
     HttpResponseBadRequest,
@@ -393,7 +394,16 @@ def _usable_link(request, token):
     return link, None
 
 
-def _link_page_context(link, token=None, grid=None, result=None):
+APPROVED_NOTICE = (
+    "Orario gia approvato: la disponibilita di questa settimana non si puo "
+    "piu modificare. Per cambiarla rivolgiti alla segreteria."
+)
+APPROVED_REFUSAL = (
+    "La settimana e gia approvata: la disponibilita non e stata modificata."
+)
+
+
+def _link_page_context(link, token=None, grid=None, result=None, read_only=False):
     resolution = services.resolve_teacher_grid(link.teacher, link.week_start)
     if grid is None:
         grid = _display_grid(resolution)
@@ -421,6 +431,8 @@ def _link_page_context(link, token=None, grid=None, result=None):
         "hours": [s["start"] for s in days[0]["slots"]],
         "grid": grid,
         "result": result,
+        "read_only": read_only,
+        "approved_notice": APPROVED_NOTICE,
         "save_url": reverse("availability_link_save", args=[token]) if token else "",
     }
 
@@ -433,9 +445,9 @@ def link_open(request, token):
     if refusal:
         return refusal
     links.mark_used(link)
-    return _public(
-        render(request, TPL + "link_open.html", _link_page_context(link, token))
-    )
+    read_only = services.week_is_approved(link.teacher.school, link.week_start)
+    context = _link_page_context(link, token, read_only=read_only)
+    return _public(render(request, TPL + "link_open.html", context))
 
 
 def _same_origin(request):
@@ -462,6 +474,18 @@ def link_save(request, token):
     link, refusal = _usable_link(request, token)
     if refusal:
         return refusal
+    with transaction.atomic():
+        # Same lock as approve_timetable: a save never interleaves with it.
+        if services.week_is_approved(link.teacher.school, link.week_start, lock=True):
+            result = {"ok": False, "message": APPROVED_REFUSAL}
+            context = _link_page_context(link, result=result)
+            return _public(
+                render(request, TPL + "link_result.html", context, status=409)
+            )
+        return _save_posted(request, link)
+
+
+def _save_posted(request, link):
     try:
         grid = _posted_grid(request)
     except BadRequest:
