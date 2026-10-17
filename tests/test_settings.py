@@ -157,3 +157,16 @@ def test_proxy_settings_in_production(settings):
 def test_env_example_lists_new_variables():
     text = (Path(__file__).resolve().parent.parent / ".env.example").read_text()
     assert "\nDOMAIN=" in text
+
+
+def test_trusted_proxy_count_documented():
+    root = Path(__file__).resolve().parent.parent
+    assert "\nTRUSTED_PROXY_COUNT=0" in (root / ".env.example").read_text()
+    assert (
+        "\nTRUSTED_PROXY_COUNT=1"
+        in (root / "deploy/env.production.example").read_text()
+    )
+
+
+def test_trusted_proxy_count_default_in_tests(settings):
+    assert settings.TRUSTED_PROXY_COUNT == 0

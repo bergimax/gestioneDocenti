@@ -70,8 +70,16 @@ A forgotten password is reset with
 
     docker compose logs -f web worker caddy
 
-Note: until the token-redaction work lands, the Caddy and gunicorn access
-logs record magic-link paths (`/l/<token>/`).
+Magic-link and calendar-feed tokens (`/l/<token>/`, `/feeds/<token>.ics`) are
+kept out of the logs: Caddy (access and error log) replaces them with
+`REDACTED` through the `redacted_log` filter in `deploy/Caddyfile` and drops the
+Cookie and Authorization headers; gunicorn has no access log
+(`deploy/gunicorn.conf.py`); Django redacts its own loggers
+(`availability/logging.py`).
+
+Caddy sends the client address to Django in `X-Forwarded-For`, and
+`TRUSTED_PROXY_COUNT=1` (in `.env.production`) makes Django use it for the
+login throttle and the link lookup limiter.
 
 ## Backups and restore
 

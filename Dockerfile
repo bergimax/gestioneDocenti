@@ -31,4 +31,4 @@ USER app
 
 # DEBUG is deliberately not set: it defaults to false.
 EXPOSE 8000
-CMD ["gunicorn", "config.wsgi:application", "--workers", "2", "--bind", "0.0.0.0:8000"]
+CMD ["gunicorn", "-c", "deploy/gunicorn.conf.py", "config.wsgi:application"]

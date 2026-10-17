@@ -27,7 +27,7 @@ services:
     build: .
     image: gestione-docenti:latest
     restart: unless-stopped
-    command: ["gunicorn", "config.wsgi:application", "--workers", "2", "--bind", "0.0.0.0:8000"]
+    command: ["gunicorn", "-c", "deploy/gunicorn.conf.py", "config.wsgi:application"]
     env_file: .env.production
     environment:
       <<: *app-environment

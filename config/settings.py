@@ -19,6 +19,7 @@ from config.env import (
     get_domain,
     get_explain_budget,
     get_hosts,
+    get_non_negative_int,
     get_optional_str,
     get_positive_int,
     get_required,
@@ -75,6 +76,9 @@ LOGIN_ADDRESS_MAX_FAILURES = get_positive_int(
     os.environ, "LOGIN_ADDRESS_MAX_FAILURES", DEFAULT_LOGIN_ADDRESS_MAX_FAILURES
 )
 
+# Number of reverse proxies in front of Django (0: X-Forwarded-For is ignored).
+TRUSTED_PROXY_COUNT = get_non_negative_int(os.environ, "TRUSTED_PROXY_COUNT", 0)
+
 # Marker written by deploy/backup.sh, as the web process sees it (empty: unknown).
 BACKUP_MARKER_FILE = get_optional_str(os.environ, "BACKUP_MARKER_FILE")
 BACKUP_STALE_HOURS = get_positive_int(os.environ, "BACKUP_STALE_HOURS", 30)
@@ -97,6 +101,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "config.middleware.ClientAddressMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",

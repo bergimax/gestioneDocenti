@@ -1,10 +1,43 @@
+# Magic-link and calendar-feed tokens travel in URL paths (/l/<token>/,
+# /feeds/<token>.ics). Every log below goes through this filter, which replaces
+# the whole token (RE2 syntax) and drops credentials-bearing headers. The
+# Referer is covered because a page at /l/<token>/ sends it with its static files.
+(redacted_log) {
+	output stdout
+	format filter {
+		wrap json
+		request>uri regexp /l/[^/?]+ /l/REDACTED
+		request>uri regexp /feeds/[^/?]+\.ics /feeds/REDACTED.ics
+		request>headers>Referer regexp /l/[^/?]+ /l/REDACTED
+		request>headers>Referer regexp /feeds/[^/?]+\.ics /feeds/REDACTED.ics
+		request>headers>Cookie delete
+		request>headers>Authorization delete
+	}
+}
+
+{
+	# Default logger: carries Caddy's error log (e.g. a dial error when web is down).
+	log {
+		import redacted_log
+	}
+}
+
 {$DOMAIN} {
+	# Access log.
+	log {
+		import redacted_log
+	}
+
 	handle_path /static/* {
 		root * /srv/static
 		file_server
 	}
 
 	handle {
-		reverse_proxy web:8000
+		# One entry only: the address Caddy saw. A client-supplied
+		# X-Forwarded-For is overwritten, not appended (TRUSTED_PROXY_COUNT=1).
+		reverse_proxy web:8000 {
+			header_up X-Forwarded-For {remote_host}
+		}
 	}
 }

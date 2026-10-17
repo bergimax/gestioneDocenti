@@ -86,6 +86,24 @@ def get_positive_int(env: Mapping[str, str], name: str, default: int) -> int:
     return value
 
 
+def get_non_negative_int(env: Mapping[str, str], name: str, default: int) -> int:
+    """Like get_positive_int, but 0 is allowed."""
+    raw = env.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        raise ImproperlyConfigured(
+            f"{name} must be a non-negative integer (got {raw!r})."
+        ) from None
+    if value < 0:
+        raise ImproperlyConfigured(
+            f"{name} must be a non-negative integer (got {raw!r})."
+        )
+    return value
+
+
 def get_explain_budget(env: Mapping[str, str], timeout: int) -> int:
     """SOLVER_EXPLAIN_BUDGET_SECONDS: a positive integer below ``timeout``."""
     name = "SOLVER_EXPLAIN_BUDGET_SECONDS"
