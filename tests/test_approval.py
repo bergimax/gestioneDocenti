@@ -183,6 +183,18 @@ def test_approving_week_one_lowers_next_week_target(w, user):
     assert before.target_sources[key] != after.target_sources[key]
 
 
+def test_approved_week_lowers_next_week_target_value(w, user):
+    # 36 weeks from week 2 to the year end: 73 // 36 = 2, 71 // 36 = 1
+    week2 = D(2026, 10, 19)
+    key = w.asg["a_mat"].pk
+    Assignment.objects.filter(pk=key).update(ore_totali=73)
+    assert build_week_context(week2, w.school).targets[key] == 2
+    approve_timetable(w.tt.pk, user)
+    after = build_week_context(week2, w.school)
+    assert after.targets[key] == 1
+    assert after.target_sources[key] == "residuo 71 ore su 36 settimane"
+
+
 def test_only_approve_timetable_sets_approved_state():
     import pathlib
     import re
