@@ -21,7 +21,6 @@ from school.selectors import current_school
 
 from . import audit
 from .board import DAY_LABELS
-from .context import build_week_context
 from .models import (
     ACTIVE_JOB_STATUSES,
     Day,
@@ -34,13 +33,13 @@ from .models import (
     TimetableState,
 )
 from .moves import MoveRejected, reevaluate
+from .perturbations import perturbation_from_params, week_context
 from .services import TimetableLocked, apply_change
 from .solver import (
     CLASS_CLOSED,
     SLOT_REMOVED,
     TEACHER_ABSENT,
     Lesson,
-    Perturbation,
     SolveStatus,
     affected_lessons,
     apply_perturbation,
@@ -95,17 +94,6 @@ class RepairRefused(Exception):
         super().__init__(message)
         self.message = message
         self.status = status
-
-
-def perturbation_from_params(params):
-    """The solver `Perturbation` of the `repair` entry of a job's params."""
-    return Perturbation(
-        kind=params["kind"],
-        teacher_id=params.get("teacher_id"),
-        class_id=params.get("class_id"),
-        days=frozenset(DAYS.index(d) for d in params.get("days") or []),
-        hour=None if params.get("hour") is None else params["hour"] - FIRST_CLOCK_HOUR,
-    )
 
 
 def describe(params):
@@ -272,7 +260,7 @@ def _solve_repair(job):
     """The result dict of the job, or a failure message string."""
     timetable_id, version, slots = _read_week(job)
     pert = perturbation_from_params(job.params[PARAMS_KEY])
-    ctx = build_week_context(job.week_start, job.school)
+    ctx, _ = week_context(job.week_start, job.school)
     current = current_lessons(slots, ctx)
     result = _base_result(timetable_id, version)
     if not affected_lessons(ctx, pert, current):
@@ -407,9 +395,7 @@ def confirm_repair(job_id, user):
             if r["new"]
         ]
         Slot.objects.bulk_create(_build_slots(locked, new, locked.school_id))
-        ctx = apply_perturbation(
-            build_week_context(locked.week_start, locked.school), pert
-        )
+        ctx, _ = week_context(locked.week_start, locked.school, [pert])
         try:
             reevaluate(locked, ctx, list(Slot.objects.filter(timetable=locked)))
         except MoveRejected:

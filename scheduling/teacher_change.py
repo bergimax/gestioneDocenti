@@ -10,7 +10,6 @@ from school.models import Assignment, ClassPairing
 
 from . import audit
 from .assign import MSG_PARTNER_ASSIGNMENT, assignable_pairs
-from .context import build_week_context
 from .models import Slot, Timetable
 from .moves import (
     MSG_SLOT,
@@ -20,6 +19,7 @@ from .moves import (
     _counterparts,
     reevaluate,
 )
+from .perturbations import check_teacher_day, week_context
 from .services import apply_change
 
 MSG_NOT_CANDIDATE = (
@@ -117,7 +117,8 @@ def change_teacher(timetable_id, slot_id, teacher_id, version, user=None):
             if not has_pairing:
                 raise MoveRejected(MSG_NO_PAIRING)
         group = [moving] + [by_pk[s.pk] for s in _counterparts(moving)]
-        ctx = build_week_context(locked.week_start, locked.school)
+        ctx, perts = week_context(locked.week_start, locked.school)
+        check_teacher_day(perts, teacher_id, moving.day)
         for s in group:
             s.teacher_id = teacher_id
         reevaluate(locked, ctx, slots, moving)

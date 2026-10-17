@@ -8,9 +8,9 @@ a conflict: reading filters the list by the decisions.
 
 from . import audit
 from .board import FIRST_HOUR, decided_keys
-from .context import build_week_context
 from .models import ConflictDecision, Day, DecisionAction, Slot, Timetable
 from .moves import MSG_STALE, InvalidMove, MoveRejected, reevaluate
+from .perturbations import week_context
 from .services import apply_change
 from .solver import CLASSE_UNFILLED
 from .solver.conflicts import chiave
@@ -104,7 +104,7 @@ def reject_lesson(timetable_id, class_id, day, hour, version, user=None):
                 defaults={"action": DecisionAction.LIBERA},
             )
         remaining = [s for s in slots if s.pk not in gone]
-        ctx = build_week_context(locked.week_start, locked.school)
+        ctx, _ = week_context(locked.week_start, locked.school)
         reevaluate(locked, ctx, remaining)
         audit.record_audit(
             audit.CONFLICT_DECISION,

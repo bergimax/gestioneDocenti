@@ -11,10 +11,10 @@ from school.models import Assignment, ClassPairing
 
 from . import audit
 from .board import FIRST_HOUR, HOURS
-from .context import build_week_context
 from .decisions import free_key
 from .models import ConflictDecision, Day, DecisionAction, Slot, Timetable
 from .moves import MSG_STALE, InvalidMove, MoveRejected, reevaluate
+from .perturbations import check_cell, check_teacher_day, week_context
 from .services import apply_change
 
 DAYS = list(Day.values)
@@ -146,8 +146,10 @@ def assign_lesson(
             ).exists()
         ):
             raise MoveRejected(MSG_PARTNER_ASSIGNMENT)
-        ctx = build_week_context(locked.week_start, school)
+        ctx, perts = week_context(locked.week_start, school)
         class_ids = [class_id] + ([partner] if partner is not None else [])
+        check_cell(perts, set(class_ids), day, hour)
+        check_teacher_day(perts, teacher_id, day)
         for cid in class_ids:
             _check_cell(ctx, slots, cid, day, hour)
         created = []

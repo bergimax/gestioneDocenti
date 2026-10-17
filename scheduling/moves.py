@@ -14,8 +14,8 @@ from school.models import Assignment
 
 from . import audit
 from .board import FIRST_HOUR, HOURS
-from .context import build_week_context
 from .models import Day, Slot, Timetable
+from .perturbations import check_cell, check_teacher_day, week_context
 from .services import apply_change
 from .solver import Lesson, SolveStatus
 from .tasks import solve_exclusive
@@ -157,8 +157,10 @@ def move_lesson(timetable_id, slot_id, day, hour, version, user=None):
         moving = by_pk[slot_id]
         group = [moving] + [by_pk[s.pk] for s in _counterparts(moving)]
         class_ids = {moving.school_class_id, moving.paired_class_id} - {None}
-        ctx = build_week_context(locked.week_start, locked.school)
+        ctx, perts = week_context(locked.week_start, locked.school)
         _check_target(ctx, slots, group, class_ids, day, hour)
+        check_cell(perts, class_ids, day, hour)
+        check_teacher_day(perts, moving.teacher_id, day)
         for s in group:
             s.day, s.start_hour, s.end_hour = day, hour, hour + 1
         reevaluate(locked, ctx, slots, moving)
