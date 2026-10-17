@@ -12,7 +12,7 @@
     uv run ruff check .
     uv run ruff format --check .
 
-Run both before committing.
+Run both before committing. CI (`.github/workflows/ci.yml`) runs the same commands plus `uv run pytest` on every push and pull request.
 
 ## Configuration
 
