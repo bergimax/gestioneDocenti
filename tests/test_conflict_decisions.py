@@ -5,7 +5,7 @@ from unittest import mock
 import pytest
 
 from scheduling import tasks, views
-from scheduling.board import visible_conflicts
+from scheduling.board import conflict_rows, visible_conflicts
 from scheduling.decisions import free_key
 from scheduling.models import (
     ConflictDecision,
@@ -256,7 +256,9 @@ def test_a_conflict_that_changes_key_after_a_move_is_reported_again(w, admin):
     assert [c["ore_slot"] for c in again] == [3]
     assert again[0]["chiave"] != conflict["chiave"]
     text = html(r)
-    assert again[0]["description"] in text
+    # the page shows the stored text with names instead of ids
+    assert conflict_rows(again, w.school)[0]["text"] in text
+    assert "Il docente ROSSI" in text
     assert marked(text, "LUNEDI", 11)
 
 

@@ -1,8 +1,9 @@
 """Read model of the timetable page: classes by hour for each weekday."""
 
 import datetime
+import re
 
-from school.models import CalendarEntry, Class, SubjectKind
+from school.models import CalendarEntry, Class, SubjectKind, Teacher
 
 from .context import _is_stage
 from .derogations import QUICK_ACTIONS, label_of
@@ -110,17 +111,67 @@ def _quick(conflict):
     }
 
 
-def conflict_rows(conflicts):
-    """Text, chiave and suggested quick action of each reported conflict."""
-    return [
-        {
-            "text": c["description"],
-            "chiave": c.get("chiave", ""),
-            "quick": _quick(c),
-        }
-        for c in conflicts or []
-        if isinstance(c, dict) and c.get("description")
-    ]
+def _named_text(text, names):
+    """Replace "classe N", "docente N", "contrattista N" with the stored name.
+
+    `names` maps word -> (id, name). Only the item's own whole-number id
+    matches (id 3 never touches 31 or 3.5).
+    """
+
+    def swap(match):
+        found = names.get(match.group(1))
+        if found and match.group(2) == str(found[0]):
+            return f"{match.group(1)} {found[1]}"
+        return match.group(0)
+
+    return _ID_PATTERN.sub(swap, text)
+
+
+_ID_PATTERN = re.compile(r"\b(classe|docente|contrattista) (\d+)(?!\d|\.\d)")
+
+
+def conflict_rows(conflicts, school=None):
+    """Text, chiave and suggested quick action of each reported conflict.
+
+    The text shows class and teacher names of `school` instead of the ids the
+    solver wrote; the stored conflicts are never changed. Unknown ids leave the
+    text as stored.
+    """
+    items = [c for c in conflicts or [] if isinstance(c, dict) and c.get("description")]
+    class_ids = {c["classe_id"] for c in items if isinstance(c.get("classe_id"), int)}
+    teacher_ids = {
+        c["docente_id"] for c in items if isinstance(c.get("docente_id"), int)
+    }
+    class_names, teacher_names = {}, {}
+    if school is not None:
+        if class_ids:
+            class_names = dict(
+                Class.objects.filter(school=school, pk__in=class_ids).values_list(
+                    "pk", "name"
+                )
+            )
+        if teacher_ids:
+            teacher_names = dict(
+                Teacher.objects.filter(school=school, pk__in=teacher_ids).values_list(
+                    "pk", "name"
+                )
+            )
+    rows = []
+    for c in items:
+        names = {}
+        if c.get("classe_id") in class_names:
+            names["classe"] = (c["classe_id"], class_names[c["classe_id"]])
+        if c.get("docente_id") in teacher_names:
+            found = (c["docente_id"], teacher_names[c["docente_id"]])
+            names["docente"] = names["contrattista"] = found
+        rows.append(
+            {
+                "text": _named_text(c["description"], names),
+                "chiave": c.get("chiave", ""),
+                "quick": _quick(c),
+            }
+        )
+    return rows
 
 
 def explanations(timetable):

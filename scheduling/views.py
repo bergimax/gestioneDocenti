@@ -152,7 +152,7 @@ def _body_context(
             can_quick=can_apply_quick_action(user, timetable) and not approved,
             can_export=can_export_timetable(user, timetable),
             days=build_board(school, week["start"], timetable),
-            conflict_list=conflict_rows(visible),
+            conflict_list=conflict_rows(visible, timetable.school),
             best_effort=is_best_effort(visible),
             explanations=explanations(timetable),
             no_complete_message=NO_COMPLETE_MESSAGE,
