@@ -11,14 +11,12 @@ import datetime
 from django.conf import settings
 from django.db import transaction
 
-from ai.instruction import EXCLUDE_DAY, interpret_instruction
+from ai.instruction import interpret_instruction
 from projects.permissions import can_use_ai_instructions
 from school.models import Class, Draft, Teacher, TeacherType
 
 from .derogations import (
     DAY_WORDS,
-    DOCENTE,
-    GIORNO,
     QUICK_ACTIONS,
     REDUCE_CONTRACT_HOURS,
     scope_words,
@@ -27,12 +25,6 @@ from .jobs import GenerationRefused
 from .models import Day, Timetable, TimetableState
 from .quick_actions import ERROR_NO_TIMETABLE, apply_quick_action
 from .tasks import ERROR_APPROVED
-
-EXCLUDE_DAY_LABEL = "Escludi il docente da un giorno"
-# The solver cannot honour exclude_day as a derogation until #61 lands; flip
-# this to True (and drop the gate) when it does.
-EXCLUDE_DAY_SUPPORTED = False
-MSG_EXCLUDE_DAY = "Questa deroga non è ancora supportata dal solutore."
 
 MSG_NOT_FOUND = "L'istruzione non esiste più: scrivila di nuovo."
 MSG_NOT_PENDING = "L'istruzione è già stata confermata o scartata."
@@ -45,9 +37,7 @@ MSG_REDUCE_ASSUNTO = (
 )
 
 LABELS = {key: value[0] for key, value in QUICK_ACTIONS.items()}
-LABELS[EXCLUDE_DAY] = EXCLUDE_DAY_LABEL
 PARAMS = {key: tuple(value[1]) for key, value in QUICK_ACTIONS.items()}
-PARAMS[EXCLUDE_DAY] = (DOCENTE, GIORNO)
 
 
 class InstructionRefused(Exception):
@@ -155,7 +145,6 @@ def card(school, draft):
     teacher, klass = teacher.first(), klass.first()
     day = payload.get("day")
     week = datetime.date.fromisoformat(payload["week_start"])
-    supported = action != EXCLUDE_DAY or EXCLUDE_DAY_SUPPORTED
     return {
         "id": draft.pk,
         "label": LABELS[action],
@@ -164,8 +153,6 @@ def card(school, draft):
         "day": DAY_WORDS[day] if day else None,
         "max_hours": payload.get("max_hours"),
         "week": week,
-        "can_confirm": supported,
-        "gate_message": None if supported else MSG_EXCLUDE_DAY,
     }
 
 
@@ -196,8 +183,6 @@ def confirm_instruction(school, week_start, user, draft_id):
         params = _params(draft.payload)
         if params["action_type"] not in LABELS:
             raise InstructionRefused(MSG_NOT_FOUND)
-        if params["action_type"] == EXCLUDE_DAY and not EXCLUDE_DAY_SUPPORTED:
-            raise InstructionRefused(MSG_EXCLUDE_DAY)
         teacher = klass = None
         if params["teacher_id"] is not None:
             teacher = Teacher.objects.filter(

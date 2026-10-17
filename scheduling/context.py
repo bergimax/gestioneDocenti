@@ -11,6 +11,7 @@ from availability.models import Availability
 from scheduling.derogations import REDUCE_CONTRACT_HOURS
 from scheduling.solver.context import (
     DAYS,
+    EXCLUDE_DAY,
     FIRST_HOUR,
     HOURS,
     Pairing,
@@ -97,6 +98,19 @@ def _reduces(derogations, assignment):
     ]
 
 
+def _excluded_days(derogations):
+    """H7 input from the `exclude_day` derogations (merged, one entry per teacher)."""
+    excluded = {}
+    for d in derogations:
+        if (
+            d.action_type == EXCLUDE_DAY
+            and d.teacher_id is not None
+            and d.day is not None
+        ):
+            excluded[d.teacher_id] = excluded.get(d.teacher_id, frozenset()) | {d.day}
+    return excluded
+
+
 def build_week_context(week_start, school=None, derogations=()):
     """The solver input for the week starting on Monday ``week_start``.
 
@@ -181,6 +195,7 @@ def build_week_context(week_start, school=None, derogations=()):
     ]
     return ScheduleContext(
         assignments=assignments,
+        excluded_days=_excluded_days(derogations),
         teacher_types={t.pk: t.type for t in teachers},
         class_groups={c.pk: (c.group or None) for c in classes},
         class_capacity=class_capacity,

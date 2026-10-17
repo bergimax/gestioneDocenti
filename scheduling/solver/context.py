@@ -55,6 +55,7 @@ AUTHORIZE_SHORT_PRATICA_BLOCK = "authorize_short_pratica_block"  # H10
 AUTHORIZE_SINGLE_CLASSE_DAY = "authorize_single_classe_day"  # H11, S5
 FORCE_3_HOURS_THEORY = "force_3_hours_theory"  # S2
 AUTHORIZE_EARLY_EXIT = "authorize_early_exit"  # S4
+EXCLUDE_DAY = "exclude_day"  # H7, built into ScheduleContext.excluded_days
 
 # Repair solving (architecture 7.4): the objective pays this per current lesson
 # that leaves its cell (a moved lesson pays once; capacity is exact, so every

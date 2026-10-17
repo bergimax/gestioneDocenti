@@ -11,6 +11,7 @@ from .derogations import (
     GIORNO,
     MAX_HOURS_RANGE,
     MAX_ORE,
+    NEEDS_TEACHER_AND_DAY,
     QUICK_ACTIONS,
     REDUCE_CONTRACT_HOURS,
     applies,
@@ -23,6 +24,8 @@ MSG_MAX_HOURS = (
     f"a {MAX_HOURS_RANGE[1]}."
 )
 MSG_REDUCE_ASSUNTO = "La riduzione delle ore si applica solo ai docenti a contratto."
+MSG_NEEDS_TEACHER = "Scegli il docente."
+MSG_NEEDS_DAY = "Scegli il giorno."
 _INTEGER = re.compile(r"[0-9]{1,6}")
 
 
@@ -95,6 +98,11 @@ class QuickActionForm(forms.Form):
             and teacher.type != TeacherType.CONTRATTO
         ):
             self.add_error(DOCENTE, MSG_REDUCE_ASSUNTO)
+        if action in NEEDS_TEACHER_AND_DAY:
+            if teacher is None and not self.has_error(DOCENTE):
+                self.add_error(DOCENTE, MSG_NEEDS_TEACHER)
+            if not data.get(GIORNO) and not self.has_error(GIORNO):
+                self.add_error(GIORNO, MSG_NEEDS_DAY)
         return data
 
     def params(self):

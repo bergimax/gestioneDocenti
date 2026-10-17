@@ -13,6 +13,7 @@ from scheduling.solver.context import (
     AUTHORIZE_FRIDAY_LATE_START,
     AUTHORIZE_SHORT_PRATICA_BLOCK,
     AUTHORIZE_SINGLE_CLASSE_DAY,
+    EXCLUDE_DAY,
     FORCE_3_HOURS_THEORY,
     OVERRIDE_AVAILABILITY,
     Derogation,
@@ -22,7 +23,7 @@ D = datetime.date
 MON = D(2026, 10, 12)
 BASE = f"/orario/{MON:%Y-%m-%d}/"
 URL = BASE + "deroga/"
-SEVEN = [
+EIGHT = [
     FORCE_3_HOURS_THEORY,
     REDUCE_CONTRACT_HOURS,
     AUTHORIZE_EARLY_EXIT,
@@ -30,6 +31,7 @@ SEVEN = [
     AUTHORIZE_SINGLE_CLASSE_DAY,
     AUTHORIZE_FRIDAY_LATE_START,
     AUTHORIZE_SHORT_PRATICA_BLOCK,
+    EXCLUDE_DAY,
 ]
 
 
@@ -89,12 +91,12 @@ def capture(monkeypatch):
 # ---- visibility and permissions ----
 
 
-def test_admin_sees_the_form_with_the_seven_types(admin, w):
+def test_admin_sees_the_form_with_the_eight_types(admin, w):
     page = html(admin.get(f"/orario/?settimana={MON:%Y-%m-%d}"))
     assert "Deroga" in page and 'name="azione"' in page
-    for action in SEVEN:
+    for action in EIGHT:
         assert f'value="{action}"' in page
-    assert page.count('data-fields="') == 8  # seven types and the placeholder
+    assert page.count('data-fields="') == 9  # eight types and the placeholder
 
 
 @pytest.mark.parametrize(
@@ -107,6 +109,7 @@ def test_admin_sees_the_form_with_the_seven_types(admin, w):
         (AUTHORIZE_SINGLE_CLASSE_DAY, "classe docente giorno"),
         (AUTHORIZE_FRIDAY_LATE_START, "classe docente"),
         (AUTHORIZE_SHORT_PRATICA_BLOCK, "classe docente giorno"),
+        (EXCLUDE_DAY, "docente giorno"),
     ],
 )
 def test_each_type_declares_only_its_parameters(admin, w, action, fields):
@@ -336,7 +339,7 @@ def test_a_class_of_another_school_does_not_exist(admin, w):
 
 
 @pytest.mark.parametrize("action", [None, "", "assign_teacher", "manual_edit", "nope"])
-def test_only_the_seven_types_are_accepted(admin, w, audit_mock, action):
+def test_only_the_eight_types_are_accepted(admin, w, audit_mock, action):
     r = post(admin, azione=action)
     assert r.status_code == 400 and jobs().count() == 0
     audit_mock.assert_not_called()
@@ -442,10 +445,11 @@ def expected(action, w):
         AUTHORIZE_SHORT_PRATICA_BLOCK: Derogation(
             AUTHORIZE_SHORT_PRATICA_BLOCK, w.a.pk, w.rossi.pk, 0
         ),
+        EXCLUDE_DAY: Derogation(EXCLUDE_DAY, None, w.rossi.pk, 0),
     }[action]
 
 
-@pytest.mark.parametrize("action", SEVEN)
+@pytest.mark.parametrize("action", EIGHT)
 def test_solver_receives_the_derogation_for_that_regeneration_only(
     admin, w, capture, action
 ):
@@ -707,4 +711,53 @@ def test_questions_of_the_form_only_allow_get_and_post(admin, w):
 
 
 def test_all_quick_action_types_are_catalogued():
-    assert set(QUICK_ACTIONS) == set(SEVEN)
+    assert set(QUICK_ACTIONS) == set(EIGHT)
+
+
+# ---- exclude_day ----
+
+
+def test_exclude_day_stores_only_teacher_and_day(admin, w, audit_mock):
+    r = post(
+        admin,
+        azione=EXCLUDE_DAY,
+        docente=w.rossi.pk,
+        giorno="GIOVEDI",
+        classe=w.a.pk,
+        max_ore="3",
+    )
+    assert r.status_code == 200
+    expected_params = {
+        "action_type": "exclude_day",
+        "class_id": None,
+        "teacher_id": w.rossi.pk,
+        "day": "GIOVEDI",
+        "max_hours": None,
+    }
+    assert jobs().get().params == {"quick_action": expected_params}
+    audit_mock.assert_called_once()
+    assert audit_mock.call_args.args[3] == expected_params
+
+
+def test_exclude_day_reaches_the_solver_and_is_not_persisted(admin, w, capture):
+    post(admin, azione=EXCLUDE_DAY, docente=w.rossi.pk, giorno="MARTEDI")
+    run(jobs().get())
+    assert capture.ctxs[-1].excluded_days == {w.rossi.pk: frozenset({1})}
+    again = SolveJob.objects.create(school=w.school, week_start=MON)
+    run(again)
+    assert capture.ctxs[-1].excluded_days == {}
+
+
+@pytest.mark.parametrize("missing", ["docente", "giorno"])
+def test_exclude_day_needs_teacher_and_day(admin, w, audit_mock, missing):
+    data = {"docente": w.rossi.pk, "giorno": "LUNEDI"}
+    del data[missing]
+    r = post(admin, azione=EXCLUDE_DAY, **data)
+    assert r.status_code == 400 and jobs().count() == 0
+    audit_mock.assert_not_called()
+
+
+def test_exclude_day_unknown_teacher_is_rejected(admin, w, audit_mock):
+    r = post(admin, azione=EXCLUDE_DAY, docente=999999, giorno="LUNEDI")
+    assert r.status_code == 400 and jobs().count() == 0
+    audit_mock.assert_not_called()

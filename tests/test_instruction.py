@@ -490,28 +490,41 @@ def test_reduce_contract_needs_contract_teacher(admin, w):
 
 
 @AI_ON
-def test_exclude_day_card_is_gated(admin, w):
+def test_exclude_day_card_is_enabled_and_confirms(admin, w):
     patch, _ = fake(ok("exclude_day", teacher_id=tid(w), day="GIOVEDI"))
     with patch:
         response = ask(admin)
     body = html(response)
     assert "ROSSI MARIO" in body and "giovedì" in body
-    assert "non è ancora supportata dal solutore" in body
-    assert "disabled" in body.split("Conferma e rigenera")[0].rsplit("<button", 1)[1]
+    assert "non è ancora supportata" not in body
+    assert (
+        "disabled" not in body.split("Conferma e rigenera")[0].rsplit("<button", 1)[1]
+    )
     draft = Draft.objects.get()
-    response = admin.post(confirm_url(draft))
-    assert response.status_code == 409
-    assert "non è ancora supportata dal solutore" in html(response)
-    draft.refresh_from_db()
     assert draft.status == "DRAFT" and SolveJob.objects.count() == 0
+
+    response = admin.post(confirm_url(draft))
+    assert response.status_code == 200
+    draft.refresh_from_db()
+    assert draft.status == "CONFIRMED"
+    params = {
+        "action_type": "exclude_day",
+        "class_id": None,
+        "teacher_id": tid(w),
+        "day": "GIOVEDI",
+        "max_hours": None,
+    }
+    assert SolveJob.objects.get().params == {"quick_action": params}
+    assert AuditLog.objects.get(action="QUICK_ACTION")
 
 
 @AI_ON
-def test_exclude_day_confirm_once_supported(admin, w, monkeypatch):
-    monkeypatch.setattr(instruction, "EXCLUDE_DAY_SUPPORTED", True)
-    draft = make_draft(admin_user(), w, action_type="exclude_day")
-    # The solver has no exclude_day derogation yet (#61): only the gate is lifted here.
-    assert instruction.card(w.school, draft)["can_confirm"] is True
+def test_exclude_day_with_deleted_teacher_is_refused(admin, w):
+    draft = make_draft(admin_user(), w, action_type="exclude_day", teacher_id=999999)
+    response = admin.post(confirm_url(draft))
+    assert response.status_code == 409 and "non esistono più" in html(response)
+    draft.refresh_from_db()
+    assert draft.status == "DRAFT" and SolveJob.objects.count() == 0
 
 
 @AI_ON

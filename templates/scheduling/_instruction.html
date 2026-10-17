@@ -30,11 +30,10 @@
         {% if instr_card.max_hours %}<dt>Massimo di ore</dt><dd>{{ instr_card.max_hours }}</dd>{% endif %}
         <dt>Settimana</dt><dd>dal {{ instr_card.week|date:"d/m/Y" }}</dd>
       </dl>
-      {% if instr_card.gate_message %}<p class="tt-deroga-help" role="status">{{ instr_card.gate_message }}</p>{% endif %}
       <div class="tt-diff-actions">
         <form method="post" action="{% url 'instruction_confirm' week.start|date:'Y-m-d' instr_card.id %}" hx-post="{% url 'instruction_confirm' week.start|date:'Y-m-d' instr_card.id %}" hx-target="#tt-instruction-panel" hx-swap="outerHTML">
           {% csrf_token %}
-          <button type="submit"{% if not instr_card.can_confirm %} disabled{% endif %}>Conferma e rigenera</button>
+          <button type="submit">Conferma e rigenera</button>
         </form>
         <form method="post" action="{% url 'instruction_discard' week.start|date:'Y-m-d' instr_card.id %}" hx-post="{% url 'instruction_discard' week.start|date:'Y-m-d' instr_card.id %}" hx-target="#tt-instruction-panel" hx-swap="outerHTML">
           {% csrf_token %}

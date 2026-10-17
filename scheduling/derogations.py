@@ -1,4 +1,4 @@
-"""The seven quick actions (specs 9.7): catalogue, scope wording, solver mapping.
+"""The eight quick actions (specs 9.7): catalogue, scope wording, solver mapping.
 
 A derogation lives in `SolveJob.params["quick_action"]` of the one regeneration
 it was requested for and nowhere else.
@@ -10,6 +10,7 @@ from .solver.context import (
     AUTHORIZE_FRIDAY_LATE_START,
     AUTHORIZE_SHORT_PRATICA_BLOCK,
     AUTHORIZE_SINGLE_CLASSE_DAY,
+    EXCLUDE_DAY,
     FORCE_3_HOURS_THEORY,
     OVERRIDE_AVAILABILITY,
     Derogation,
@@ -48,7 +49,11 @@ QUICK_ACTIONS = {
         "Autorizza un blocco di pratica breve",
         (CLASSE, DOCENTE, GIORNO),
     ),
+    EXCLUDE_DAY: ("Escludi il docente da un giorno", (DOCENTE, GIORNO)),
 }
+
+# Actions that need a teacher and a day (no "all teachers", no "whole week").
+NEEDS_TEACHER_AND_DAY = frozenset({EXCLUDE_DAY})
 
 DAY_WORDS = {
     "LUNEDI": "lunedì",
