@@ -1,5 +1,6 @@
 import re
 
+from django.conf import settings
 from django.contrib import messages
 from django.db.models import Q
 from django.http import Http404, HttpResponse
@@ -10,12 +11,13 @@ from projects.permissions import can_manage_feeds, permission_required
 from scheduling.models import Slot, TimetableState
 from school.selectors import current_school
 
-from . import services
+from . import services, throttle
 from .ics import build_calendar
 from .models import FeedToken
 
 TOKEN_FORMAT = re.compile(r"[A-Za-z0-9_-]{43}")  # token_urlsafe(32)
 NOT_FOUND = "Feed non trovato."
+LIMITED = "Troppi tentativi. Riprova piu tardi."
 
 
 def _not_found():
@@ -37,8 +39,16 @@ def _lookup(token):
 @require_GET
 def feed_ics(request, token):
     """The public feed: the token in the URL is the credential."""
+    address = request.META.get("REMOTE_ADDR", "")
+    if throttle.is_limited(address):
+        response = HttpResponse(
+            LIMITED, status=429, content_type="text/plain; charset=utf-8"
+        )
+        response["Retry-After"] = str(settings.FEED_LOOKUP_WINDOW_SECONDS)
+        return response
     feed = _lookup(token)
     if feed is None:
+        throttle.record_failure(address)
         return _not_found()
     slots = Slot.objects.filter(
         timetable__state=TimetableState.APPROVATO

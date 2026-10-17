@@ -170,3 +170,38 @@ def test_trusted_proxy_count_documented():
 
 def test_trusted_proxy_count_default_in_tests(settings):
     assert settings.TRUSTED_PROXY_COUNT == 0
+
+
+@pytest.mark.parametrize(
+    ("name", "default"),
+    [("FEED_LOOKUP_MAX_FAILURES", 30), ("FEED_LOOKUP_WINDOW_SECONDS", 300)],
+)
+def test_feed_lookup_settings(name, default):
+    assert get_positive_int({}, name, default) == default
+    assert get_positive_int({name: " "}, name, default) == default
+    assert get_positive_int({name: "7"}, name, default) == 7
+    for bad in ("0", "-1", "abc"):
+        with pytest.raises(ImproperlyConfigured, match=name):
+            get_positive_int({name: bad}, name, default)
+
+
+def test_feed_lookup_settings_wired_and_documented():
+    from config import env
+
+    assert env.DEFAULT_FEED_LOOKUP_MAX_FAILURES == 30
+    assert env.DEFAULT_FEED_LOOKUP_WINDOW_SECONDS == 300
+    result = _check({"FEED_LOOKUP_MAX_FAILURES": "0"})
+    assert result.returncode != 0
+    assert "FEED_LOOKUP_MAX_FAILURES" in result.stderr
+    root = Path(__file__).resolve().parent.parent
+    for rel in (".env.example", "deploy/env.production.example"):
+        text = (root / rel).read_text()
+        for name, default in (
+            ("FEED_LOOKUP_MAX_FAILURES", 30),
+            ("FEED_LOOKUP_WINDOW_SECONDS", 300),
+        ):
+            assert (
+                f"# Optional, default {default}."
+                in text.split(f"\n{name}=")[0][-400:].rsplit("\n\n", 1)[-1]
+            )
+            assert f"\n{name}={default}\n" in text

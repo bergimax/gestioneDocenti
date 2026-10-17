@@ -45,3 +45,16 @@ class FeedToken(models.Model):
 
     def __str__(self):
         return f"feed {self.teacher_id or self.school_class_id}"
+
+
+class FeedLookupFailure(models.Model):
+    """One failed feed lookup, kept in Postgres for the rate limit.
+
+    Holds only the client address and the time: never the token.
+    """
+
+    client_address = models.CharField(max_length=64, db_index=True)
+    attempted_at = models.DateTimeField(db_index=True)
+
+    def __str__(self):
+        return f"{self.client_address} {self.attempted_at}"
