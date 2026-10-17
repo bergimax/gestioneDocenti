@@ -231,6 +231,9 @@ class SolveResult:
     explanations: list[str] = field(default_factory=list, compare=False)
     suggested_deroghe: list[dict] = field(default_factory=list, compare=False)
     explanation_unavailable: bool = field(default=False, compare=False)
+    # Wall time of the last model: building it, then searching it (seconds).
+    build_seconds: float = field(default=0.0, compare=False)
+    search_seconds: float = field(default=0.0, compare=False)
 
     @property
     def slots(self) -> list[Lesson]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import replace
@@ -53,6 +54,7 @@ from .weights import quality, resolve_weights, scaled_weight
 RIGID = "rigid"
 BEST_EFFORT = "best_effort"
 FORCED = "forced"
+LARGE_WEEK_ASSIGNMENTS = 100  # from here on the search is tuned for size
 NO_COMPLETE_MESSAGE = (
     "Nessun orario completo possibile: alcune ore restano senza docente."
 )
@@ -169,6 +171,7 @@ def solve(
 
 
 def _solve_mode(ctx, soft_weights, mode, pinned, probe=None) -> SolveResult:
+    started = time.perf_counter()
     relaxed = mode != RIGID
     classes = (
         {a.class_id for a in ctx.assignments}
@@ -223,7 +226,7 @@ def _solve_mode(ctx, soft_weights, mode, pinned, probe=None) -> SolveResult:
     unfilled = []  # (var, class_id, day, hour or None): best-effort/forced holes
     pick_by_class_day = {}
 
-    for class_id in classes:
+    for class_id in sorted(classes, key=str):
         group = by_class[class_id]
         min_hour = max(
             0,
@@ -388,13 +391,33 @@ def _solve_mode(ctx, soft_weights, mode, pinned, probe=None) -> SolveResult:
             + _sum(changes)
         )
 
+    built = time.perf_counter()
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = ctx.timeout_seconds
     solver.parameters.num_workers = 1
     solver.parameters.random_seed = 0
+    if len(ctx.assignments) >= LARGE_WEEK_ASSIGNMENTS:
+        # Measured on the 40-class benchmark (issue 81): the model builds in
+        # well under a second and the search is the cost. With one worker the
+        # defaults (presolve, probing, plain branch and bound) never prove the
+        # optimum of a school-sized week; without them and with the objective
+        # lower-bound search the same week reaches OPTIMAL in seconds. Small
+        # weeks keep the defaults. Performance only: the model is unchanged.
+        solver.parameters.cp_model_presolve = False
+        solver.parameters.cp_model_probing_level = 0
+        solver.parameters.use_objective_lb_search = True
     status = _STATUS.get(solver.solve(m), SolveStatus.UNKNOWN)
+    build_seconds = built - started
+    search_seconds = time.perf_counter() - built
     if status not in (SolveStatus.OPTIMAL, SolveStatus.FEASIBLE):
-        return SolveResult(status, [], quality_score=0.0, quality_level="C")
+        return SolveResult(
+            status,
+            [],
+            quality_score=0.0,
+            quality_level="C",
+            build_seconds=build_seconds,
+            search_seconds=search_seconds,
+        )
     lessons = [
         Lesson(a.id, d, h)
         for a in ctx.assignments
@@ -442,6 +465,8 @@ def _solve_mode(ctx, soft_weights, mode, pinned, probe=None) -> SolveResult:
         score,
         level,
         conflict_items=build_conflict_items(violations, conflicts, ctx, lessons),
+        build_seconds=build_seconds,
+        search_seconds=search_seconds,
     )
 
 
@@ -780,7 +805,7 @@ def _add_quasi_hard(
         h9_active.add((class_id, FRIDAY))
 
     # H10: a PRATICA subject forms one block of >= min(3, capacity) hours, or none.
-    for class_id in classes:
+    for class_id in sorted(classes, key=str):
         subjects = defaultdict(list)
         for a in by_class[class_id]:
             if a.subject_type == PRATICA:
@@ -831,7 +856,7 @@ def _add_quasi_hard(
     for teacher_id, group in by_teacher.items():
         if len({a.class_id for a in group}) < 2:
             continue
-        for class_id in {a.class_id for a in group}:
+        for class_id in sorted({a.class_id for a in group}, key=str):
             mine = [a for a in group if a.class_id == class_id]
             for d in range(DAYS):
                 if _capacity(ctx, class_id, d) <= MAX_HOURS_PER_CLASSE_DAY:

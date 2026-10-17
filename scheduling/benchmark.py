@@ -165,6 +165,8 @@ def run_benchmark(
         "assignments": len(ctx.assignments),
         "pairings": len(ctx.pairings),
         "solve_seconds": round(elapsed, 3),
+        "build_seconds": round(result.build_seconds, 3),
+        "search_seconds": round(result.search_seconds, 3),
         "status": str(result.status),
         "quality_score": result.quality_score,
         "quality_level": result.quality_level,

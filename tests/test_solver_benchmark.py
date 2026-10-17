@@ -9,7 +9,8 @@ from scheduling.benchmark import generate_context, is_success, run_benchmark
 
 # Loose on purpose: CI is a shared machine, so these only catch a real blow-up.
 REGRESSION_MAX_SECONDS = 30  # 20 classes, solver time
-FULL_MAX_WALL_SECONDS = 75  # 40 classes, wall time incl. model build (60 s timeout)
+FULL_MAX_WALL_SECONDS = 65  # 40 classes, wall time incl. model build (60 s + 5 s)
+THIRTY_MAX_SECONDS = 30  # 30 classes, solver time
 
 KEYS = {
     "classes",
@@ -17,6 +18,8 @@ KEYS = {
     "assignments",
     "pairings",
     "solve_seconds",
+    "build_seconds",
+    "search_seconds",
     "status",
     "quality_score",
     "quality_level",
@@ -45,6 +48,12 @@ def test_small_instance_reports_all_keys():
     assert set(report) == KEYS
     assert report["classes"] == 4
     assert is_success(report), report["status"]
+
+
+def test_report_splits_build_time_from_search_time():
+    report = run_benchmark(n_classes=4)
+    assert report["build_seconds"] > 0 and report["search_seconds"] > 0
+    assert report["build_seconds"] + report["search_seconds"] <= report["solve_seconds"]
 
 
 def test_command_json_prints_only_one_object():
@@ -90,4 +99,13 @@ def test_production_size_within_wall_time():
     assert is_success(report) and wall < FULL_MAX_WALL_SECONDS, (
         f"status {report['status']}, wall {wall:.1f} s "
         f"(limit {FULL_MAX_WALL_SECONDS} s)"
+    )
+
+
+@pytest.mark.benchmark_full
+def test_thirty_classes_under_thirty_seconds():
+    report = run_benchmark(n_classes=30)
+    assert is_success(report) and report["solve_seconds"] < THIRTY_MAX_SECONDS, (
+        f"status {report['status']}, solved in {report['solve_seconds']} s "
+        f"(limit {THIRTY_MAX_SECONDS} s)"
     )

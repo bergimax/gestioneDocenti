@@ -12,6 +12,7 @@ ALLOWED = {
     "dataclasses",
     "enum",
     "math",
+    "time",
     "uuid",
     "__future__",
 }
