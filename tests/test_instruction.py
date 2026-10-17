@@ -228,7 +228,8 @@ def test_request_carries_only_the_allowed_data(w):
     assert {t["name"] for t in ctx["teachers"]} == {"ROSSI MARIO", "BIANCHI ANNA"}
     assert all(set(t) == {"id", "name"} for t in ctx["teachers"])
     assert all(set(c) == {"id", "name"} for c in ctx["classes"])
-    assert {a["type"] for a in ctx["actions"]} == {*QUICK_ACTIONS, "exclude_day"}
+    assert [a["type"] for a in ctx["actions"]] == [*QUICK_ACTIONS, "move_lesson"]
+    assert len(ctx["actions"]) == 9 and len(QUICK_ACTIONS) == 8
     assert all(set(a) == {"type", "label", "params"} for a in ctx["actions"])
     assert ctx["days"] == ["LUNEDI", "MARTEDI", "MERCOLEDI", "GIOVEDI", "VENERDI"]
     everything = json.dumps(call["messages"]).lower()

@@ -23,17 +23,26 @@
     <div class="tt-instruction-card" role="group" aria-label="Istruzione capita">
       <h2>Ho capito questo</h2>
       <dl>
+        {% if instr_card.move %}
+        <dt>Azione</dt><dd>{{ instr_card.label }}</dd>
+        {% if instr_card.class %}<dt>Classe</dt><dd>{{ instr_card.class }}</dd>{% endif %}
+        {% if instr_card.teacher %}<dt>Docente</dt><dd>{{ instr_card.teacher }}</dd>{% endif %}
+        {% if instr_card.subject %}<dt>Materia</dt><dd>{{ instr_card.subject }}</dd>{% endif %}
+        <dt>Da</dt><dd>{{ instr_card.from_day }}, ora {{ instr_card.from_hour }}</dd>
+        <dt>A</dt><dd>{{ instr_card.to_day }}, ora {{ instr_card.to_hour }}</dd>
+        {% else %}
         <dt>Deroga</dt><dd>{{ instr_card.label }}</dd>
         {% if instr_card.teacher %}<dt>Docente</dt><dd>{{ instr_card.teacher }}</dd>{% endif %}
         {% if instr_card.class %}<dt>Classe</dt><dd>{{ instr_card.class }}</dd>{% endif %}
         {% if instr_card.day %}<dt>Giorno</dt><dd>{{ instr_card.day }}</dd>{% endif %}
         {% if instr_card.max_hours %}<dt>Massimo di ore</dt><dd>{{ instr_card.max_hours }}</dd>{% endif %}
+        {% endif %}
         <dt>Settimana</dt><dd>dal {{ instr_card.week|date:"d/m/Y" }}</dd>
       </dl>
       <div class="tt-diff-actions">
         <form method="post" action="{% url 'instruction_confirm' week.start|date:'Y-m-d' instr_card.id %}" hx-post="{% url 'instruction_confirm' week.start|date:'Y-m-d' instr_card.id %}" hx-target="#tt-instruction-panel" hx-swap="outerHTML">
           {% csrf_token %}
-          <button type="submit">Conferma e rigenera</button>
+          <button type="submit">{% if instr_card.move %}Conferma lo spostamento{% else %}Conferma e rigenera{% endif %}</button>
         </form>
         <form method="post" action="{% url 'instruction_discard' week.start|date:'Y-m-d' instr_card.id %}" hx-post="{% url 'instruction_discard' week.start|date:'Y-m-d' instr_card.id %}" hx-target="#tt-instruction-panel" hx-swap="outerHTML">
           {% csrf_token %}

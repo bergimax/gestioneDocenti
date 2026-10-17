@@ -62,7 +62,10 @@ def instruction_confirm(request, week, draft_id):
         )
     except instruction.InstructionRefused as exc:
         return _panel(request, school, week, status=409, error=str(exc))
-    message = MSG_APPLIED.format(label=label, scope=scope)
+    if label == instruction.MOVE_LABEL:
+        message = instruction.MSG_MOVED.format(scope=scope)
+    else:
+        message = MSG_APPLIED.format(label=label, scope=scope)
     return _response(request, school, week, message=message)
 
 

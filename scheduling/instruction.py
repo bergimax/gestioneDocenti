@@ -9,10 +9,11 @@ enqueues the one regeneration and records the audit entry.
 import datetime
 
 from django.conf import settings
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 
 from ai.instruction import interpret_instruction
-from projects.permissions import can_use_ai_instructions
+from projects.permissions import can_move_lesson, can_use_ai_instructions
 from school.models import Class, Draft, Teacher, TeacherType
 
 from .derogations import (
@@ -22,7 +23,8 @@ from .derogations import (
     scope_words,
 )
 from .jobs import GenerationRefused
-from .models import Day, Timetable, TimetableState
+from .models import Day, Slot, Timetable, TimetableState
+from .moves import MSG_STALE, MoveRejected, move_lesson
 from .quick_actions import ERROR_NO_TIMETABLE, apply_quick_action
 from .tasks import ERROR_APPROVED
 
@@ -34,6 +36,22 @@ MSG_GONE = (
 )
 MSG_REDUCE_ASSUNTO = (
     "Questa deroga vale solo per i docenti a contratto: il docente indicato non lo è."
+)
+
+MSG_SAME_CELL = (
+    "La lezione è già in quel giorno e a quell'ora: indica un'altra destinazione."
+)
+MSG_SLOT_GONE = "La lezione non esiste più nell'orario: scrivi di nuovo l'istruzione."
+MSG_MOVED = "Lezione spostata: {scope}."
+MOVE_LESSON = "move_lesson"
+MOVE_LABEL = "Sposta una lezione"
+MOVE_PARAMS = (
+    "classe",
+    "docente",
+    "giorno",
+    "ora",
+    "giorno_destinazione",
+    "ora_destinazione",
 )
 
 LABELS = {key: value[0] for key, value in QUICK_ACTIONS.items()}
@@ -74,7 +92,8 @@ def build_context(school, week_start):
         "actions": [
             {"type": key, "label": LABELS[key], "params": list(PARAMS[key])}
             for key in LABELS
-        ],
+        ]
+        + [{"type": MOVE_LESSON, "label": MOVE_LABEL, "params": list(MOVE_PARAMS)}],
         "days": list(Day.values),
     }
 
@@ -109,6 +128,8 @@ def create_instruction(school, week_start, user, text):
     result = interpret_instruction(text, build_context(school, week_start))
     if result["status"] == "clarify":
         return result["question"]
+    if result["action_type"] == MOVE_LESSON:
+        return _create_move(school, week_start, user, text, result)
     teacher = None
     if result["teacher_id"] is not None:
         teacher = Teacher.objects.filter(school=school, pk=result["teacher_id"]).first()
@@ -121,6 +142,10 @@ def create_instruction(school, week_start, user, text):
         "max_hours": result["max_hours"],
         "week_start": week_start.isoformat(),
     }
+    return _store(user, text, payload)
+
+
+def _store(user, text, payload):
     with transaction.atomic():
         Draft.objects.filter(
             kind=Draft.Kind.INSTRUCTION,
@@ -136,10 +161,53 @@ def create_instruction(school, week_start, user, text):
         )
 
 
+def _create_move(school, week_start, user, text, result):
+    """Find the lesson the model described (by code); Draft or a question."""
+    timetable = _timetable(school, week_start)
+    if (result["day"], result["hour"]) == (result["to_day"], result["to_hour"]):
+        raise InstructionRefused(MSG_SAME_CELL)
+    slots = Slot.objects.filter(
+        timetable=timetable,
+        school_class_id=result["class_id"],
+        day=result["day"],
+        start_hour=result["hour"],
+    )
+    if result["teacher_id"] is not None:
+        slots = slots.filter(teacher_id=result["teacher_id"])
+    found = list(slots.select_related("school_class")[:2])
+    klass = Class.objects.filter(school=school, pk=result["class_id"]).first()
+    name = klass.name if klass else ""
+    if not found:
+        return (
+            f"Non c'è nessuna lezione della {name} di {DAY_WORDS[result['day']]} "
+            f"all'ora {result['hour']}: controlla giorno e ora."
+        )
+    if len(found) > 1:
+        return (
+            f"La {name} ha più lezioni di {DAY_WORDS[result['day']]} all'ora "
+            f"{result['hour']}: di quale docente è la lezione da spostare?"
+        )
+    payload = {
+        "action_type": MOVE_LESSON,
+        "class_id": result["class_id"],
+        "teacher_id": result["teacher_id"],
+        "day": result["day"],
+        "hour": result["hour"],
+        "to_day": result["to_day"],
+        "to_hour": result["to_hour"],
+        "slot_id": found[0].pk,
+        "week_start": week_start.isoformat(),
+        "timetable_version": timetable.version,
+    }
+    return _store(user, text, payload)
+
+
 def card(school, draft):
     """The confirmation card, built from the validated fields only."""
     payload = draft.payload
     action = payload["action_type"]
+    if action == MOVE_LESSON:
+        return _move_card(school, draft)
     teacher = Teacher.objects.filter(school=school, pk=payload.get("teacher_id"))
     klass = Class.objects.filter(school=school, pk=payload.get("class_id"))
     teacher, klass = teacher.first(), klass.first()
@@ -153,6 +221,28 @@ def card(school, draft):
         "day": DAY_WORDS[day] if day else None,
         "max_hours": payload.get("max_hours"),
         "week": week,
+    }
+
+
+def _move_card(school, draft):
+    payload = draft.payload
+    slot = (
+        Slot.objects.filter(pk=payload["slot_id"], timetable__school=school)
+        .select_related("school_class", "teacher", "subject")
+        .first()
+    )
+    return {
+        "id": draft.pk,
+        "move": True,
+        "label": MOVE_LABEL,
+        "class": slot.school_class.name if slot else None,
+        "teacher": slot.teacher.name if slot else None,
+        "subject": slot.subject.name if slot else None,
+        "from_day": DAY_WORDS[payload["day"]],
+        "from_hour": payload["hour"],
+        "to_day": DAY_WORDS[payload["to_day"]],
+        "to_hour": payload["to_hour"],
+        "week": datetime.date.fromisoformat(payload["week_start"]),
     }
 
 
@@ -179,7 +269,10 @@ def confirm_instruction(school, week_start, user, draft_id):
     """
     with transaction.atomic():
         draft = _pending_draft(week_start, user, draft_id)
-        check_draft_week(_timetable(school, week_start))
+        timetable = _timetable(school, week_start)
+        check_draft_week(timetable)
+        if draft.payload.get("action_type") == MOVE_LESSON:
+            return _confirm_move(school, user, draft, timetable)
         params = _params(draft.payload)
         if params["action_type"] not in LABELS:
             raise InstructionRefused(MSG_NOT_FOUND)
@@ -205,6 +298,40 @@ def confirm_instruction(school, week_start, user, draft_id):
         params, klass.name if klass else None, teacher.name if teacher else None
     )
     return LABELS[params["action_type"]], scope
+
+
+def _confirm_move(school, user, draft, timetable):
+    """Re-validate the stored move and apply it; return (label, scope)."""
+    if not can_move_lesson(user, timetable):
+        raise PermissionDenied
+    payload = draft.payload
+    if timetable.version != payload["timetable_version"]:
+        raise InstructionRefused(MSG_STALE)
+    slot = (
+        Slot.objects.filter(pk=payload["slot_id"], timetable=timetable)
+        .select_related("school_class")
+        .first()
+    )
+    if slot is None:
+        raise InstructionRefused(MSG_SLOT_GONE)
+    try:
+        move_lesson(
+            timetable.pk,
+            slot.pk,
+            payload["to_day"],
+            payload["to_hour"],
+            payload["timetable_version"],
+            user,
+        )
+    except MoveRejected as exc:
+        raise InstructionRefused(exc.message) from None
+    draft.status = Draft.Status.CONFIRMED
+    draft.save(update_fields=["status"])
+    scope = (
+        f"{slot.school_class.name}, da {DAY_WORDS[payload['day']]} ora "
+        f"{payload['hour']} a {DAY_WORDS[payload['to_day']]} ora {payload['to_hour']}"
+    )
+    return MOVE_LABEL, scope
 
 
 def discard_instruction(school, week_start, user, draft_id):
