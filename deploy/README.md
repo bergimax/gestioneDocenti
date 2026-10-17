@@ -143,6 +143,10 @@ Not verified without a real server: that the real bucket receives the weekly
 copy, the schedule firing at the real hour and surviving a reboot, behaviour
 and disk use on the 1 GB VM.
 
+## Cut-over
+
+The one-off move from the old system is in `deploy/CUTOVER.md` (checked with `deploy/cutover-check.sh`).
+
 ## Data
 
 Postgres data lives in the `pgdata` volume. `docker compose down` keeps it;
