@@ -143,6 +143,22 @@ def test_overrides_count_as_penalties_with_their_relax_weight():
     assert res.quality_score < 100
 
 
+def test_override_terms_are_part_of_the_score_denominator():
+    # Same Friday H9 case: the H9 override term plus the soft terms make 9
+    # penalty terms; the H9 and one S2 are violated, so 7 of 9 are satisfied.
+    ctx = make(
+        [A(1, "T", "A")],
+        {"A": day_cap(FRI, 3)},
+        teacher_types={"T": CONTRATTO},
+        availability={"T": frozenset((FRI, h) for h in range(1, 6))},
+    )
+    res = solve(ctx)
+    assert sorted(v.kind for v in res.violations) == ["H9", TEORIA_CONSECUTIVE]
+    assert res.n_penalties == 9
+    assert res.quality_score == pytest.approx(700 / 9)
+    assert res.quality_score == pytest.approx(77.7777777777778)
+
+
 def test_n_soft_conflicts_equals_the_returned_violated_penalties():
     ctx = make(
         [A(1, "T", "A"), A(2, "T", "B")],

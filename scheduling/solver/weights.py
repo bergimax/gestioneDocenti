@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 
 from .context import (
     CONTRATTO,
@@ -15,10 +16,16 @@ from .context import (
 )
 
 
-def resolve_weights(weights: dict | None) -> dict[str, float]:
+def resolve_weights(weights: Mapping | None) -> dict[str, float]:
     """Merge a per-run weight map over the defaults, rejecting bad input."""
+    if weights is None:
+        weights = {}
+    elif not isinstance(weights, Mapping):
+        raise ValueError(
+            f"soft weights must be a mapping, got {type(weights).__name__}"
+        )
     resolved = dict(DEFAULT_SOFT_WEIGHTS)
-    for key, value in (weights or {}).items():
+    for key, value in weights.items():
         if key not in DEFAULT_SOFT_WEIGHTS:
             raise ValueError(
                 f"unknown soft weight {key!r}; expected one of "

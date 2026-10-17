@@ -28,6 +28,7 @@ from scheduling.solver import (
     Pairing,
     ScheduleContext,
     SolveStatus,
+    resolve_weights,
     scaled_weight,
     scarcity_multiplier,
     solve,
@@ -360,6 +361,22 @@ def test_s4_contractor_gap_unavoidable_is_penalised_once():
     assert v.weight == 1075  # 750 * (1.5 - 2/30)
 
 
+def test_s4_gap_at_the_last_possible_hour_is_penalised():
+    # Availability at 11:00 and 13:00 only: the 12:00 gap (hour index 4, the
+    # last hour S4 looks at) cannot be avoided.
+    ctx = make(
+        [A(1, "T", "A"), A(2, "T", "B")],
+        {"A": day_cap(MON, 1), "B": day_cap(MON, 1)},
+        types={"T": CONTRATTO},
+        availability={"T": cells(MON, [3, 5])},
+    )
+    res = solved(ctx)
+    assert sorted(h for _, h in hours_of(res, 1) + hours_of(res, 2)) == [3, 5]
+    (v,) = of(res, CONTRACTOR_GAP)
+    assert (v.class_id, v.teacher_id, v.day) == (None, "T", MON)
+    assert v.weight == 1075  # 750 * (1.5 - 2/30)
+
+
 def test_s4_two_gap_hours_are_penalised_twice():
     ctx = make(
         [A(1, "T", "A"), A(2, "T", "B"), A(3, "T", "C")],
@@ -655,6 +672,25 @@ def test_weight_map_rejects_bad_input_before_solving(bad):
     ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 2)})
     with pytest.raises(ValueError, match="soft weight"):
         solve(ctx, bad)
+
+
+@pytest.mark.parametrize(
+    ("bad", "type_name"),
+    [
+        ([], "list"),
+        ([(CLASSE_LATE_START, 1)], "list"),
+        ("", "str"),
+        ("abc", "str"),
+        (0, "int"),
+    ],
+)
+def test_weight_map_must_be_a_mapping(bad, type_name):
+    ctx = make([A(1, "T", "A")], {"A": day_cap(MON, 2)})
+    expected = f"soft weights must be a mapping, got {type_name}"
+    with pytest.raises(ValueError, match=expected):
+        solve(ctx, bad)
+    with pytest.raises(ValueError, match=expected):
+        resolve_weights(bad)
 
 
 def test_weight_ceiling_is_one_thousand():
