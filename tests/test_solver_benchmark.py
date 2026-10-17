@@ -72,6 +72,7 @@ def test_command_exits_1_when_not_solved(monkeypatch):
     assert "INFEASIBLE" in out.getvalue()
 
 
+@pytest.mark.benchmark
 def test_twenty_classes_regression_guard():
     report = run_benchmark(n_classes=20)
     assert is_success(report) and report["solve_seconds"] < REGRESSION_MAX_SECONDS, (

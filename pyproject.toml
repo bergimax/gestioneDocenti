@@ -29,6 +29,7 @@ DJANGO_SETTINGS_MODULE = "config.settings_test"
 testpaths = ["tests"]
 addopts = "-m 'not benchmark_full'"
 markers = [
+    "benchmark: 20-class solver regression guard, runs in the plain suite, skip with -m \"not benchmark\"",
     "benchmark_full: 40-class production-size solver check (about a minute), run with -m benchmark_full",
 ]
 
