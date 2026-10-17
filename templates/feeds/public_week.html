@@ -1,0 +1,42 @@
+{% load static %}<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>{{ class_name }} - {{ school_name }}</title>
+<link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body class="public-page">
+<main class="public-main public-week">
+<h1>{{ school_name }}</h1>
+<h2>{{ class_name }}</h2>
+{% if title %}
+<p>{{ title }}</p>
+<nav class="pw-nav" aria-label="Settimane">
+  {% if previous_week %}<a href="?week={{ previous_week|date:'Y-m-d' }}">Settimana precedente</a>{% endif %}
+  {% if next_week %}<a href="?week={{ next_week|date:'Y-m-d' }}">Settimana successiva</a>{% endif %}
+</nav>
+<div class="tt-scroll">
+<table class="tt-grid">
+  <caption class="visually-hidden">{{ title }}, {{ class_name }}</caption>
+  <thead>
+    <tr><th scope="col">Ora</th>{% for d in days %}<th scope="col">{{ d }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <th scope="row">{{ row.label }}</th>
+      {% for cell in row.cells %}<td class="pw-{{ cell.kind }}">{{ cell.text }}</td>{% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p>Nessuna settimana approvata.</p>
+{% endif %}
+</main>
+</body>
+</html>

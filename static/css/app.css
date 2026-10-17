@@ -242,3 +242,9 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-approval-figures { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; margin: .5rem 0; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; }
 .tt-approval-figures dt { font-size: .85rem; }
 .tt-approval-figures dd { margin: 0; font-weight: 600; font-size: 1.15rem; }
+
+/* public week page of a class (#63) */
+.public-week { max-width: 60rem; }
+.pw-nav { display: flex; justify-content: space-between; gap: 1rem; margin: .5rem 0; }
+.pw-stage { background: #ffff00; font-weight: 700; }
+.pw-empty { background: #d9d9d9; }

@@ -74,6 +74,9 @@ FEED_LOOKUP_MAX_FAILURES = get_positive_int(
 FEED_LOOKUP_WINDOW_SECONDS = get_positive_int(
     os.environ, "FEED_LOOKUP_WINDOW_SECONDS", DEFAULT_FEED_LOOKUP_WINDOW_SECONDS
 )
+PUBLIC_WEEK_PAGE_ENABLED = get_bool(
+    os.environ, "PUBLIC_WEEK_PAGE_ENABLED", default=False
+)
 LOGIN_MAX_FAILURES = get_positive_int(
     os.environ, "LOGIN_MAX_FAILURES", DEFAULT_LOGIN_MAX_FAILURES
 )

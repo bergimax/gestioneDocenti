@@ -7,6 +7,7 @@
       <tr>
         <th scope="col">Nome</th>
         <th scope="col">Indirizzo del feed</th>
+        {% if rows.0.page_url %}<th scope="col">Pagina web</th>{% endif %}
         <th scope="col">Azioni</th>
       </tr>
     </thead>
@@ -15,6 +16,7 @@
       <tr x-data="{ confirming: false, copied: false }">
         <th scope="row">{{ r.name }}</th>
         <td><input type="text" readonly size="60" value="{{ r.url }}" x-ref="url" aria-label="Indirizzo del feed di {{ r.name }}"></td>
+        {% if rows.0.page_url %}<td><input type="text" readonly size="60" value="{{ r.page_url }}" x-ref="page" aria-label="Indirizzo della pagina di {{ r.name }}"><button type="button" @click="navigator.clipboard.writeText($refs.page.value)" aria-label="Copia l'indirizzo della pagina di {{ r.name }}">Copia pagina</button></td>{% endif %}
         <td class="actions">
           <button type="button" @click="navigator.clipboard.writeText($refs.url.value); copied = true" aria-label="Copia l'indirizzo di {{ r.name }}">Copia</button>
           <span x-show="copied" x-cloak role="status">Copiato</span>

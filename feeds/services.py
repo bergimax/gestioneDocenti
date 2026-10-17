@@ -1,3 +1,4 @@
+import datetime
 import secrets
 
 from django.db import transaction
@@ -58,3 +59,17 @@ def regenerate(school, kind, pk, user):
             audit.FEED_REGENERATED, user, None, {"tipo": kind, "nome": name}
         )
         return feed
+
+
+def pick_week(weeks, today):
+    """The week to show: the one containing today, else the nearest later,
+    else the latest earlier. `weeks` are Monday dates; None when empty."""
+    if not weeks:
+        return None
+    for start in sorted(weeks):
+        if start <= today <= start + datetime.timedelta(days=6):
+            return start
+    later = [w for w in weeks if w > today]
+    if later:
+        return min(later)
+    return max(weeks)
