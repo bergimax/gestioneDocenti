@@ -18,7 +18,7 @@ Every board mutation bumps Retrospective.version inside its transaction and retu
 Postgres is the only infrastructure. No Redis, no Celery, no object store, no mail backend. Background jobs are django.tasks with the django-tasks-db backend.
 There is no email anywhere: no verification, no password reset. A forgotten password is reset with manage.py changepassword.
 Recordings are transient. The scratch file is deleted in a finally, whether or not transcription succeeded, and temp_path is nulled.
-ai/ holds no models and no views — functions that take domain objects and return plain dicts, so every OpenAI call is mockable. AI output always lands as DRAFT and is never authoritative until a facilitator confirms it.
+ai/ holds no models and no views — functions that take domain objects and return plain dicts, so every Anthropic call is mockable. AI output always lands as DRAFT and is never authoritative until a facilitator confirms it.
 React is the retro board island only. Every other screen is Django templates with HTMX.
 Configuration comes from the environment. A new setting means a new env var plus an entry in .env.example, never a hardcoded value or a checked-in secret.
 Tests live in tests/, named after what they cover. config/settings_test.py supplies the test environment — production settings stay strict.
