@@ -10,5 +10,6 @@ staticfiles
 frontend/
 tests/
 _docs/
-deploy/
+deploy/*
+!deploy/gunicorn.conf.py
 backups/

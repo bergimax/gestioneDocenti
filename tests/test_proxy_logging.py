@@ -114,3 +114,17 @@ def test_dockerfile_and_compose_use_the_conf():
         assert '"-c", "deploy/gunicorn.conf.py"' in text
         assert "access-logfile" not in text
         assert "accesslog" not in text
+
+
+def test_dockerignore_keeps_the_gunicorn_conf_in_the_image():
+    # The real stack crash-looped with "deploy/gunicorn.conf.py doesn't exist"
+    # when the whole deploy/ directory was ignored (found by the #47 rehearsal).
+    lines = [
+        line.strip()
+        for line in (ROOT / ".dockerignore").read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    assert "deploy/" not in lines
+    assert "deploy" not in lines
+    assert "!deploy/gunicorn.conf.py" in lines
+    assert lines.index("!deploy/gunicorn.conf.py") > lines.index("deploy/*")
