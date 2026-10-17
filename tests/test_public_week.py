@@ -88,6 +88,22 @@ def get(w, token=None, query="", client=None):
     return (client or Client()).get(f"/orario/{token or w.token}/{query}")
 
 
+def scrub(w, text):
+    """The page without the random feed tokens, which can contain any short name."""
+    for token in (
+        w.c1a.feed_token.token,
+        w.c1b.feed_token.token,
+        w.rossi.feed_token.token,
+    ):
+        text = text.replace(token, "")
+    return text
+
+
+def test_scrub_removes_tokens_only(w):
+    token = w.c1a.feed_token.token
+    assert scrub(w, f"/orario/{token}/ 1B") == "/orario// 1B"
+
+
 # ---- settings ----------------------------------------------------------------
 
 
@@ -190,7 +206,8 @@ def test_no_leak(w):
     lesson(w, w.bozza, w.c1a, w.draft, "LUNEDI", 8)
     lesson(w, t, w.c1b, w.art, "GIOVEDI", 8, paired=True, paired_class=w.c1a)
     r = get(w, query="?week=2026-10-19")
-    html = r.content.decode()
+    html = scrub(w, r.content.decode())
+    context = scrub(w, repr(r.context.flatten()))
     for secret in (
         "ROSSI",
         "rossi@example.org",
@@ -200,7 +217,7 @@ def test_no_leak(w):
         "Bozzaparola",
     ):
         assert secret not in html
-        assert secret not in repr(r.context.flatten())
+        assert secret not in context
     rows = {row["label"]: row["cells"] for row in r.context["rows"]}
     assert rows["8-9"][3]["text"] == "Arte"  # paired lesson, subject only
     assert "Arte" in html  # shown for 1A through the pair
@@ -356,7 +373,7 @@ def test_query_count_is_flat(w, django_assert_max_num_queries):
             lesson(w, w.tt[W2], w.c1a, w.art, day, hour)
     with django_assert_max_num_queries(6):
         r = get(w, query="?week=2026-10-19")
-    assert "Bozzaparola" not in r.content.decode()
+    assert "Bozzaparola" not in scrub(w, r.content.decode())
 
 
 def test_token_never_logged(w, caplog):
