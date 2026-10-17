@@ -289,16 +289,26 @@ I giorni di stage di una classe compaiono nelle celle di stage (`stage_cells`, �
 
 ## 8. Monte ore e target settimanale
 
-- Residuo di un'assegnazione: `ore_residue = ore_totali − ore_erogate` (0 se manca la riga `monte_ore_annuale`). `ore_totali`
-  è il monte ore da svolgere dall'inizio del periodo gestito; `ore_erogate` cresce a ogni approvazione.
+- Residuo di un'assegnazione: `ore_residue = ore_totali − ore erogate` (0 se manca la riga `monte_ore_annuale`). Le ore erogate
+  non sono una colonna: sono la somma di `LedgerEntry.hours` dell'assegnazione (`delivered_hours_map`), quindi il residuo può
+  essere negativo. `ore_totali` è il monte ore da svolgere dall'inizio del periodo gestito.
 - **Scalare le ore (decisione admin 2026-10-05):** all'**approvazione** della settimana (`POST /schedule/{w}/approve`)
-  ogni lezione dell'orario aggiunge **1 ora a `ore_erogate`** dell'assegnazione (docente + classe + materia) della lezione,
-  nella stessa transazione che porta lo stato a `APPROVATO`. In una lezione accoppiata ogni classe riceve la lezione, quindi
-  vengono scalate entrambe le assegnazioni. Le ore non svolte (assenze, lezioni saltate) non vengono scalate: restano nel
-  residuo e le settimane successive le recuperano, perché **il target di ogni settimana si basa sul residuo**, non sul totale.
-  L'operazione è idempotente: riapprovare una settimana già approvata non scala di nuovo (`ore_scalate: 0`). Le lezioni
-  senza riga `monte_ore_annuale` non vengono scalate e sono contate in `senza_monte_ore`. Le ore si possono sempre
-  correggere a mano dalla pagina «Assegnazioni» (campo `ore_erogate`). Non esiste (ancora) l'annullamento di un'approvazione.
+  si scrive, nella stessa transazione sulla riga bloccata dell'orario, **una voce `DELIVERED` di 1 ora per ogni lezione** per
+  l'assegnazione (docente + classe + materia) della sua classe e di quella accoppiata (`paired_class_id`): in una lezione
+  accoppiata vengono scalate entrambe le assegnazioni. Poi lo stato passa a `APPROVATO`, si imposta `approved_at`, si
+  incrementa `version` e si scrive `SCHEDULE_APPROVED` nell'audit. Le ore non svolte (assenze, lezioni saltate) non vengono
+  scalate: restano nel residuo e le settimane successive le recuperano, perché **il target di ogni settimana si basa sul
+  residuo**, non sul totale. L'operazione è idempotente: riapprovare una settimana già approvata non scrive nulla
+  (`ore_scalate: 0`). Le lezioni senza assegnazione corrispondente non scrivono nulla e sono contate in `senza_monte_ore`.
+- **Annullare un'approvazione** (`POST /orario/{w}/annulla-approvazione/`, solo ADMIN): richiede un motivo (tolti gli spazi,
+  al massimo 300 caratteri) e una settimana `APPROVATO` (altrimenti 409). Nella stessa transazione, per ogni assegnazione
+  si scrive una voce `REVERSAL` pari a meno il netto di `DELIVERED` + `REVERSAL` di quell'orario (i netti zero sono saltati),
+  con motivo e utente; la settimana torna `BOZZA`, `approved_at` è azzerato, `version` incrementata e si scrive
+  `APPROVAL_UNDONE` nell'audit. Le voci non si modificano né si cancellano e le voci `ADJUSTMENT` restano intatte. Dopo
+  l'annullamento la settimana si può modificare, rigenerare e riapprovare.
+- **Correzione manuale** (solo ADMIN): la pagina «Assegnazioni» ha un modulo che prende il nuovo totale di ore erogate e un
+  motivo, e scrive una voce `ADJUSTMENT` con la differenza (motivo e utente). Rifiuta un totale negativo; se il totale non
+  cambia non scrive nulla; l'audit riceve `HOURS_ADJUSTED`. Le ore erogate non si modificano direttamente.
 - **Target settimanale** per assegnazione: `settimane_rimaste = max(1, (data_fine_anno − week_start).days // 7)`,
   `ore_target = max(1, ore_residue // settimane_rimaste)`. Nessun target se `ore_residue ≤ 0` o se la classe non ha ore
   di lezione in tutta la settimana (es. tutta la settimana in stage). Deroga `reduce_contract_hours` (solo contrattisti):
@@ -573,7 +583,7 @@ disponibilità; (5) le ore dell'assegnazione sono vicine al target e comunque no
   l'amministratore o la segreteria. L'eredità dalla settimana precedente esiste già in lettura (§6).
 - **Sostituzioni in tempo reale per malattia**: non implementate.
 - **Memoria permanente delle preferenze** (`preferenze_ai_memory`): tabella presente ma non usata dal solver.
-- **Annullamento di un'approvazione**: non esiste; per correggere ore scalate per errore si modifica `ore_erogate` dalla pagina «Assegnazioni».
+- **Annullamento di un'approvazione**: vale per l'intera settimana; non esiste un annullamento parziale (per singole lezioni). Per correggere singole assegnazioni si usa la correzione manuale (§8).
 - **Nomi docente**: il cognome nel tabellone è la prima parola di «COGNOME NOME»; i cognomi composti vengono troncati.
 - **Cache del setup** in memoria del processo (si perde al riavvio).
 - **Template PDF del calendario**: il parser dipende da coordinate fisse (§5.2).
