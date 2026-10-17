@@ -208,7 +208,10 @@ def test_happy_path_replaces_everything(admin, old):
     # append-only like the audit log: kept, only the timetable link is cleared
     assert TimetableFeedback.objects.get().note == "ok"
     assert list(User.objects.values_list("pk", flat=True)) == users
-    assert list(AuditLog.objects.values("pk", "action", "details", "user_id")) == audit
+    # every earlier row is kept as it was; the replace adds its own SETUP_SAVED
+    kept = AuditLog.objects.exclude(action="SETUP_SAVED")
+    assert list(kept.values("pk", "action", "details", "user_id")) == audit
+    assert AuditLog.objects.filter(action="SETUP_SAVED").count() == 1
     assert (
         list(SoftWeightAdjustment.objects.values("pk", "kind", "new_weight")) == weights
     )

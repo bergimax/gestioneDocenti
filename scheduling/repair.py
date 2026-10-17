@@ -330,7 +330,12 @@ def dismiss_repair(job_id, user):
         job = _finished_job(job_id, lock=True)
         if job.result.get("applied"):
             raise RepairRefused(MSG_ALREADY_APPLIED)
+        was_dismissed = job.result.get("dismissed")
         _updated_result(job, dismissed=True)
+        if not was_dismissed:
+            audit.record_audit(
+                audit.REPAIR_DISMISSED, user, job.week_start, {"job": job.pk}
+            )
     return job
 
 

@@ -1090,10 +1090,11 @@ def test_confirm_writes_one_audit_entry_and_a_refusal_none(admin, rw):
     assert AuditLog.objects.count() == before + 1
 
 
-def test_dismiss_writes_no_audit_entry(admin, rw):
+def test_dismiss_writes_one_repair_dismissed_entry(admin, rw):
     from scheduling.models import AuditLog
 
     job = start(admin, absent(rw))
     before = AuditLog.objects.count()
     admin.post(dismiss_url(job))
-    assert AuditLog.objects.count() == before
+    assert AuditLog.objects.count() == before + 1
+    assert AuditLog.objects.first().action == "REPAIR_DISMISSED"

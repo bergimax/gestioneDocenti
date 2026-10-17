@@ -165,6 +165,7 @@ def setup_save(request):
             data["year_start"],
             data["year_end"],
             data.get("confirm_name"),
+            user=request.user,
         )
     except service.SetupError as exc:
         return _respond(request, _error_notices(exc), form=form, status=422)

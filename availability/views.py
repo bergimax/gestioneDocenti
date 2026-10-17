@@ -354,7 +354,7 @@ def link_list(request):
 def link_revoke(request, link_id):
     school = current_school()
     link = AvailabilityLink.objects.filter(pk=link_id, teacher__school=school).first()
-    if link is not None and links.revoke_link(link.pk):
+    if link is not None and links.revoke_link(link.pk, request.user):
         messages.success(request, "Link revocato.")
     return redirect("availability_links")
 

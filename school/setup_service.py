@@ -21,6 +21,7 @@ from ai.calendar_pdf import AiError, read_calendar_pdf
 from availability.models import Availability, AvailabilityLink
 from feeds.models import FeedToken
 from ledger.models import LedgerEntry
+from scheduling.audit import SETUP_SAVED, record_audit
 from scheduling.models import SolveJob, Timetable, TimetableState
 
 from .importers import (
@@ -844,7 +845,7 @@ def _create_pairings(school, rows, classes, subjects):
     return objs
 
 
-def save_setup(name, year, start, end, confirm_name=None):
+def save_setup(name, year, start, end, confirm_name=None, user=None):
     """Create everything from the parked uploads in one transaction.
 
     With a school present this is the replace: `confirm_name` must equal the
@@ -892,6 +893,23 @@ def save_setup(name, year, start, end, confirm_name=None):
                 kind=Draft.Kind.CALENDAR_ROWS, status=Draft.Status.DRAFT
             ).update(status=Draft.Status.CONFIRMED)
         ParkedUpload.objects.all().delete()
+        record_audit(
+            SETUP_SAVED,
+            user,
+            None,
+            {
+                "replaced": bool(existing),
+                "created": {
+                    "classes": len(classes),
+                    "teachers": len(teachers),
+                    "subjects": len(subjects),
+                    "calendar": len(calendar),
+                    "assignments": len(assignments),
+                    "pairings": len(pairings),
+                },
+                "deleted": replaced,
+            },
+        )
     result = {
         "Classi": len(classes),
         "Docenti": len(teachers),

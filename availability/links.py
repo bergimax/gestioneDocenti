@@ -14,6 +14,12 @@ from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from scheduling.audit import (
+    AVAILABILITY_LINK_CREATED,
+    AVAILABILITY_LINK_REVOKED,
+    record_audit,
+)
+
 from . import grid as grid_logic
 from . import services
 from .models import AvailabilityLink, LinkLookupFailure
@@ -60,7 +66,7 @@ def create_link(teacher, week_start, user):
     if services.week_is_approved(teacher.school, week_start):
         raise LinkError("Settimana gia approvata: non si possono creare link.")
     current = now()
-    AvailabilityLink.objects.filter(
+    revoked = AvailabilityLink.objects.filter(
         teacher=teacher, week_start=week_start, revoked_at__isnull=True
     ).update(revoked_at=current)
     token = secrets.token_urlsafe(32)
@@ -71,6 +77,12 @@ def create_link(teacher, week_start, user):
         expires_at=current
         + datetime.timedelta(hours=settings.AVAILABILITY_LINK_TTL_HOURS),
         created_by=user if getattr(user, "is_authenticated", False) else None,
+    )
+    record_audit(
+        AVAILABILITY_LINK_CREATED,
+        user,
+        week_start,
+        {"link": link.pk, "teacher": teacher.pk, "revoked": revoked},
     )
     return link, token
 
@@ -105,11 +117,26 @@ def link_status(link, at=None):
 
 
 @transaction.atomic
-def revoke_link(link_id):
-    """Set revoked_at on an active link; anything else is a no-op."""
-    return AvailabilityLink.objects.filter(
+def revoke_link(link_id, user=None):
+    """Set revoked_at on an active link; anything else is a no-op.
+
+    Returns the number of rows revoked; only a real revocation is audited.
+    """
+    active = AvailabilityLink.objects.filter(
         pk=link_id, revoked_at__isnull=True, expires_at__gt=now()
-    ).update(revoked_at=now())
+    )
+    link = active.select_related("teacher").first()
+    if link is None:
+        return 0
+    changed = active.update(revoked_at=now())
+    if changed:
+        record_audit(
+            AVAILABILITY_LINK_REVOKED,
+            user,
+            link.week_start,
+            {"link": link.pk, "teacher": link.teacher_id},
+        )
+    return changed
 
 
 def is_rate_limited(client_address):

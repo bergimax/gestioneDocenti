@@ -88,7 +88,15 @@ def test_every_constant_is_a_known_action():
         audit.ALTERNATIVE_CHOSEN,
         audit.FEED_REGENERATED,
         audit.FEEDBACK_ADDED,
+        audit.SOFT_WEIGHTS_APPLIED,
+        audit.SOFT_WEIGHTS_RESET,
+        audit.REPAIR_DISMISSED,
+        audit.AVAILABILITY_LINK_CREATED,
+        audit.AVAILABILITY_LINK_REVOKED,
+        audit.SETUP_SAVED,
     }
+    assert len(names) == 17
+    assert all(audit.ACTION_LABELS[n] for n in names)
     assert names == audit.ACTIONS
 
 

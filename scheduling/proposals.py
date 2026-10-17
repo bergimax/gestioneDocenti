@@ -13,6 +13,7 @@ from django.db import transaction
 
 from school.models import School
 
+from . import audit
 from .models import AlternativePick, SoftWeightAdjustment
 from .solver import (
     CLASSE_LATE_START,
@@ -147,6 +148,15 @@ def _lock(school):
     School.objects.select_for_update().get(pk=school.pk)
 
 
+def _audit(action, user, rows):
+    audit.record_audit(
+        action,
+        user,
+        None,
+        {"kinds": [r.kind for r in rows], "adjustments": [r.pk for r in rows]},
+    )
+
+
 def apply_proposals(school, user, kinds=None):
     """Apply the current proposals of `kinds` (all when None); return the rows.
 
@@ -171,6 +181,8 @@ def apply_proposals(school, user, kinds=None):
                     user=user,
                 )
             )
+        if rows:
+            _audit(audit.SOFT_WEIGHTS_APPLIED, user, rows)
         return rows
 
 
@@ -201,6 +213,8 @@ def reset_weights(school, user, kinds=None):
                     user=user,
                 )
             )
+        if rows:
+            _audit(audit.SOFT_WEIGHTS_RESET, user, rows)
         return rows, skipped
 
 
