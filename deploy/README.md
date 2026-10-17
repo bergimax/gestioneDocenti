@@ -139,11 +139,28 @@ They are `pg_dump --format=custom` files (already compressed), checked with
   14, positive integer) dumps are kept, the one just written always among
   them. Other files in the directory are never touched.
 - Manual backup: `deploy/backup.sh` (exit 0 and a "backup written" line on success).
-- Schedule: `deploy/cron.example` runs the backup nightly (02:30) and the
-  off-site copy weekly (Sunday 03:30), appending to `backups/cron.log`.
-  Install: `mkdir -p backups`, `crontab -e`, paste the two lines with the
+- Schedule: `deploy/cron.example` runs the backup nightly (02:30), the
+  off-site copy weekly (Sunday 03:30), the status check daily (08:00) and the
+  purges daily (04:15), appending to `backups/cron.log`.
+  Install: `mkdir -p backups`, `crontab -e`, paste the lines with the
   right path. Check it ran: `ls -lt backups | head` (newest dump should be from
   last night) and `tail backups/cron.log`.
+
+### Scheduled purges
+
+`deploy/cron.example` runs `deploy/purge.sh` daily at 04:15, after the backup.
+It runs `manage.py run_scheduled_purges` in the `web` container, which runs
+`purge_parked_uploads` and `purge_availability_links` in order (retention from
+`SETUP_UPLOAD_MAX_AGE_HOURS` and `AVAILABILITY_LINK_PURGE_DAYS`). One failing
+purge does not stop the other; the command then exits non-zero.
+
+- By hand: `deploy/purge.sh`. To see what would go without deleting:
+  `deploy/purge.sh --dry-run`.
+- Log: `backups/cron.log`, one `[name] ...` line per purge and a final
+  `purges: N ok, M failed`; failures appear there as `[name] FAILED: ...`.
+- New purge: write a management command that accepts `--dry-run` and no other
+  required argument, then add its name to `SCHEDULED_PURGES` in
+  `school/management/commands/run_scheduled_purges.py`.
 
 ### Is the nightly backup still running?
 

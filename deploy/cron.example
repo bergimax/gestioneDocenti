@@ -1,5 +1,5 @@
-# Cron definition for the backups. Install as the user that runs Docker on the VM:
-#   crontab -e   (paste the three lines below, adjusting the path)
+# Cron definition for the backups and purges. Install as the user that runs Docker on the VM:
+#   crontab -e   (paste the lines below, adjusting the path)
 # Run `mkdir -p /opt/gestione-docenti/backups` first (the log lives there).
 # If you change BACKUP_DIR, change the log path too.
 #
@@ -11,3 +11,8 @@
 # Daily check at 08:00: prints the age of the last backup, and STALE (exit 1) if it
 # is older than BACKUP_STALE_HOURS. Look for it in backups/cron.log.
 0 8 * * * cd /opt/gestione-docenti && deploy/backup-status.sh >> backups/cron.log 2>&1
+#
+# Daily purge at 04:15: deletes stale parked setup uploads and dead availability
+# links (retention from SETUP_UPLOAD_MAX_AGE_HOURS and AVAILABILITY_LINK_PURGE_DAYS).
+# A failure shows up in backups/cron.log.
+15 4 * * * cd /opt/gestione-docenti && deploy/purge.sh >> backups/cron.log 2>&1
