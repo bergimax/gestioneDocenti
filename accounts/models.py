@@ -57,3 +57,14 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+
+
+class LoginFailure(models.Model):
+    """One failed login attempt, kept in Postgres for the login throttle."""
+
+    email = models.CharField(max_length=254, db_index=True)
+    client_address = models.CharField(max_length=64, db_index=True)
+    attempted_at = models.DateTimeField(db_index=True)
+
+    def __str__(self):
+        return f"{self.email} {self.client_address} {self.attempted_at}"
