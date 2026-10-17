@@ -20,6 +20,16 @@ urlpatterns = [
         views.timetable_assignable,
         name="timetable_assignable",
     ),
+    path(
+        "orario/<str:week>/docenti/<int:slot_id>/",
+        views.timetable_teachers,
+        name="timetable_teachers",
+    ),
+    path(
+        "orario/<str:week>/cambia-docente/",
+        views.timetable_change_teacher,
+        name="timetable_change_teacher",
+    ),
     path("orario/<str:week>/assegna/", views.timetable_assign, name="timetable_assign"),
     path(
         "orario/<str:week>/conflitti/approva/",

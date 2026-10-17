@@ -47,12 +47,13 @@ from .models import (
     Day,
     JobKind,
     JobStatus,
+    Slot,
     SolveJob,
     Timetable,
     TimetableFeedback,
     TimetableState,
 )
-from .moves import InvalidMove, MoveRejected, move_lesson
+from .moves import MSG_SLOT, InvalidMove, MoveRejected, move_lesson
 from .quick_actions import ERROR_NO_TIMETABLE, apply_quick_action
 from .repair import ERROR_NO_TIMETABLE as REPAIR_NO_TIMETABLE
 from .repair import (
@@ -71,6 +72,7 @@ from .services import (
     undo_approval,
 )
 from .solver import DEFAULT_SOFT_WEIGHTS
+from .teacher_change import candidates, change_teacher
 
 TPL = "scheduling/"
 NO_TIMETABLE_TOKEN = "-1"
@@ -460,6 +462,54 @@ def timetable_assign(request, week):
             version,
             request.user,
         )
+
+    return _edit_response(request, week, edit)
+
+
+@permission_required(can_move_lesson)
+@require_GET
+def timetable_teachers(request, week, slot_id):
+    """The teachers who may replace the one of a lesson."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    timetable = _timetable(school, week)
+    if timetable is None:
+        raise Http404("Nessun orario per questa settimana.")
+    context = {"week": week, "error": None, "slot": None}
+    status = 200
+    try:
+        if timetable.state == TimetableState.APPROVATO:
+            raise TimetableLocked(timetable.pk)
+        slot = (
+            Slot.objects.filter(pk=slot_id, timetable=timetable)
+            .select_related("school_class", "subject", "teacher")
+            .first()
+        )
+        if slot is None:
+            raise InvalidMove(MSG_SLOT)
+    except TimetableLocked:
+        status, context["error"] = 409, MSG_APPROVED
+    except InvalidMove as exc:
+        status, context["error"] = exc.status, exc.message
+    else:
+        context.update(
+            slot=slot,
+            token=_version_token(timetable),
+            teachers=candidates(timetable, slot),
+        )
+    return render(request, TPL + "_teacher_panel.html", context, status=status)
+
+
+@permission_required(can_move_lesson)
+@require_POST
+def timetable_change_teacher(request, week):
+    """Replace the teacher of one lesson; answers with the full, current grid."""
+
+    def edit(timetable):
+        slot_id = _int_field(request.POST, "slot_id")
+        teacher_id = _int_field(request.POST, "docente")
+        version = _int_field(request.POST, "version")
+        change_teacher(timetable.pk, slot_id, teacher_id, version, request.user)
 
     return _edit_response(request, week, edit)
 
