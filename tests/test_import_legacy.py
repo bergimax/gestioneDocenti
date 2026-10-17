@@ -22,7 +22,13 @@ from psycopg.types.json import Jsonb
 from accounts.models import User
 from availability.models import Availability
 from ledger.models import LedgerEntry
-from scheduling.models import AuditLog, Slot, SoftWeightAdjustment, Timetable
+from scheduling.models import (
+    AuditLog,
+    Slot,
+    SoftWeightAdjustment,
+    Timetable,
+    TimetableFeedback,
+)
 from school import legacy_import
 from school.management.commands.import_legacy import Command
 from school.models import (
@@ -77,7 +83,9 @@ CREATE TABLE slot_lezione (id text PRIMARY KEY,
 CREATE TABLE chat_message (id text PRIMARY KEY, messaggio text);
 CREATE TABLE preferenze_ai_memory (id text PRIMARY KEY, regola text);
 CREATE TABLE conflitto_gestito (id text PRIMARY KEY, chiave text);
-CREATE TABLE orario_feedback (id text PRIMARY KEY, voto int);
+CREATE TABLE orario_feedback (id text PRIMARY KEY, orario_settimanale_id text,
+  admin_id text, voto int, motivi jsonb, nota text, quality_score float,
+  quality_level text, n_conflitti_soft int, stato text, created_at timestamptz);
 CREATE TABLE admin_session (token text PRIMARY KEY, admin_id text);
 CREATE TABLE soft_weight_adjustment (id text PRIMARY KEY, kind text, old_weight float,
   new_weight float, evidenza jsonb, admin_id text, created_at timestamptz);
@@ -407,8 +415,27 @@ def populate(src):
         created_at=T0 + datetime.timedelta(hours=1),
     )
     src.add("chat_message", id="x1", messaggio="hi")
-    src.add("orario_feedback", id="f1", voto=4)
-    src.add("orario_feedback", id="f2", voto=5)
+    src.add(
+        "orario_feedback",
+        id="f1",
+        orario_settimanale_id="o1",
+        admin_id="ad1",
+        nota="  Troppi buchi il lunedi  ",
+        quality_score=61.5,
+        quality_level="C",
+        n_conflitti_soft=7,
+        stato="BOZZA",
+        created_at=T0,
+    )
+    src.add(
+        "orario_feedback",
+        id="f2",
+        orario_settimanale_id="o2",
+        admin_id="ad2",
+        nota="Meglio",
+        stato="APPROVATO",
+        created_at=T0 + datetime.timedelta(hours=2),
+    )
 
 
 def do_import(src, *args, **kw):
@@ -442,6 +469,7 @@ def target_counts():
         Timetable,
         Slot,
         AuditLog,
+        TimetableFeedback,
         SoftWeightAdjustment,
         LedgerEntry,
     )
@@ -588,8 +616,8 @@ def test_report_has_one_line_per_table(src):
     assert lines["assegnazione"][1:4] == ["4", "4", "0"]
     assert lines["monte_ore_annuale"][1:4] == ["3", "3", "0"]
     assert lines["slot_lezione"][1:4] == ["2", "2", "0"]
-    assert "orario_feedback" in lines and "no model yet" in out and "#79" in out
-    assert lines["orario_feedback"][1] == "2"
+    assert lines["orario_feedback"][1:4] == ["2", "2", "0"]
+    assert "no model yet" not in out and "#79" not in out
     assert "admin_session" in lines and "not imported by design" in out
 
 
@@ -1052,3 +1080,274 @@ def test_connection_failure_shows_no_url_or_password(src):
     out, err, ok = do_import(bad)
     assert not ok and "Cannot connect" in err
     assert PASSWORD not in out + err and src.url not in err
+
+
+# -- orario_feedback (#79) ---------------------------------------------------------
+
+
+def fb(src, old, **cols):
+    base = {
+        "id": old,
+        "orario_settimanale_id": "o1",
+        "admin_id": "ad1",
+        "nota": f"nota {old}",
+        "stato": "BOZZA",
+        "created_at": T0,
+    }
+    src.add("orario_feedback", **{**base, **cols})
+
+
+def clear_feedback(src):
+    src.conn.execute("DELETE FROM orario_feedback")
+
+
+def only_feedback(src):
+    populate(src)
+    clear_feedback(src)
+
+
+def test_feedback_happy_path_uses_the_source_snapshot(src):
+    populate(src)
+    run_ok(src)
+    o1 = Timetable.objects.get(week_start=MON)
+    assert (o1.quality_score, o1.quality_level, o1.soft_conflicts) == (87.5, "B", 3)
+    f = TimetableFeedback.objects.get(note="Troppi buchi il lunedi")
+    assert (f.quality_score, f.quality_level, f.soft_conflicts) == (61.5, "C", 7)
+    assert f.timetable_state == "BOZZA" and o1.state == "APPROVATO"
+    assert f.timetable == o1 and f.school == o1.school and f.week_start == MON
+    assert f.user.email == "boss@example.com"
+    assert f.created_at == T0
+    g = TimetableFeedback.objects.get(note="Meglio")
+    assert g.quality_score is None and g.quality_level is None
+    assert g.soft_conflicts == 0 and g.user.role == "SEGRETERIA"
+
+
+def test_feedback_voto_and_motivi_are_counted_not_imported(src):
+    only_feedback(src)
+    fb(src, "a", voto=3, motivi=["x"])
+    fb(src, "b", voto=5, nota=None, motivi=[])  # skipped, still counted
+    fb(src, "c", motivi={"k": 1}, voto=None)
+    fb(src, "d", motivi=[], voto=None)
+    fb(src, "e", motivi={}, voto=None)
+    fb(src, "f", motivi=Jsonb(""), voto=None)
+    fb(src, "g")
+    out = run_ok(src)
+    assert (
+        "orario_feedback: 2 rows carried a voto, 2 rows carried motivi: "
+        "not imported (no equivalent in the new model)"
+    ) in out
+    assert "b: empty note" in out
+    only = TimetableFeedback._meta.get_fields()
+    assert not {"voto", "motivi"} & {f.name for f in only}
+
+
+def test_feedback_without_voto_or_motivi_has_no_dropped_line(src):
+    only_feedback(src)
+    fb(src, "a", motivi=[])
+    out = run_ok(src)
+    assert "carried a voto" not in out
+
+
+def test_feedback_empty_notes_are_skipped(src):
+    only_feedback(src)
+    fb(src, "n1", nota=None, voto=2)
+    fb(src, "n2", nota="")
+    fb(src, "n3", nota="   ")
+    fb(src, "ok")
+    out = run_ok(src)
+    for old in ("n1", "n2", "n3"):
+        assert f"orario_feedback {old}: empty note" in out
+    assert TimetableFeedback.objects.count() == 1
+    assert "1 rows carried a voto" in out
+    line = next(ln for ln in out.splitlines() if ln.startswith("orario_feedback "))
+    assert line.split()[1:4] == ["4", "1", "3"]
+
+
+def test_feedback_note_limit(src):
+    only_feedback(src)
+    exact = "è" * 2000
+    fb(src, "ok", nota=f"  {exact} ")
+    fb(src, "long", nota="è" * 2001)
+    out = run_ok(src)
+    assert TimetableFeedback.objects.get().note == exact
+    assert "orario_feedback long: note longer than 2000 characters" in out
+
+
+def test_feedback_authors(src):
+    only_feedback(src)
+    src.add("admin", id="ad3", email="boss@example.com", role="ADMIN")  # duplicate
+    fb(src, "k1", admin_id="ad2")
+    fb(src, "k2", admin_id="nobody")
+    fb(src, "k3", admin_id="ad3")
+    fb(src, "k4", admin_id=None)
+    out = run_ok(src)
+    users = {f.note: f.user for f in TimetableFeedback.objects.all()}
+    assert users["nota k1"].role == "SEGRETERIA"
+    assert users["nota k2"] is None and users["nota k3"] is None
+    assert users["nota k4"] is None
+    assert "orario_feedback: 2 unknown admin_id imported with null user" in out
+    assert skipped(out, "orario_feedback") == []
+
+
+def test_feedback_parent_problems_are_skipped(src):
+    only_feedback(src)
+    src.add("orario_settimanale", id="o9", scuola_id="nope", stato="BOZZA")
+    fb(src, "p1", orario_settimanale_id=None)
+    fb(src, "p2", orario_settimanale_id="ghost")
+    fb(src, "p3", orario_settimanale_id="o9")
+    fb(src, "ok")
+    out = run_ok(src)
+    assert "orario_feedback p1: orario_settimanale_id is null" in out
+    assert "orario_feedback p2: orphan orario_settimanale_id ghost" in out
+    assert "orario_feedback p3: orphan orario_settimanale_id o9" in out
+    assert TimetableFeedback.objects.count() == 1
+
+
+def test_feedback_snapshot_validation(src):
+    only_feedback(src)
+    fb(src, "s1", stato=None)
+    fb(src, "s2", stato="XYZ")
+    fb(src, "s3", quality_level="Z")
+    fb(src, "s4", n_conflitti_soft=-1)
+    fb(src, "ok", quality_score=None, quality_level=None, n_conflitti_soft=None)
+    out = run_ok(src)
+    for old in ("s1", "s2", "s3", "s4"):
+        assert f"orario_feedback {old}:" in out
+    assert TimetableFeedback.objects.count() == 1
+    f = TimetableFeedback.objects.get()
+    assert f.quality_score is None and f.quality_level is None
+    assert f.soft_conflicts == 0
+
+
+def test_feedback_non_numeric_score_is_skipped(src):
+    only_feedback(src)
+    src.conn.execute("ALTER TABLE orario_feedback ALTER quality_score TYPE text")
+    fb(src, "x1", quality_score="abc")
+    fb(src, "x2", quality_score="12.5")
+    out = run_ok(src)
+    assert "orario_feedback x1: quality_score is not a number" in out
+    assert "orario_feedback x2: quality_score is not a number" in out
+
+
+def test_feedback_timestamps_and_order(src):
+    only_feedback(src)
+    fb(src, "t3", created_at=T0 + datetime.timedelta(days=2))
+    fb(src, "t1", created_at=T0)
+    fb(src, "t4", created_at=None)
+    fb(src, "t2", created_at=T0 + datetime.timedelta(days=1))
+    out = run_ok(src)
+    ordered = list(TimetableFeedback.objects.order_by("pk"))
+    assert [f.note for f in ordered] == ["nota t1", "nota t2", "nota t3", "nota t4"]
+    assert ordered[0].created_at == T0
+    assert ordered[2].created_at == T0 + datetime.timedelta(days=2)
+    assert ordered[3].created_at > T0 + datetime.timedelta(days=30)
+    assert (
+        "orario_feedback: 1 rows without original timestamp got the import time" in out
+    )
+
+
+def test_feedback_timestamp_column_variants(src):
+    only_feedback(src)
+    src.conn.execute("ALTER TABLE orario_feedback RENAME created_at TO timestamp")
+    fb_row = {"id": "a", "orario_settimanale_id": "o1", "nota": "n", "stato": "BOZZA"}
+    src.add("orario_feedback", **fb_row, timestamp=T0)
+    run_ok(src)
+    assert TimetableFeedback.objects.get().created_at == T0
+
+
+def test_feedback_without_timestamp_column(src):
+    only_feedback(src)
+    src.conn.execute("ALTER TABLE orario_feedback DROP COLUMN created_at")
+    src.add(
+        "orario_feedback",
+        id="a",
+        orario_settimanale_id="o1",
+        nota="n",
+        stato="BOZZA",
+    )
+    out = run_ok(src)
+    assert TimetableFeedback.objects.get().created_at > T0 + datetime.timedelta(days=30)
+    assert (
+        "orario_feedback: 1 rows without original timestamp got the import time" in out
+    )
+
+
+def test_feedback_has_no_side_effects(src):
+    populate(src)
+    run_ok(src)
+    assert not AuditLog.objects.filter(action="FEEDBACK_ADDED").exists()
+    assert set(Timetable.objects.values_list("version", flat=True)) == {0}
+    assert AuditLog.objects.count() == 2
+
+
+def test_imported_feedback_is_append_only(src):
+    populate(src)
+    run_ok(src)
+    qs = TimetableFeedback.objects.all()
+    with pytest.raises(NotImplementedError):
+        qs.update(note="x")
+    with pytest.raises(NotImplementedError):
+        qs.delete()
+    with pytest.raises(NotImplementedError):
+        qs.first().delete()
+    with pytest.raises(NotImplementedError):
+        qs.first().save()
+
+
+def test_feedback_second_run_is_refused(src):
+    populate(src)
+    run_ok(src)
+    assert ("orario_feedback", TimetableFeedback) in legacy_import.TARGET_MODELS
+    before = target_counts()
+    out, err, ok = do_import(src)
+    assert not ok and "The target is not empty: table" in err
+    assert target_counts() == before
+
+
+def test_feedback_dry_run(src):
+    populate(src)
+    out = run_ok(src, "--dry-run")
+    line = next(ln for ln in out.splitlines() if ln.startswith("orario_feedback "))
+    assert line.split()[1:4] == ["2", "2", "0"]
+    assert TimetableFeedback.objects.count() == 0
+    run_ok(src)
+    assert TimetableFeedback.objects.count() == 2
+
+
+def test_failure_after_feedback_rolls_everything_back(src, monkeypatch):
+    populate(src)
+    real = legacy_import.Importer.weights
+
+    def boom(self):
+        raise RuntimeError("forced")
+
+    monkeypatch.setattr(legacy_import.Importer, "weights", boom)
+    _, err, ok = do_import(src)
+    assert not ok and "forced" in err
+    assert TimetableFeedback.objects.count() == 0
+    assert all(n == 0 for n in target_counts().values())
+    monkeypatch.setattr(legacy_import.Importer, "weights", real)
+    run_ok(src)
+    assert TimetableFeedback.objects.count() == 2
+
+
+def test_feedback_count_mismatch_fails(src, monkeypatch):
+    populate(src)
+    real = legacy_import.Importer.feedback
+
+    def extra(self):
+        real(self)
+        self.reports["orario_feedback"].created += 1
+
+    monkeypatch.setattr(legacy_import.Importer, "feedback", extra)
+    out, _, ok = do_import(src)
+    assert not ok and "orario_feedback:" in out
+    assert TimetableFeedback.objects.count() == 0
+
+
+def test_feedback_note_text_never_reaches_the_output(src):
+    only_feedback(src)
+    fb(src, "ok", nota="MARKER-9f3a visible only in the database")
+    fb(src, "bad", nota="MARKER-77c1 " + "x" * 2100)
+    out = run_ok(src)
+    assert "MARKER" not in out and "orario_feedback bad:" in out

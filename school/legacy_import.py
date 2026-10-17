@@ -22,11 +22,13 @@ from psycopg.rows import dict_row
 from accounts.models import User
 from availability.models import Availability
 from ledger.models import EntryKind, LedgerEntry
+from scheduling.feedback import MAX_NOTE_LENGTH
 from scheduling.models import (
     AuditLog,
     Slot,
     SoftWeightAdjustment,
     Timetable,
+    TimetableFeedback,
 )
 from school.models import (
     Assignment,
@@ -55,6 +57,7 @@ IMPORTED = (
     "orario_settimanale",
     "slot_lezione",
     "audit_log",
+    "orario_feedback",
     "soft_weight_adjustment",
 )
 NOT_IMPORTED = {
@@ -62,7 +65,6 @@ NOT_IMPORTED = {
     "chat_message": "not imported by design",
     "preferenze_ai_memory": "not imported by design",
     "conflitto_gestito": "not imported by design",
-    "orario_feedback": "not imported (no model yet), see #79",
 }
 # Target tables that must be empty (users are excepted).
 TARGET_MODELS = (
@@ -77,6 +79,7 @@ TARGET_MODELS = (
     ("orario_settimanale", Timetable),
     ("slot_lezione", Slot),
     ("audit_log", AuditLog),
+    ("orario_feedback", TimetableFeedback),
     ("soft_weight_adjustment", SoftWeightAdjustment),
     ("ledger", LedgerEntry),
 )
@@ -256,6 +259,7 @@ class Importer:
         self.timetables()
         self.slots()
         self.audit()
+        self.feedback()
         self.weights()
         self.apply_stamps()
 
@@ -671,6 +675,88 @@ class Importer:
                 f"audit_log: {unknown_admin} unknown admin_id imported with null user"
             )
 
+    def feedback(self):
+        """orario_feedback -> TimetableFeedback: notes only, voto/motivi dropped."""
+        rep = self.reports["orario_feedback"]
+        rows = self.load("orario_feedback")
+        voto = sum(1 for r in rows if r.get("voto") is not None)
+        motivi = sum(1 for r in rows if r.get("motivi"))
+        column = None
+        if rows:
+            column = next(
+                (c for c in ("created_at", "timestamp") if c in rows[0]), None
+            )
+        unknown_admin = 0
+        no_time = 0
+        for row in sorted(rows, key=lambda r: self._sort_key(r, column)):
+            old = str(row["id"])
+            timetable, why = self.lookup(
+                "orario_settimanale", row, "orario_settimanale_id", "orario_settimanale"
+            )
+            if why:
+                rep.skip(old, why)
+                continue
+            note = (row.get("nota") or "").strip()
+            if not note:
+                rep.skip(old, "empty note")
+                continue
+            if len(note) > MAX_NOTE_LENGTH:
+                rep.skip(old, f"note longer than {MAX_NOTE_LENGTH} characters")
+                continue
+            state = row.get("stato")
+            if state not in ("BOZZA", "APPROVATO"):
+                rep.skip(old, f"stato must be BOZZA or APPROVATO, not {state!r}")
+                continue
+            level = row.get("quality_level")
+            if level is not None and level not in ("A", "B", "C"):
+                rep.skip(old, f"quality_level must be A, B or C, not {level!r}")
+                continue
+            score = row.get("quality_score")
+            if score is not None:
+                if (
+                    isinstance(score, bool)
+                    or not isinstance(score, int | float | Decimal)
+                    or score != score  # NaN
+                ):
+                    rep.skip(old, f"quality_score is not a number ({score!r})")
+                    continue
+                score = float(score)
+            soft = row.get("n_conflitti_soft")
+            user, unknown = self._user(row)
+            stamp = row.get(column) if column else None
+            obj = TimetableFeedback(
+                school=timetable.school,
+                timetable=timetable,
+                week_start=timetable.week_start,
+                user=user,
+                note=note,
+                quality_score=score,
+                quality_level=level,
+                soft_conflicts=0 if soft is None else soft,
+                timetable_state=state,
+            )
+            if self.save("orario_feedback", old, obj):
+                unknown_admin += unknown
+                if stamp is None:
+                    no_time += 1
+                else:
+                    self.stamp(TimetableFeedback, obj, created_at=stamp)
+        if voto or motivi:
+            self.note(
+                f"orario_feedback: {voto} rows carried a voto, {motivi} rows "
+                "carried motivi: not imported (no equivalent in the new model)"
+            )
+        if unknown_admin:
+            self.note(
+                f"orario_feedback: {unknown_admin} unknown admin_id imported "
+                "with null user"
+            )
+        if no_time:
+            self.note(
+                f"orario_feedback: {no_time} rows without original timestamp "
+                "got the import time"
+            )
+
     def weights(self):
         rep = self.reports["soft_weight_adjustment"]
         schools = list(self.maps["scuola"].values())
@@ -741,6 +827,7 @@ class Importer:
             "orario_settimanale": Timetable.objects.count(),
             "slot_lezione": Slot.objects.count(),
             "audit_log": AuditLog.objects.count(),
+            "orario_feedback": TimetableFeedback.objects.count(),
             "soft_weight_adjustment": SoftWeightAdjustment.objects.count(),
         }
         for table, rep in self.reports.items():

@@ -199,9 +199,10 @@ cause and run again.
 that could not be imported). A "Skipped rows" section lists each skipped row
 with the old id and the reason; a "Notes" section lists rows that were
 imported with a change (for example hours defaulted to 0, an unknown author
-stored as empty). `orario_feedback` shows "not imported (no model yet)": the
-ratings are not imported (#79); this is expected and does not block the
-cut-over. `admin_session`, `chat_message`, `preferenze_ai_memory` and
+stored as empty). `orario_feedback` is imported as notes only: the old `voto`
+and `motivi` are not carried over, and a Notes line shows how many rows had
+them (rows without a note text are skipped as `empty note`). That is expected
+and does not block the cut-over. `admin_session`, `chat_message`, `preferenze_ai_memory` and
 `conflitto_gestito` are not imported by design.
 
 **Go / no-go rule.** Go only if all hold:
