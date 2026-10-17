@@ -1,4 +1,5 @@
 import json
+import time
 from io import StringIO
 
 import pytest
@@ -6,9 +7,9 @@ from django.core.management import call_command
 
 from scheduling.benchmark import generate_context, is_success, run_benchmark
 
-# Loose on purpose: half the 60 s production timeout. CI is a shared machine and
-# the 1 GB VM is slower than a dev machine, so this only catches a real blow-up.
-NORMAL_CASE_MAX_SECONDS = 30
+# Loose on purpose: CI is a shared machine, so these only catch a real blow-up.
+REGRESSION_MAX_SECONDS = 30  # 20 classes, solver time
+FULL_MAX_WALL_SECONDS = 75  # 40 classes, wall time incl. model build (60 s timeout)
 
 KEYS = {
     "classes",
@@ -71,10 +72,21 @@ def test_command_exits_1_when_not_solved(monkeypatch):
     assert "INFEASIBLE" in out.getvalue()
 
 
-@pytest.mark.benchmark
-def test_normal_case_solves_within_threshold():
-    report = run_benchmark()
-    assert is_success(report) and report["solve_seconds"] < NORMAL_CASE_MAX_SECONDS, (
+def test_twenty_classes_regression_guard():
+    report = run_benchmark(n_classes=20)
+    assert is_success(report) and report["solve_seconds"] < REGRESSION_MAX_SECONDS, (
         f"status {report['status']}, solved in {report['solve_seconds']} s "
-        f"(limit {NORMAL_CASE_MAX_SECONDS} s)"
+        f"(limit {REGRESSION_MAX_SECONDS} s)"
+    )
+
+
+@pytest.mark.benchmark_full
+def test_production_size_within_wall_time():
+    start = time.monotonic()
+    report = run_benchmark()
+    wall = time.monotonic() - start
+    # FEASIBLE at the 60 s timeout is a valid outcome (specs.md section 9).
+    assert is_success(report) and wall < FULL_MAX_WALL_SECONDS, (
+        f"status {report['status']}, wall {wall:.1f} s "
+        f"(limit {FULL_MAX_WALL_SECONDS} s)"
     )
