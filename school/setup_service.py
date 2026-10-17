@@ -37,7 +37,15 @@ from .importers import (
     parse_teachers,
     validate_all,
 )
-from .importers.parsers import FILE_TYPES, GROUPS, MAX_HOURS_VALUES, TRUE_VALUES
+from .importers.parsers import (
+    FILE_TYPES,
+    GROUPS,
+    MAX_HOURS_VALUES,
+    STAGE_ORE_GIORNATA,
+    TRUE_VALUES,
+    calendar_hours_error,
+    hours_message,
+)
 from .models import (
     Assignment,
     CalendarEntry,
@@ -105,8 +113,9 @@ PARSERS = {
     "assignments": parse_assignments,
     "pairings": parse_pairings,
 }
-# Calendar rows from the PDF carry an hours value of 0 for empty cells, which
-# the CSV parser would refuse; they are replaced only to re-parse a row.
+# Rows read from a PDF or by the AI may carry 0 or 8 hours, which the CSV
+# parser refuses; when the shared hours rule accepts such a value it is replaced
+# by this placeholder only to re-parse the row's other cells.
 _PLACEHOLDER_HOURS = "6"
 _INT_MAX = 2_147_483_647
 _DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
@@ -314,20 +323,36 @@ def park_ai_calendar(filename, rows, user=None):
     return upload
 
 
-def _is_valid_ai_row(row):
-    hours = row.get("ore_max_giornata")
-    return (
-        isinstance(row.get("data"), datetime.date)
-        and row.get("gruppo") in (*GROUPS, None)
-        and isinstance(hours, int)
-        and not isinstance(hours, bool)
-        and 0 <= hours <= 8
+def _structured_hours_error(row):
+    """The shared hours rule applied to a PDF or AI row."""
+    return calendar_hours_error(
+        row.get("ore_max_giornata"),
+        gruppo=row.get("gruppo"),
+        chiusura=bool(row.get("flag_chiusura")),
+        stage=bool(row.get("flag_stage_gruppo")),
+        structured=True,
     )
 
 
+def _is_valid_ai_row(row):
+    return (
+        isinstance(row.get("data"), datetime.date)
+        and row.get("gruppo") in (*GROUPS, None)
+        and _structured_hours_error(row) is None
+    )
+
+
+def _pdf_hours_messages(rows):
+    return [
+        {"severity": "error", "row": r["row"], "text": text}
+        for r in rows
+        if (text := _structured_hours_error(r))
+    ]
+
+
 def _ai_calendar_messages(rows):
-    """Errors for AI rows: the CSV validator (#14) on the rows rendered as CSV,
-    plus the hours range the database enforces."""
+    """Errors for AI rows: the CSV validator (#14) on the rows rendered as CSV
+    (hours the shared rule accepts are masked there), plus the hours rule."""
     messages = []
     text, lines = _csv_text("calendar", rows, None, None, None)
     row_of = dict(zip(lines, (r["row"] for r in rows), strict=True))
@@ -340,19 +365,12 @@ def _ai_calendar_messages(rows):
             m.text,
         )
         messages.append({"severity": "error", "row": row_of.get(m.row), "text": body})
+    seen = {(m["row"], m["text"]) for m in messages}
     for r in rows:
-        hours = r.get("ore_max_giornata")
-        if not (isinstance(hours, int) and not isinstance(hours, bool)) or not (
-            0 <= hours <= 8
-        ):
-            messages.append(
-                {
-                    "severity": "error",
-                    "row": r["row"],
-                    "text": f"ore_max_giornata '{hours}' must be between 0 and 8",
-                }
-            )
-        elif r.get("flag_stage_gruppo") and not r.get("gruppo"):
+        text = _structured_hours_error(r)
+        if text and (r["row"], text) not in seen:
+            messages.append({"severity": "error", "row": r["row"], "text": text})
+        elif not text and r.get("flag_stage_gruppo") and not r.get("gruppo"):
             messages.append(
                 {
                     "severity": "error",
@@ -377,9 +395,8 @@ def _ai_cell_value(field, value):
             raise SetupError("Gruppo non valido: " + ", ".join(GROUPS) + ".")
         return value.upper() or None
     if field == "ore_max_giornata":
-        if not (value.isascii() and value.isdigit() and int(value) <= 8):
-            raise SetupError("Le ore massime devono essere un numero da 0 a 8.")
-        return int(value)
+        # Not a number: kept as text, refused by the hours rule with the raw value.
+        return int(value) if value.isascii() and value.isdigit() else value
     if field == "flag_chiusura":
         return value.lower() in TRUE_VALUES
     return value or None
@@ -427,6 +444,8 @@ def collect_issues(uploads):
         if file_type == "calendar" and upload.source == "ai":
             own = _ai_calendar_messages(rows)
             rows = [r for r in rows if _is_valid_ai_row(r)]
+        elif file_type == "calendar" and upload.source == "pdf":
+            own = [*own, *_pdf_hours_messages(rows)]
         parsed[file_type] = rows
         for m in [*own, *_model_checks(file_type, rows)]:
             key = "errors" if m["severity"] == "error" else "warnings"
@@ -575,8 +594,10 @@ def _csv_text(file_type, rows, edited_index, field, value):
     for index, row in enumerate(rows):
         lines.append(out.getvalue().count("\n") + 1)
         fields = [_cell(row.get(c)) for c in columns]
-        if file_type == "calendar" and row.get("ore_max_giornata") not in (
-            MAX_HOURS_VALUES
+        if (
+            file_type == "calendar"
+            and row.get("ore_max_giornata") not in MAX_HOURS_VALUES
+            and _structured_hours_error(row) is None
         ):
             fields[columns.index("ore_max_giornata")] = _PLACEHOLDER_HOURS
         if index == edited_index:
@@ -609,9 +630,23 @@ def apply_correction(file_type, row_number, field, value):
                 raise SetupError(
                     "Una riga di stage di gruppo non può avere una classe in stage."
                 )
-        if file_type == "calendar" and upload.source == "ai":
+        structured_hours = (
+            file_type == "calendar"
+            and field == "ore_max_giornata"
+            and upload.source in ("ai", "pdf")
+        )
+        if structured_hours or (file_type == "calendar" and upload.source == "ai"):
             # A row may hold several bad cells; only the edited one is checked.
-            rows[index] = {**old, field: _ai_cell_value(field, value)}
+            new = {**old, field: _ai_cell_value(field, value)}
+            if field == "ore_max_giornata":
+                new["flag_stage_gruppo"] = bool(
+                    new[field] == STAGE_ORE_GIORNATA and new.get("gruppo")
+                )
+                if text := _structured_hours_error(new):
+                    raise SetupError(
+                        hours_message(value) if "ammessi" in text else text
+                    )
+            rows[index] = new
             upload.rows = _dump_rows(file_type, rows)
             upload.save(update_fields=["rows", "updated_at"])
             return upload

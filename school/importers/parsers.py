@@ -11,6 +11,7 @@ TEACHER_TYPES = ("ASSUNTO", "CONTRATTO")
 SUBJECT_TYPES = ("TEORIA", "PRATICA")
 COGNITIVE_WEIGHTS = ("ALTO", "MEDIO", "BASSO")
 MAX_HOURS_VALUES = (4, 5, 6)
+STAGE_ORE_GIORNATA = 8
 TRUE_VALUES = ("true", "1", "yes")
 
 FILE_TYPES = (
@@ -171,6 +172,36 @@ def _name(raw, col, errors):
 # --- calendar ---------------------------------------------------------------
 
 
+def hours_message(shown):
+    """The one error text for a calendar hours value, whatever the source."""
+    return f"ore_max_giornata '{shown}' non valido: ammessi 4, 5 o 6"
+
+
+def calendar_hours_error(hours, *, gruppo, chiusura, stage, structured, shown=None):
+    """The one rule for a calendar row's hours; the error text, or None.
+
+    Lesson days carry 4, 5 or 6. Rows read from a PDF or by the AI
+    (`structured`) may also carry 0 (an empty group cell, or a whole-school
+    closure) and 8 (a group stage, only with `gruppo` and `stage` set).
+    CSV and the manual date form are never structured.
+    """
+    shown = hours if shown is None else shown
+    bad = hours_message(shown)
+    if not isinstance(hours, int) or isinstance(hours, bool):
+        return bad
+    if hours in MAX_HOURS_VALUES:
+        pass
+    elif structured and hours == 0 and (gruppo or (chiusura and not gruppo)):
+        pass
+    elif structured and hours == STAGE_ORE_GIORNATA and gruppo and stage:
+        pass
+    else:
+        return bad
+    if stage and hours != STAGE_ORE_GIORNATA:
+        return "lo stage di gruppo richiede 8 ore"
+    return None
+
+
 def _build_calendar(raw):
     errors = []
     date = None
@@ -181,11 +212,19 @@ def _build_calendar(raw):
             pass
     if date is None:
         errors.append(f"data '{raw['data']}' is not a valid YYYY-MM-DD date")
-    hours = _to_int(raw["ore_max_giornata"])
-    if hours not in MAX_HOURS_VALUES:
-        hours = None
-        errors.append(f"ore_max_giornata '{raw['ore_max_giornata']}' must be 4, 5 or 6")
     group = _choice(raw, "gruppo", GROUPS, errors, required=False)
+    hours = _to_int(raw["ore_max_giornata"])
+    problem = calendar_hours_error(
+        hours,
+        gruppo=group,
+        chiusura=False,
+        stage=False,
+        structured=False,
+        shown=raw["ore_max_giornata"],
+    )
+    if problem:
+        hours = None
+        errors.append(problem)
     row = {
         "data": date,
         "ore_max_giornata": hours,

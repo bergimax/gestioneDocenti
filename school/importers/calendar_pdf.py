@@ -23,7 +23,7 @@ CALENDARIO_PDF_GRUPPI_COLONNE = {
 CALENDARIO_PDF_COLONNA_DATA_MAX_X0 = 140
 CALENDARIO_PDF_AREA_MAX_X = 410
 # A cell with at least this many hours marks a group stage day.
-STAGE_ORE_GIORNATA = 8
+from .parsers import STAGE_ORE_GIORNATA  # noqa: E402
 
 MESI = {
     "gennaio": 1,
