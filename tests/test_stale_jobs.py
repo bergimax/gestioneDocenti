@@ -24,6 +24,7 @@ from scheduling.models import (
     Timetable,
 )
 from scheduling.solver import SolveResult, SolveStatus
+from scheduling.tasks import run_solve_job
 from school.models import Assignment, CalendarEntry, Class, School, Subject, Teacher
 
 D = datetime.date
@@ -165,6 +166,8 @@ def test_other_states_untouched(school):
     old = limit() * 10
     pending = make(school, JobStatus.PENDING)
     SolveJob.objects.filter(pk=pending.pk).update(created_at=timezone.now() - old)
+    with override_settings(TASKS=DB_TASKS):
+        run_solve_job.enqueue(pending.pk)  # a READY row: the worker is just busy
     done = make(school, JobStatus.DONE, age=old, week_start=OTHER_MON, result={"a": 1})
     failed = make(
         school, JobStatus.FAILED, age=old, week_start=D(2026, 10, 26), error="x"

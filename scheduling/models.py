@@ -220,7 +220,7 @@ class JobStatus(models.TextChoices):
 
 ACTIVE_JOB_STATUSES = (JobStatus.PENDING, JobStatus.RUNNING)
 _ALLOWED_TRANSITIONS = {
-    JobStatus.PENDING: {JobStatus.RUNNING},
+    JobStatus.PENDING: {JobStatus.RUNNING, JobStatus.FAILED},
     JobStatus.RUNNING: {JobStatus.DONE, JobStatus.FAILED},
 }
 

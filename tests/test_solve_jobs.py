@@ -116,6 +116,7 @@ def test_job_defaults(school):
 
 ALLOWED = {
     (JobStatus.PENDING, JobStatus.RUNNING),
+    (JobStatus.PENDING, JobStatus.FAILED),
     (JobStatus.RUNNING, JobStatus.DONE),
     (JobStatus.RUNNING, JobStatus.FAILED),
 }
