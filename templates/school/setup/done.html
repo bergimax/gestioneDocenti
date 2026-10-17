@@ -2,7 +2,16 @@
 {% block title %}Setup completato{% endblock %}
 {% block content %}
 <h1>Setup completato</h1>
+{% if replaced %}
+<p>I dati della scuola sono stati sostituiti con quelli caricati.</p>
+<h2>Dati eliminati</h2>
+<dl class="readonly">
+  {% for label, n in replaced.items %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}
+</dl>
+<h2>Dati creati</h2>
+{% else %}
 <p>La scuola è stata creata con i dati caricati.</p>
+{% endif %}
 {% if counts %}
 <dl class="readonly">
   {% for label, n in counts.items %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}

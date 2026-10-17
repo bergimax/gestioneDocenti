@@ -39,7 +39,8 @@ def _context(request, notices=(), form=None):
         "notices": list(notices),
         "blockers": blockers,
         "can_save": not blockers,
-        "form": form or SetupSaveForm(),
+        "form": form or SetupSaveForm(existing_school=School.objects.first()),
+        "replace_counts": service.replace_counts(),
         "calendar_present": "calendar" in uploads,
         "stage_classes": stage_classes,
         "calendar_low": low,
@@ -152,7 +153,7 @@ def setup_add_date(request):
 @permission_required(can_run_setup)
 @require_POST
 def setup_save(request):
-    form = SetupSaveForm(request.POST)
+    form = SetupSaveForm(request.POST, existing_school=School.objects.first())
     if not form.is_valid():
         notices = [("error", "Controlla i dati della scuola.", [])]
         return _respond(request, notices, form=form, status=422)
@@ -163,6 +164,7 @@ def setup_save(request):
             data["school_year"],
             data["year_start"],
             data["year_end"],
+            data.get("confirm_name"),
         )
     except service.SetupError as exc:
         return _respond(request, _error_notices(exc), form=form, status=422)
@@ -176,6 +178,7 @@ def setup_save(request):
             )
         ]
         return _respond(request, notices, form=form, status=500)
+    request.session["setup_replaced"] = counts.pop("sostituiti", None)
     request.session["setup_counts"] = counts
     messages.success(request, "Setup completato.")
     if _is_htmx(request):
@@ -191,4 +194,8 @@ def setup_done(request):
     counts = request.session.get("setup_counts")
     if counts is None and not School.objects.exists():
         return redirect("setup")
-    return render(request, TPL + "done.html", {"counts": counts or {}})
+    context = {
+        "counts": counts or {},
+        "replaced": request.session.get("setup_replaced"),
+    }
+    return render(request, TPL + "done.html", context)

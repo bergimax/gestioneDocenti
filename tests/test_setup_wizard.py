@@ -511,7 +511,7 @@ def test_rollback_on_database_rejection(admin):
     assert ParkedUpload.objects.count() == 6
 
 
-def test_save_refused_when_school_exists(admin):
+def test_save_over_existing_school_needs_the_confirmation(admin):
     School.objects.create(
         name="Old",
         formative_year="2025",
@@ -519,10 +519,10 @@ def test_save_refused_when_school_exists(admin):
         year_end=datetime.date(2026, 6, 30),
     )
     upload_all(admin)
-    assert "Esiste già una scuola" in html(admin.get(SETUP))
+    assert "esiste già una scuola" in html(admin.get(SETUP))
     r = save(admin)
     assert r.status_code == 422
-    assert "Esiste già una scuola" in html(r)
+    assert "Scrivi il nome attuale" in html(r)
     assert db_counts()["classes"] == 0
     assert School.objects.get().name == "Old"
     assert ParkedUpload.objects.count() == 6

@@ -940,9 +940,34 @@ class SetupSaveForm(forms.Form):
         error_messages={"invalid": "Inserisci una data valida."},
     )
 
+    def __init__(self, *args, existing_school=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.existing_school = existing_school
+        if existing_school is not None:
+            self.fields["confirm_name"] = forms.CharField(
+                label="Conferma: scrivi il nome attuale della scuola",
+                required=True,
+                help_text="Serve a evitare sostituzioni involontarie.",
+                error_messages={"required": "Scrivi il nome attuale della scuola."},
+            )
+
+    def clean_confirm_name(self):
+        value = self.cleaned_data["confirm_name"].strip()
+        if value != self.existing_school.name:
+            raise forms.ValidationError("Il nome non corrisponde alla scuola attuale.")
+        return value
+
     def clean(self):
         data = super().clean()
         start, end = data.get("year_start"), data.get("year_end")
         if start and end and end <= start:
             self.add_error("year_end", "La fine dell'anno deve essere dopo l'inizio.")
         return data
+
+    def full_clean(self):
+        super().full_clean()
+        for name in self.errors:
+            if name in self.fields:
+                widget = self.fields[name].widget
+                widget.attrs["aria-invalid"] = "true"
+                widget.attrs["aria-describedby"] = f"{self[name].id_for_label}-error"

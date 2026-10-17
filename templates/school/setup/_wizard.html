@@ -10,7 +10,7 @@
     {% endfor %}
   </div>
   {% if school_exists %}
-  <div class="message message-warning" role="status"><span>Esiste già una scuola: il setup non può essere rieseguito.</span></div>
+  <div class="message message-warning" role="status"><span><strong>Attenzione:</strong> esiste già una scuola. Salvando, tutti i dati esistenti (classi, docenti, materie, calendario, assegnazioni, accoppiamenti, orari e disponibilità) vengono sostituiti da quelli caricati. Gli account non vengono toccati.</span></div>
   {% endif %}
 
   {% for s in sections %}
@@ -114,6 +114,14 @@
     {% if blockers %}
     <ul class="setup-blockers">{% for b in blockers %}<li>{{ b }}</li>{% endfor %}</ul>
     {% endif %}
+    {% if replace_counts %}
+    <div class="message message-warning" role="status">
+      <div>
+        <span>Verranno eliminati:</span>
+        <ul>{% for label, n in replace_counts.items %}<li>{{ label }}: {{ n }}</li>{% endfor %}</ul>
+      </div>
+    </div>
+    {% endif %}
     <form method="post" action="{% url 'setup_save' %}" hx-post="{% url 'setup_save' %}"
           hx-target="#setup-wizard" hx-swap="outerHTML">
       {% csrf_token %}
@@ -122,7 +130,7 @@
         <label for="{{ field.id_for_label }}">{{ field.label }}</label>
         {{ field }}
         {% if field.help_text %}<p class="hint">{{ field.help_text }}{% if field.name == "year_start" and calendar_low %} ({{ calendar_low|date:"d/m/Y" }}){% elif field.name == "year_end" and calendar_high %} ({{ calendar_high|date:"d/m/Y" }}){% endif %}</p>{% endif %}
-        {% if field.errors %}<p class="field-error">{{ field.errors|join:" " }}</p>{% endif %}
+        {% if field.errors %}<p class="field-error" id="{{ field.id_for_label }}-error">{{ field.errors|join:" " }}</p>{% endif %}
       </div>
       {% endfor %}
       {% if form.non_field_errors %}<p class="form-error">{{ form.non_field_errors|join:" " }}</p>{% endif %}

@@ -17,6 +17,10 @@ from django.core.validators import validate_email
 from django.db import connection, transaction
 
 from ai.calendar_pdf import AiError, read_calendar_pdf
+from availability.models import Availability, AvailabilityLink
+from feeds.models import FeedToken
+from ledger.models import LedgerEntry
+from scheduling.models import SolveJob, Timetable, TimetableState
 
 from .importers import (
     CalendarPdfError,
@@ -445,9 +449,67 @@ def save_blockers(uploads, issues):
     count = sum(len(i["errors"]) for i in issues.values())
     if count:
         reasons.append(f"Ci sono {count} errori da correggere prima di salvare.")
-    if School.objects.exists():
-        reasons.append("Esiste già una scuola: il setup non può essere rieseguito.")
+    reasons.extend(replace_blockers())
     return reasons
+
+
+def replace_blockers():
+    """Why an existing school cannot be replaced (empty list = allowed)."""
+    if not School.objects.exists():
+        return []
+    parts = []
+    approved = Timetable.objects.filter(state=TimetableState.APPROVATO).count()
+    if approved:
+        parts.append(
+            f"{approved} orario approvato"
+            if approved == 1
+            else f"{approved} orari approvati"
+        )
+    movements = LedgerEntry.objects.count()
+    if movements:
+        parts.append(
+            f"{movements} movimento nel registro ore"
+            if movements == 1
+            else f"{movements} movimenti nel registro ore"
+        )
+    if not parts:
+        return []
+    return [
+        "I dati della scuola non possono essere sostituiti: esistono "
+        + ", ".join(parts)
+        + "."
+    ]
+
+
+def replace_counts():
+    """What a replace would delete, for the confirmation panel."""
+    if not School.objects.exists():
+        return {}
+    return {
+        "Classi": Class.objects.count(),
+        "Docenti": Teacher.objects.count(),
+        "Materie": Subject.objects.count(),
+        "Righe di calendario": CalendarEntry.objects.count(),
+        "Assegnazioni": Assignment.objects.count(),
+        "Accoppiamenti": ClassPairing.objects.count(),
+        "Orari": Timetable.objects.count(),
+        "Disponibilità": Availability.objects.count(),
+    }
+
+
+def _delete_school_data():
+    """Delete everything that hangs off the school, never the School row."""
+    SolveJob.objects.all().delete()  # alternative picks go with their job
+    Timetable.objects.all().delete()  # slots, decisions; audit/feedback -> NULL
+    Availability.objects.all().delete()
+    AvailabilityLink.objects.all().delete()
+    FeedToken.objects.all().delete()
+    ClassPairing.objects.all().delete()
+    Assignment.objects.all().delete()
+    CalendarEntry.objects.all().delete()
+    Class.objects.all().delete()
+    Teacher.objects.all().delete()
+    Subject.objects.all().delete()
 
 
 # --- sections for the template ------------------------------------------------
@@ -654,7 +716,9 @@ def _full_clean(instance, label, row):
 
 
 def _create_school(name, year, start, end):
-    school = School(name=name, formative_year=year, year_start=start, year_end=end)
+    school = School.objects.first() or School()
+    school.name, school.formative_year = name, year
+    school.year_start, school.year_end = start, end
     school.full_clean()
     school.save()
     return school
@@ -758,8 +822,12 @@ def _create_pairings(school, rows, classes, subjects):
     return objs
 
 
-def save_setup(name, year, start, end):
+def save_setup(name, year, start, end, confirm_name=None):
     """Create everything from the parked uploads in one transaction.
+
+    With a school present this is the replace: `confirm_name` must equal the
+    current school name, and all school data is deleted first (the School row
+    is kept and updated).
 
     Returns the created counts. On any error nothing is written and the
     parked uploads stay where they are.
@@ -770,9 +838,10 @@ def save_setup(name, year, start, end):
         uploads = {
             u.file_type: u for u in ParkedUpload.objects.select_for_update().all()
         }
-        if School.objects.exists():
+        existing = School.objects.first()
+        if existing and (confirm_name or "").strip() != existing.name:
             raise SetupError(
-                "Esiste già una scuola: il setup non può essere rieseguito."
+                "Conferma non valida: scrivi il nome attuale della scuola."
             )
         reasons = save_blockers(uploads, collect_issues(uploads))
         if reasons:
@@ -784,6 +853,9 @@ def save_setup(name, year, start, end):
         if end <= start:
             raise SetupError("La fine dell'anno deve essere dopo l'inizio.")
         rows = {t: load_rows(u) for t, u in uploads.items()}
+        replaced = replace_counts()
+        if existing:
+            _delete_school_data()
         school = _create_school(name, year, start, end)
         classes = _create_classes(school, rows["classes"])
         teachers = _create_teachers(school, rows["teachers"])
@@ -798,7 +870,7 @@ def save_setup(name, year, start, end):
                 kind=Draft.Kind.CALENDAR_ROWS, status=Draft.Status.DRAFT
             ).update(status=Draft.Status.CONFIRMED)
         ParkedUpload.objects.all().delete()
-    return {
+    result = {
         "Classi": len(classes),
         "Docenti": len(teachers),
         "Materie": len(subjects),
@@ -806,3 +878,6 @@ def save_setup(name, year, start, end):
         "Assegnazioni": len(assignments),
         "Accoppiamenti": len(pairings),
     }
+    if replaced:
+        result["sostituiti"] = replaced
+    return result

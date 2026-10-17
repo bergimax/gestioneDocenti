@@ -10,4 +10,7 @@
   <li><a href="{% url 'pairing_list' %}">Accoppiamenti</a></li>
   <li><a href="{% url 'calendar_month' %}">Calendario</a></li>
 </ul>
+{% if can_replace %}
+<p><a href="{% url 'setup' %}">Sostituisci i dati della scuola</a></p>
+{% endif %}
 {% endblock %}
