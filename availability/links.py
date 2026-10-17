@@ -10,7 +10,8 @@ import re
 import secrets
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from . import grid as grid_logic
@@ -123,3 +124,29 @@ def record_failure(client_address):
     LinkLookupFailure.objects.create(
         client_address=client_address[:64], attempted_at=current
     )
+
+
+def purge_dead_links(days, dry_run=False):
+    """Delete links dead for more than `days` days and stale lookup failures.
+
+    A link is dead since the earlier of expires_at and revoked_at. Takes the
+    setup advisory lock so it never races a setup replace. Returns
+    (links, failures) counts; with `dry_run` nothing is deleted.
+    """
+    from school.setup_service import SETUP_LOCK_ID
+
+    current = now()
+    cutoff = current - datetime.timedelta(days=days)
+    window = current - datetime.timedelta(seconds=settings.LINK_LOOKUP_WINDOW_SECONDS)
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", [SETUP_LOCK_ID])
+        dead = AvailabilityLink.objects.filter(
+            Q(expires_at__lt=cutoff) | Q(revoked_at__lt=cutoff)
+        )
+        stale = LinkLookupFailure.objects.filter(attempted_at__lte=window)
+        counts = (dead.count(), stale.count())
+        if not dry_run:
+            dead.delete()
+            stale.delete()
+    return counts
