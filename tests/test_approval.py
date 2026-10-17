@@ -195,6 +195,67 @@ def test_approved_week_lowers_next_week_target_value(w, user):
     assert after.target_sources[key] == "residuo 71 ore su 36 settimane"
 
 
+def _next_week_state(w):
+    ctx = build_week_context(D(2026, 10, 19), w.school)
+    residual = {a.id: a.residual_hours for a in ctx.assignments}
+    return dict(ctx.targets), residual
+
+
+def test_approval_drops_residual_hours_by_lessons_approved(w, user):
+    key = w.asg["a_mat"].pk
+    Assignment.objects.filter(pk=key).update(ore_totali=73)
+    _, before = _next_week_state(w)
+    approve_timetable(w.tt.pk, user)
+    _, after = _next_week_state(w)
+    lessons = Slot.objects.filter(
+        timetable=w.tt, school_class=w.a, subject=w.mat
+    ).count()
+    assert lessons == 2
+    assert before[key] == 73 and after[key] == 71
+
+
+def test_paired_lesson_lowers_both_classes_in_next_week_context(w, user):
+    Slot.objects.all().delete()
+    w.slot(w.a, w.rossi, w.mat, "LUNEDI", 8, paired=True, paired_class=w.b)
+    keys = [w.asg["a_mat"].pk, w.asg["b_mat"].pk]
+    Assignment.objects.filter(pk__in=keys).update(ore_totali=72)
+    targets_before, residual_before = _next_week_state(w)
+    approve_timetable(w.tt.pk, user)
+    targets_after, residual_after = _next_week_state(w)
+    for key in keys:
+        assert residual_before[key] == 72 and residual_after[key] == 71
+        assert targets_before[key] == 2 and targets_after[key] == 1
+
+
+def test_undo_restores_next_week_target_and_residual(w, user):
+    key = w.asg["a_mat"].pk
+    Assignment.objects.filter(pk=key).update(ore_totali=73)
+    before = _next_week_state(w)
+    approve_timetable(w.tt.pk, user)
+    assert _next_week_state(w) != before
+    undo_approval(w.tt.pk, user, "errore")
+    assert _next_week_state(w) == before
+    assert before[0][key] == 2 and before[1][key] == 73
+
+
+def test_assignable_pairs_remaining_drops_after_approval(w, user):
+    from scheduling.assign import assignable_pairs
+
+    week2 = Timetable.objects.create(school=w.school, week_start=WEEK2, version=1)
+
+    def remaining():
+        return {
+            (r["teacher_id"], r["subject_id"]): r["remaining"]
+            for r in assignable_pairs(w.school, w.a, week2)
+        }
+
+    before = remaining()
+    approve_timetable(w.tt.pk, user)
+    after = remaining()
+    key = (w.rossi.pk, w.mat.pk)
+    assert before[key] - after[key] == 2
+
+
 def test_only_approve_timetable_sets_approved_state():
     import pathlib
     import re
