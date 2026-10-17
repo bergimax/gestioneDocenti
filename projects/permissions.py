@@ -41,6 +41,10 @@ def can_manage_availability_links(user, teacher=None):
     return _allowed(user, ALL_ROLES)
 
 
+def can_view_backup_status(user, obj=None):
+    return _allowed(user, ADMIN_ONLY)
+
+
 def can_generate(user, obj=None):
     return _allowed(user, ADMIN_ONLY)
 
@@ -114,6 +118,7 @@ def can_manage_soft_weights(user, obj=None):
 
 
 PREDICATES = (
+    can_view_backup_status,
     can_view_timetable,
     can_view_school_data,
     can_edit_availability,

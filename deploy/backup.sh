@@ -19,7 +19,9 @@ mkdir -p "$dir" 2>/dev/null || fail "cannot create the backup directory $dir"
 name="gestione-docenti-$(date +%Y%m%d-%H%M%S)-$$-$RANDOM.dump"
 final="$dir/$name"
 partial="$final.partial"
-trap 'rm -f "$partial"' EXIT
+marker="$dir/last-success"
+marker_tmp="$dir/.last-success.tmp.$$"
+trap 'rm -f "$partial" "$marker_tmp"' EXIT
 
 : > "$partial" 2>/dev/null || fail "cannot write in the backup directory $dir (read-only or full?)"
 
@@ -31,6 +33,11 @@ pg_exec pg_restore --list < "$partial" > /dev/null \
 mv "$partial" "$final" || fail "cannot move the dump into place in $dir"
 
 log "backup written: $final ($(wc -c < "$final") bytes)"
+
+# Marker read by backup-status.sh and the overview page: written only on success, atomically.
+printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$name" > "$marker_tmp" \
+    && mv -f "$marker_tmp" "$marker" \
+    || fail "the dump is in place but the marker $marker could not be written"
 
 # Retention: keep the newest KEEP dumps, the one just written always among them.
 removed=0

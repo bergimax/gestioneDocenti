@@ -94,6 +94,26 @@ They are `pg_dump --format=custom` files (already compressed), checked with
   right path. Check it ran: `ls -lt backups | head` (newest dump should be from
   last night) and `tail backups/cron.log`.
 
+### Is the nightly backup still running?
+
+There is no email. The age of the last successful backup is visible in two places.
+
+- Marker: after each successful run `backup.sh` atomically writes
+  `BACKUP_DIR/last-success`, one line `<UTC timestamp> <dump file name>`. A failed
+  run leaves it untouched; retention never deletes it.
+- Command: `deploy/backup-status.sh` prints `last backup: 5 hours ago (<dump>)`.
+  Exit 0 fresh, 1 stale (more whole hours than `BACKUP_STALE_HOURS`, default 30,
+  positive integer), 2 no valid marker (missing, empty, garbage, future
+  timestamp, missing directory) or a bad threshold. `cron.example` runs it daily
+  at 08:00 into `backups/cron.log`, so that is where to look: `tail backups/cron.log`.
+- Web: administrators see `Ultimo backup: N ore fa` on the overview page, with
+  `Backup non aggiornato` when stale and `Backup non verificabile` when the
+  marker cannot be read. `docker-compose.yml` mounts `BACKUP_DIR` read-only into
+  `web` and sets `BACKUP_MARKER_FILE=/backups/last-success`.
+- When it says STALE: read the last lines of `backups/cron.log` for the
+  `backup FAILED` reason, check free disk and that the `postgres` container is
+  running, run `deploy/backup.sh` by hand, then `deploy/backup-status.sh` again.
+
 ### Off-site copy
 
 `deploy/backup-offsite.sh` copies the newest dump with `rclone` (installed on the

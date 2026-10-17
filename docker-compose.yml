@@ -29,11 +29,14 @@ services:
     restart: unless-stopped
     command: ["gunicorn", "config.wsgi:application", "--workers", "2", "--bind", "0.0.0.0:8000"]
     env_file: .env.production
-    environment: *app-environment
+    environment:
+      <<: *app-environment
+      BACKUP_MARKER_FILE: /backups/last-success
     expose:
       - "8000"
     volumes:
       - static:/app/staticfiles
+      - ${BACKUP_DIR:-./backups}:/backups:ro
     depends_on:
       postgres:
         condition: service_healthy

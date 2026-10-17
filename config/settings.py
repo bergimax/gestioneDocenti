@@ -51,6 +51,10 @@ LINK_LOOKUP_WINDOW_SECONDS = get_positive_int(
     os.environ, "LINK_LOOKUP_WINDOW_SECONDS", DEFAULT_LINK_LOOKUP_WINDOW_SECONDS
 )
 
+# Marker written by deploy/backup.sh, as the web process sees it (empty: unknown).
+BACKUP_MARKER_FILE = get_optional_str(os.environ, "BACKUP_MARKER_FILE")
+BACKUP_STALE_HOURS = get_positive_int(os.environ, "BACKUP_STALE_HOURS", 30)
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

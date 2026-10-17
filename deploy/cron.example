@@ -1,5 +1,5 @@
 # Cron definition for the backups. Install as the user that runs Docker on the VM:
-#   crontab -e   (paste the two lines below, adjusting the path)
+#   crontab -e   (paste the three lines below, adjusting the path)
 # Run `mkdir -p /opt/gestione-docenti/backups` first (the log lives there).
 # If you change BACKUP_DIR, change the log path too.
 #
@@ -7,3 +7,7 @@
 # (a no-op until OFFSITE_RCLONE_REMOTE is set in .env.production).
 30 2 * * * cd /opt/gestione-docenti && deploy/backup.sh >> backups/cron.log 2>&1
 30 3 * * 0 cd /opt/gestione-docenti && deploy/backup-offsite.sh >> backups/cron.log 2>&1
+#
+# Daily check at 08:00: prints the age of the last backup, and STALE (exit 1) if it
+# is older than BACKUP_STALE_HOURS. Look for it in backups/cron.log.
+0 8 * * * cd /opt/gestione-docenti && deploy/backup-status.sh >> backups/cron.log 2>&1

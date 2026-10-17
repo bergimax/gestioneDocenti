@@ -242,3 +242,140 @@ def test_restore_into_empty_database(env, tmp_path):
     dump.write_text("PGDMP-fake")
     r = run(env, "restore.sh", str(dump))
     assert r.returncode == 0, r.stderr
+
+
+MARKER_RE = r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ gestione-docenti-.*\.dump$"
+
+
+def test_backup_writes_marker(env):
+    import re
+
+    r = run(env, "backup.sh")
+    assert r.returncode == 0, r.stderr
+    text = (env["backups"] / "last-success").read_text()
+    assert text.count("\n") == 1
+    assert re.match(MARKER_RE, text.rstrip("\n"))
+    assert (env["backups"] / text.split()[1]).exists()
+    assert not list(env["backups"].glob("*last-success.tmp*"))
+
+
+@pytest.mark.parametrize(
+    "extra", [{"FAKE_DUMP_FAIL": "1"}, {"BACKUP_KEEP": "abc"}], ids=["dump", "keep"]
+)
+@pytest.mark.parametrize("existed", [False, True])
+def test_failed_backup_leaves_marker(env, extra, existed):
+    marker = env["backups"] / "last-success"
+    env["backups"].mkdir()
+    if existed:
+        marker.write_text("2026-01-01T00:00:00Z gestione-docenti-1-2-3.dump\n")
+    before = marker.read_bytes() if existed else None
+    assert run(env, "backup.sh", **extra).returncode != 0
+    assert (marker.read_bytes() if marker.exists() else None) == before
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores permissions")
+def test_unwritable_dir_leaves_marker(env):
+    marker = env["backups"] / "last-success"
+    env["backups"].mkdir()
+    marker.write_text("2026-01-01T00:00:00Z gestione-docenti-1-2-3.dump\n")
+    env["backups"].chmod(0o555)
+    try:
+        assert run(env, "backup.sh").returncode != 0
+        assert marker.read_text().startswith("2026-01-01")
+    finally:
+        env["backups"].chmod(0o755)
+
+
+def test_retention_keeps_marker(env):
+    for _ in range(3):
+        assert run(env, "backup.sh", BACKUP_KEEP="1").returncode == 0
+    (env["backups"] / "notes.txt").write_text("x")
+    assert run(env, "backup.sh", BACKUP_KEEP="1").returncode == 0
+    assert len(dumps(env)) == 1
+    assert (env["backups"] / "last-success").exists()
+    assert (env["backups"] / "notes.txt").exists()
+    listed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'source {DEPLOY}/lib.sh; list_dumps "{env["backups"]}"',
+        ],
+        env={**os.environ, "ENV_FILE": "/nonexistent"},
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "last-success" not in listed
+
+
+def write_marker(env, hours_ago, name="gestione-docenti-20261017-023012-1-2.dump"):
+    from datetime import UTC, datetime, timedelta
+
+    env["backups"].mkdir(exist_ok=True)
+    when = datetime.now(UTC) - timedelta(hours=hours_ago)
+    (env["backups"] / "last-success").write_text(f"{when:%Y-%m-%dT%H:%M:%SZ} {name}\n")
+
+
+def test_status_fresh(env):
+    write_marker(env, 5)
+    r = run(env, "backup-status.sh")
+    assert r.returncode == 0
+    assert "last backup: 5 hours ago (gestione-docenti-" in r.stdout
+    assert "s3cret" not in r.stdout + r.stderr
+
+
+def test_status_under_one_hour(env):
+    write_marker(env, 0.2)
+    r = run(env, "backup-status.sh")
+    assert r.returncode == 0
+    assert "less than 1 hour ago" in r.stdout
+
+
+def test_status_stale_default(env):
+    write_marker(env, 52)
+    r = run(env, "backup-status.sh")
+    assert r.returncode == 1
+    assert "52 hours ago, STALE (threshold 30 h)" in r.stdout
+
+
+@pytest.mark.parametrize("hours,code", [(30, 0), (31, 1)])
+def test_status_threshold_boundary(env, hours, code):
+    write_marker(env, hours)
+    assert run(env, "backup-status.sh", BACKUP_STALE_HOURS="30").returncode == code
+    write_marker(env, 40)
+    assert run(env, "backup-status.sh", BACKUP_STALE_HOURS="48").returncode == 0
+
+
+@pytest.mark.parametrize("content", [None, "", "garbage\n", "FUTURE", "two\nlines\n"])
+def test_status_invalid_marker(env, content):
+    env["backups"].mkdir()
+    marker = env["backups"] / "last-success"
+    if content == "FUTURE":
+        write_marker(env, -3)
+    elif content is not None:
+        marker.write_text(content)
+    r = run(env, "backup-status.sh")
+    assert r.returncode == 2
+    assert f"no valid backup marker in {env['backups']}" in r.stderr
+    assert "hours ago" not in r.stdout
+
+
+def test_status_missing_dir(env):
+    r = run(env, "backup-status.sh")
+    assert r.returncode == 2
+    assert str(env["backups"]) in r.stderr
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "abc"])
+def test_status_bad_threshold(env, value):
+    write_marker(env, 1)
+    r = run(env, "backup-status.sh", BACKUP_STALE_HOURS=value)
+    assert r.returncode == 2
+    assert "BACKUP_STALE_HOURS" in r.stderr
+
+
+def test_status_script_is_strict_and_cron_runs_it():
+    path = DEPLOY / "backup-status.sh"
+    assert os.access(path, os.X_OK)
+    assert "set -euo pipefail" in path.read_text()
+    assert subprocess.run(["bash", "-n", str(path)]).returncode == 0
+    assert "deploy/backup-status.sh" in (DEPLOY / "cron.example").read_text()

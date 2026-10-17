@@ -19,6 +19,7 @@ MATRIX = {
     p.can_view_school_data: (True, True),
     p.can_edit_availability: (True, True),
     p.can_manage_availability_links: (True, True),
+    p.can_view_backup_status: (True, False),
     p.can_generate: (True, False),
     p.can_move_lesson: (True, False),
     p.can_assign_slot: (True, False),
