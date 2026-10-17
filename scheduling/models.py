@@ -436,3 +436,62 @@ class AuditLog(models.Model):
 
     def delete(self, *args, **kwargs):
         raise NotImplementedError("audit_log rows are never deleted")
+
+
+class _FeedbackQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise NotImplementedError("timetable_feedback rows are never updated")
+
+    def delete(self):
+        raise NotImplementedError("timetable_feedback rows are never deleted")
+
+
+class TimetableFeedback(models.Model):
+    """One append-only free-text note on a week, with a quality snapshot.
+
+    Written only by `scheduling.feedback.add_feedback`. It never feeds the
+    weight proposals.
+    """
+
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT, related_name="timetable_feedback"
+    )
+    timetable = models.ForeignKey(
+        Timetable,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    week_start = models.DateField("inizio settimana")
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    note = models.TextField()
+    quality_score = models.FloatField(null=True, blank=True)
+    quality_level = models.CharField(  # noqa: DJ001 - snapshot, null until solved
+        max_length=1, null=True, blank=True
+    )
+    soft_conflicts = models.PositiveIntegerField(default=0)
+    timetable_state = models.CharField(max_length=10, choices=TimetableState.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = _FeedbackQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.week_start} {self.created_at}"
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise NotImplementedError("timetable_feedback rows are never updated")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise NotImplementedError("timetable_feedback rows are never deleted")

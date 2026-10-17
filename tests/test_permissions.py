@@ -38,6 +38,7 @@ MATRIX = {
     p.can_edit_school_data: (True, False),
     p.can_edit_teachers: (True, False),
     p.can_manage_soft_weights: (True, False),
+    p.can_leave_feedback: (True, False),
 }
 
 

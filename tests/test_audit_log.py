@@ -87,6 +87,7 @@ def test_every_constant_is_a_known_action():
         audit.REPAIR_CONFIRMED,
         audit.ALTERNATIVE_CHOSEN,
         audit.FEED_REGENERATED,
+        audit.FEEDBACK_ADDED,
     }
     assert names == audit.ACTIONS
 

@@ -1,0 +1,34 @@
+{% if fb_visible %}<div id="tt-feedback-panel">
+{% if fb_error %}
+  <div class="message message-error" role="alert"><span>{{ fb_error }}</span></div>
+{% endif %}
+{% if fb_message %}
+  <div class="message message-success" role="status"><span>{{ fb_message }}</span></div>
+{% endif %}
+{% if fb_visible %}
+  <section class="tt-feedback" aria-label="Note sull'orario">
+    <form method="post" novalidate action="{% url 'timetable_feedback' week.start|date:'Y-m-d' %}" hx-post="{% url 'timetable_feedback' week.start|date:'Y-m-d' %}" hx-target="#tt-feedback-panel" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]">
+      {% csrf_token %}
+      <div class="field{% if fb_error %} has-error{% endif %}">
+        <label for="id_nota">Nota sull'orario</label>
+        <textarea name="nota" id="id_nota" rows="3" maxlength="2000">{{ fb_text }}</textarea>
+        {% if fb_error %}<p class="field-error" role="alert">{{ fb_error }}</p>{% endif %}
+      </div>
+      <p class="tt-deroga-help">La nota resta com'è scritta, non può essere modificata né cancellata e non cambia l'orario né i pesi.</p>
+      <button type="submit">Salva nota</button>
+    </form>
+    {% if fb_notes %}
+    <ul class="tt-feedback-list">
+      {% for n in fb_notes %}
+      <li>
+        <p class="tt-feedback-meta">{{ n.created_at|date:"d/m/Y H:i" }}{% if n.user %} - {{ n.user.email }}{% endif %} - {% if n.quality_level %}Qualità: livello {{ n.quality_level }}{% if n.quality_score is not None %} (punteggio {{ n.quality_score|floatformat:"-1" }}){% endif %}{% else %}Qualità non calcolata{% endif %} - {{ n.get_timetable_state_display }}</p>
+        <p class="tt-feedback-note">{{ n.note }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p>Nessuna nota per questa settimana.</p>
+    {% endif %}
+  </section>
+{% endif %}
+</div>{% endif %}

@@ -15,6 +15,7 @@ from projects.permissions import (
     can_decide_conflicts,
     can_export_timetable,
     can_generate,
+    can_leave_feedback,
     can_manage_soft_weights,
     can_move_lesson,
     can_repair,
@@ -38,6 +39,7 @@ from .board import (
 )
 from .decisions import approve_conflicts, reject_lesson
 from .derogations import QUICK_ACTIONS
+from .feedback import InvalidNote, add_feedback
 from .forms import QuickActionForm, RepairForm
 from .jobs import GenerationRefused, enqueue_generation
 from .models import (
@@ -47,6 +49,7 @@ from .models import (
     JobStatus,
     SolveJob,
     Timetable,
+    TimetableFeedback,
     TimetableState,
 )
 from .moves import InvalidMove, MoveRejected, move_lesson
@@ -154,6 +157,25 @@ def _body_context(
     return context
 
 
+def _feedback_context(school, week, user, error=None, message=None, text=""):
+    """The note panel: an ADMIN, on a week that has a timetable."""
+    timetable = _timetable(school, week)
+    visible = timetable is not None and can_leave_feedback(user, timetable)
+    context = {
+        "week": week,
+        "fb_visible": visible,
+        "fb_error": error,
+        "fb_message": message,
+        "fb_text": text,
+        "fb_notes": [],
+    }
+    if visible:
+        context["fb_notes"] = TimetableFeedback.objects.filter(
+            school=school, week_start=week["start"]
+        ).select_related("user")
+    return context
+
+
 def _deroga_context(
     school,
     week,
@@ -257,6 +279,7 @@ def timetable_page(request):
     context.update(_deroga_context(school, week, request.user))
     context.update(instruction.panel_context(school, week, request.user))
     context.update(_repair_context(school, week, request.user))
+    context.update(_feedback_context(school, week, request.user))
     return render(request, TPL + "page.html", context)
 
 
@@ -900,3 +923,24 @@ def weights_reset(request):
     if skipped:
         messages.info(request, MSG_ALREADY_DEFAULT.format(kinds=_names(skipped)))
     return redirect("soft_weights")
+
+
+@permission_required(can_leave_feedback)
+@require_POST
+def timetable_feedback(request, week):
+    """Save a free-text note on the week; answers with the note panel."""
+    school = _school_or_404()
+    week = _parse_week(school, week)
+    timetable = _timetable(school, week)
+    if timetable is None:
+        raise Http404("Nessun orario per questa settimana.")
+    text = request.POST.get("nota", "")
+    try:
+        add_feedback(timetable.pk, request.user, text)
+    except InvalidNote as exc:
+        context = _feedback_context(
+            school, week, request.user, error=exc.args[0], text=text
+        )
+        return render(request, TPL + "_feedback.html", context, status=400)
+    context = _feedback_context(school, week, request.user, message="Nota salvata.")
+    return render(request, TPL + "_feedback.html", context)

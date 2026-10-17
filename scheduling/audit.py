@@ -12,6 +12,7 @@ CONFLICT_DECISION = "CONFLICT_DECISION"
 REPAIR_CONFIRMED = "REPAIR_CONFIRMED"
 ALTERNATIVE_CHOSEN = "ALTERNATIVE_CHOSEN"
 FEED_REGENERATED = "FEED_REGENERATED"
+FEEDBACK_ADDED = "FEEDBACK_ADDED"
 
 # action -> label shown on the audit screen
 ACTION_LABELS = {
@@ -25,6 +26,7 @@ ACTION_LABELS = {
     APPROVAL_UNDONE: "Approvazione annullata",
     HOURS_ADJUSTED: "Correzione ore erogate",
     FEED_REGENERATED: "Rigenerazione feed",
+    FEEDBACK_ADDED: "Nota sull'orario",
 }
 ACTIONS = frozenset(ACTION_LABELS)
 

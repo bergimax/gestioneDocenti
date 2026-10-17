@@ -221,3 +221,11 @@ button[disabled] { cursor: not-allowed; opacity: .55; }
 .tt-instruction-card dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem .75rem; margin: 0 0 .5rem; }
 .tt-instruction-card dt { font-weight: 700; }
 .tt-instruction-card dd { margin: 0; }
+
+.tt-feedback { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .5rem .8rem; margin: .75rem 0; }
+.tt-feedback form { max-width: 32rem; }
+.tt-feedback textarea { width: 100%; }
+.tt-feedback-list { list-style: none; margin: .5rem 0 0; padding: 0; }
+.tt-feedback-list li { border-top: 1px solid var(--border); padding: .4rem 0; }
+.tt-feedback-meta { margin: 0; font-size: .85rem; }
+.tt-feedback-note { margin: .2rem 0 0; white-space: pre-line; }

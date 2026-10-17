@@ -117,6 +117,10 @@ def can_manage_soft_weights(user, obj=None):
     return _allowed(user, ADMIN_ONLY)
 
 
+def can_leave_feedback(user, timetable=None):
+    return _allowed(user, ADMIN_ONLY)
+
+
 PREDICATES = (
     can_view_backup_status,
     can_view_timetable,
@@ -141,6 +145,7 @@ PREDICATES = (
     can_edit_school_data,
     can_edit_teachers,
     can_manage_soft_weights,
+    can_leave_feedback,
 )
 
 

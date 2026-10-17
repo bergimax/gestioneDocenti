@@ -89,6 +89,11 @@ urlpatterns = [
         views.timetable_undo_approval,
         name="timetable_undo_approval",
     ),
+    path(
+        "orario/<str:week>/nota/",
+        views.timetable_feedback,
+        name="timetable_feedback",
+    ),
     path("orario/<str:week>/export-pdf/", export_pdf, name="timetable_export_pdf"),
     path(
         "orario/<str:week>/export-excel/",
