@@ -32,6 +32,35 @@ Verify with `swapon --show` and `free -h`. Optionally make the kernel prefer
 RAM: `echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf`
 and `sudo sysctl --system`.
 
+## Memory limits
+
+Every container has a memory limit and a reservation, set in
+`docker-compose.yml` and configurable from the env file (optional; an integer
+followed by `b`, `k`, `m` or `g`; a reservation above its limit makes Docker
+refuse to start). The limits add up to the 1 GB of the VM on purpose: the
+services do not peak together, the solver runs only when someone presses
+"Genera".
+
+| Service | Limit variable (default) | Reservation variable (default) |
+|---|---|---|
+| `worker` | `WORKER_MEM_LIMIT` (448m) | `WORKER_MEM_RESERVATION` (256m) |
+| `web` | `WEB_MEM_LIMIT` (256m) | `WEB_MEM_RESERVATION` (160m) |
+| `postgres` | `POSTGRES_MEM_LIMIT` (256m) | `POSTGRES_MEM_RESERVATION` (128m) |
+| `caddy` | `CADDY_MEM_LIMIT` (64m) | `CADDY_MEM_RESERVATION` (32m) |
+
+The worker cannot use swap (`memswap_limit` equals its limit). If anything is
+killed, it is the worker: a runaway solve dies at once in its own cgroup
+instead of thrashing the swap file and dragging Postgres and the site with
+it. The container restarts by itself (`unless-stopped`); the job it left
+running is marked failed after the stale margin with the "interrotta"
+message, and the user can retry the generation. A solve that legitimately needs
+more memory fails the same way: raise `WORKER_MEM_LIMIT` (and keep the sum of
+the limits within the RAM of the machine) on a bigger VM.
+
+See the numbers with `docker stats --no-stream`, and whether a container was
+killed with `docker inspect -f '{{.State.OOMKilled}}' <container>`. The
+defaults are reasoned estimates; measuring them on the VM is issue #153.
+
 ## Building on 1 GB
 
 The image build is slow (tens of minutes: ortools and weasyprint wheels) and

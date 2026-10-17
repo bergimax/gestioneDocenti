@@ -11,6 +11,8 @@ services:
   postgres:
     image: postgres:15-alpine
     restart: unless-stopped
+    mem_limit: ${POSTGRES_MEM_LIMIT:-256m}
+    mem_reservation: ${POSTGRES_MEM_RESERVATION:-128m}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-gestione}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -27,6 +29,8 @@ services:
     build: .
     image: gestione-docenti:latest
     restart: unless-stopped
+    mem_limit: ${WEB_MEM_LIMIT:-256m}
+    mem_reservation: ${WEB_MEM_RESERVATION:-160m}
     command: ["gunicorn", "-c", "deploy/gunicorn.conf.py", "config.wsgi:application"]
     env_file: .env.production
     environment:
@@ -44,6 +48,9 @@ services:
   worker:
     image: gestione-docenti:latest
     restart: unless-stopped
+    mem_limit: ${WORKER_MEM_LIMIT:-448m}
+    memswap_limit: ${WORKER_MEM_LIMIT:-448m}
+    mem_reservation: ${WORKER_MEM_RESERVATION:-256m}
     command: ["python", "manage.py", "solve_worker"]
     env_file: .env.production
     environment: *app-environment
@@ -54,6 +61,8 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    mem_limit: ${CADDY_MEM_LIMIT:-64m}
+    mem_reservation: ${CADDY_MEM_RESERVATION:-32m}
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN is required}
     ports:
