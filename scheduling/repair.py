@@ -248,6 +248,7 @@ def _base_result(timetable_id, version):
         "complete": True,
         "message": MSG_NOTHING_TO_CHANGE,
         "conflicts": [],
+        "conflict_refs": [],
         "explanations": [],
         "explanation_unavailable": False,
         "suggested_deroghe": [],
@@ -285,6 +286,10 @@ def _solve_repair(job):
         complete=complete,
         message=(MSG_NOTHING_TO_CHANGE if not rows else solved.message),
         conflicts=[c["description"] for c in solved.conflict_items],
+        conflict_refs=[
+            {"classe_id": c.get("classe_id"), "docente_id": c.get("docente_id")}
+            for c in solved.conflict_items
+        ],
         explanations=solved.explanations,
         explanation_unavailable=solved.explanation_unavailable,
         suggested_deroghe=solved.suggested_deroghe,

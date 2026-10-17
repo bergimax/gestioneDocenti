@@ -39,10 +39,10 @@
       <ul>{% for message in p.explanations %}<li>{{ message }}</li>{% endfor %}</ul>
     </section>
     {% endif %}
-    {% if p.conflicts %}
+    {% if p.conflict_texts %}
     <section class="tt-conflicts" aria-label="Conflitti della proposta">
-      <h2>Conflitti della proposta ({{ p.conflicts|length }})</h2>
-      <ul>{% for text in p.conflicts %}<li>{{ text }}</li>{% endfor %}</ul>
+      <h2>Conflitti della proposta ({{ p.conflict_texts|length }})</h2>
+      <ul>{% for text in p.conflict_texts %}<li>{{ text }}</li>{% endfor %}</ul>
     </section>
     {% endif %}
     {% if p.stale %}

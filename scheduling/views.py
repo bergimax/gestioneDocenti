@@ -692,6 +692,22 @@ def _repair_job(school, week):
     )
 
 
+def _conflict_texts(result, school):
+    """The proposal's conflict sentences, with names where the refs allow it.
+
+    Old results (no refs) and mismatched ones show the stored text unchanged.
+    """
+    texts = result.get("conflicts") or []
+    refs = result.get("conflict_refs")
+    if not texts or not isinstance(refs, list) or len(refs) != len(texts):
+        return list(texts)
+    items = [
+        {"description": text, **(ref if isinstance(ref, dict) else {})}
+        for text, ref in zip(texts, refs, strict=True)
+    ]
+    return [row["text"] for row in conflict_rows(items, school)]
+
+
 def _repair_context(
     school,
     week,
@@ -742,6 +758,7 @@ def _repair_context(
             stale = job.result.get("base_version") != timetable.version
             context["repair_proposal"] = {
                 **job.result,
+                "conflict_texts": _conflict_texts(job.result, school),
                 "job": job,
                 "what": describe(job.params[PARAMS_KEY]),
                 "stale": stale,
