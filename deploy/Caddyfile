@@ -28,6 +28,17 @@
 		import redacted_log
 	}
 
+	# Same values as Django sets (tests/test_security_headers.py checks they
+	# agree): Caddy answers /static/* itself, Django answers the rest.
+	# CSP is report-only on purpose; enforcing it is a later change.
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		X-Frame-Options DENY
+		-Server
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+	}
+
 	handle_path /static/* {
 		root * /srv/static
 		file_server

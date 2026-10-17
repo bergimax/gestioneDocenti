@@ -66,6 +66,20 @@ A forgotten password is reset with
 
     docker compose exec web python manage.py changepassword <email>
 
+## Security headers
+
+Both layers send `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`
+and `X-Frame-Options: DENY` with the same value: Caddy (`header` block in
+`deploy/Caddyfile`) because it answers `/static/*` itself, Django
+(`config/settings.py`) for everything else and when run without Caddy. Caddy also
+drops the `Server` banner and sends `Content-Security-Policy-Report-Only`
+(never enforced; violations show in the browser console). Django alone sends
+`Strict-Transport-Security`, only when `SECURE_HSTS_SECONDS` is set (blank = off).
+Raise it in steps: 300, 86400, 2592000, 31536000, a step only after a day without
+trouble. No `includeSubDomains`, no preload. There is no `SECURE_SSL_REDIRECT`:
+Caddy redirects HTTP to HTTPS. Checking the real headers on the running stack is
+the human check #150.
+
 ## Logs
 
     docker compose logs -f web worker caddy

@@ -116,6 +116,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -166,6 +167,15 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+# Browser security headers (Caddy sets the same three for /static/*). Caddy
+# already redirects HTTP to HTTPS, so no SECURE_SSL_REDIRECT. HSTS is off
+# unless SECURE_HSTS_SECONDS is set; no subdomains, no preload.
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+SECURE_HSTS_SECONDS = get_non_negative_int(os.environ, "SECURE_HSTS_SECONDS", 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
 CSRF_TRUSTED_ORIGINS = [f"https://{DOMAIN}"] if DOMAIN else []
 
 # Magic-link tokens travel in URL paths: redact them from request logs.
