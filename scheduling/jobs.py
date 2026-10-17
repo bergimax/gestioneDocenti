@@ -1,23 +1,69 @@
 """Starting a generation: the only entry point the views will call."""
 
+from datetime import timedelta
+
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
+from django.db.models.functions import Coalesce
+from django.utils import timezone
 
 from availability.grid import check_monday
 from projects.permissions import can_generate
 from school.models import Assignment
 from school.selectors import current_school
 
-from .models import ACTIVE_JOB_STATUSES, JobKind, SolveJob, Timetable, TimetableState
+from .models import (
+    ACTIVE_JOB_STATUSES,
+    InvalidJobTransition,
+    JobKind,
+    JobStatus,
+    SolveJob,
+    Timetable,
+    TimetableState,
+)
 from .tasks import ALTERNATIVES_KEY, ERROR_APPROVED, ERROR_NO_ASSIGNMENTS, run_solve_job
 
 ERROR_ACTIVE_JOB = (
     "Una generazione di questa settimana è già in corso: attendi che finisca."
 )
 
+ERROR_STALE_JOB = (
+    "La generazione si è interrotta (il processo di calcolo è stato fermato). Riprova."
+)
+
 
 class GenerationRefused(Exception):
     """The generation cannot start; `str(exc)` is the Italian reason."""
+
+
+def fail_stale_jobs(school=None, week_start=None, now=None):
+    """Mark RUNNING jobs older than timeout + margin FAILED; returns how many.
+
+    A killed worker leaves its job RUNNING for ever, which blocks the week.
+    The reference time is `started_at` (else `created_at`); only strictly older
+    jobs qualify. PENDING jobs are never touched.
+    """
+    now = now or timezone.now()
+    limit = timedelta(
+        seconds=settings.SOLVER_TIMEOUT_SECONDS + settings.SOLVER_STALE_MARGIN_SECONDS
+    )
+    jobs = SolveJob.objects.filter(status=JobStatus.RUNNING).annotate(
+        since=Coalesce("started_at", "created_at")
+    )
+    jobs = jobs.filter(since__lt=now - limit)
+    if school is not None:
+        jobs = jobs.filter(school=school)
+    if week_start is not None:
+        jobs = jobs.filter(week_start=week_start)
+    failed = 0
+    for job in jobs:
+        try:
+            job.transition_to(JobStatus.FAILED, error=ERROR_STALE_JOB)
+        except InvalidJobTransition:  # it finished or failed meanwhile
+            continue
+        failed += 1
+    return failed
 
 
 def _active_job(school, week_start):
@@ -60,6 +106,7 @@ def enqueue_job(week_start, user, params=None, refuse_active=False):
         raise GenerationRefused(ERROR_APPROVED)
     if not Assignment.objects.filter(school=school, teacher__active=True).exists():
         raise GenerationRefused(ERROR_NO_ASSIGNMENTS)
+    fail_stale_jobs(school, week_start)
     try:
         with transaction.atomic():
             existing = _active_job(school, week_start)

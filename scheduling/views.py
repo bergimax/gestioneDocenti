@@ -41,7 +41,7 @@ from .decisions import approve_conflicts, reject_lesson
 from .derogations import QUICK_ACTIONS
 from .feedback import InvalidNote, add_feedback
 from .forms import QuickActionForm, RepairForm
-from .jobs import GenerationRefused, enqueue_generation
+from .jobs import GenerationRefused, enqueue_generation, fail_stale_jobs
 from .models import (
     ACTIVE_JOB_STATUSES,
     Day,
@@ -314,7 +314,9 @@ def _job_response(request, school, week, status=200, error=None):
 @require_GET
 def timetable_job(request, week):
     school = _school_or_404()
-    return _job_response(request, school, _parse_week(school, week))
+    week = _parse_week(school, week)
+    fail_stale_jobs(school, week["start"])
+    return _job_response(request, school, week)
 
 
 @permission_required(can_generate)

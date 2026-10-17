@@ -41,7 +41,10 @@ Timetable generation runs outside the web process, queued in PostgreSQL with
 It takes the options of `db_worker` (`--batch` processes the pending jobs and
 exits, `--max-tasks 1` stops after one job, `--interval N` sets the polling
 seconds). One process runs one solve at a time; Ctrl-C finishes the running
-solve and exits cleanly. The solver timeout is `SOLVER_TIMEOUT_SECONDS`.
+solve and exits cleanly. The solver timeout is `SOLVER_TIMEOUT_SECONDS`. A job left
+RUNNING by a killed worker is marked failed once it is older than the timeout
+plus `SOLVER_STALE_MARGIN_SECONDS` (default 120); this runs when the worker
+starts, on each status poll and before a new job is enqueued.
 
 ## Users and passwords
 

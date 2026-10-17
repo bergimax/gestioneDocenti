@@ -54,6 +54,7 @@ from .tasks import (
     ERROR_APPROVED,
     ERROR_UNEXPECTED,
     _build_slots,
+    finish_failed,
     infeasible_message,
     timeout_message,
     write_timetable,
@@ -212,8 +213,7 @@ def run_alternatives(job):
     except Exception as exc:
         logger.exception("Alternatives job %s failed", job.pk)
         error = f"{ERROR_UNEXPECTED} ({exc})"
-    job.refresh_from_db()
-    job.transition_to(JobStatus.FAILED, error=error)
+    finish_failed(job, error)
 
 
 def is_alternatives_job(job):

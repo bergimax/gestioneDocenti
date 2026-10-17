@@ -1,5 +1,7 @@
 from django_tasks_db.management.commands.db_worker import Command as DbWorker
 
+from scheduling.jobs import fail_stale_jobs
+
 
 class Command(DbWorker):
     """Start the background worker that runs timetable generation jobs.
@@ -11,3 +13,8 @@ class Command(DbWorker):
     """
 
     help = "Run the worker for timetable generation jobs (one solve at a time)"
+
+    def handle(self, *args, **options):
+        # jobs a previous, killed worker left RUNNING can never finish
+        fail_stale_jobs()
+        return super().handle(*args, **options)

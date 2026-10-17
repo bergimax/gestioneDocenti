@@ -25,6 +25,7 @@ from .context import build_week_context
 from .models import (
     ACTIVE_JOB_STATUSES,
     Day,
+    InvalidJobTransition,
     JobKind,
     JobStatus,
     Slot,
@@ -49,6 +50,7 @@ from .tasks import (
     ERROR_APPROVED,
     ERROR_UNEXPECTED,
     _build_slots,
+    finish_failed,
     infeasible_message,
     run_repair_job,
     solve_exclusive,
@@ -319,9 +321,12 @@ def run_repair(job_id):
         logger.exception("Repair job %s failed", job_id)
         outcome = f"{ERROR_UNEXPECTED} ({exc})"
     if isinstance(outcome, str):
-        job.transition_to(JobStatus.FAILED, error=outcome)
-    else:
+        finish_failed(job, outcome)
+        return
+    try:
         job.transition_to(JobStatus.DONE, result=outcome)
+    except InvalidJobTransition:  # failed by recovery while it was running
+        logger.warning("Repair job %s was failed meanwhile: result dropped", job_id)
 
 
 def _updated_result(job, **changes):

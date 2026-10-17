@@ -16,6 +16,7 @@ from .derogations import derogation_from_params
 from .models import (
     ConflictDecision,
     Day,
+    InvalidJobTransition,
     JobStatus,
     Slot,
     SolveJob,
@@ -152,6 +153,15 @@ def _write_result(job, result):
         )
 
 
+def finish_failed(job, error):
+    """Move the job to FAILED; a job already failed by recovery stays as is."""
+    job.refresh_from_db()  # undo the in-memory DONE of a rolled-back write
+    try:
+        job.transition_to(JobStatus.FAILED, error=error)
+    except InvalidJobTransition:
+        logger.warning("Job %s is no longer running: left as %s", job.pk, job.status)
+
+
 def run_job(job_id):
     """Run one GENERATE job to DONE or FAILED. Never raises."""
     job = SolveJob.objects.filter(pk=job_id).first()
@@ -186,8 +196,7 @@ def run_job(job_id):
     except Exception as exc:
         logger.exception("Solve job %s failed", job_id)
         error = f"{ERROR_UNEXPECTED} ({exc})"
-    job.refresh_from_db()  # undo the in-memory DONE of a rolled-back write
-    job.transition_to(JobStatus.FAILED, error=error)
+    finish_failed(job, error)
 
 
 @task
