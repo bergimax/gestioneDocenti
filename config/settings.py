@@ -11,6 +11,7 @@ from config.env import (
     DEFAULT_LOGIN_MAX_FAILURES,
     DEFAULT_LOGIN_WINDOW_SECONDS,
     DEFAULT_SETUP_MAX_UPLOAD_BYTES,
+    DEFAULT_SETUP_UPLOAD_MAX_AGE_HOURS,
     DEFAULT_SOLVER_TIMEOUT_SECONDS,
     get_bool,
     get_domain,
@@ -35,6 +36,9 @@ SOLVER_TIMEOUT_SECONDS = get_positive_int(
 SOLVER_EXPLAIN_BUDGET_SECONDS = get_explain_budget(os.environ, SOLVER_TIMEOUT_SECONDS)
 SETUP_MAX_UPLOAD_BYTES = get_positive_int(
     os.environ, "SETUP_MAX_UPLOAD_BYTES", DEFAULT_SETUP_MAX_UPLOAD_BYTES
+)
+SETUP_UPLOAD_MAX_AGE_HOURS = get_positive_int(
+    os.environ, "SETUP_UPLOAD_MAX_AGE_HOURS", DEFAULT_SETUP_UPLOAD_MAX_AGE_HOURS
 )
 # Empty key = the AI features are off and absent from the UI.
 ANTHROPIC_API_KEY = get_optional_str(os.environ, "ANTHROPIC_API_KEY")

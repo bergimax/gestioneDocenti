@@ -15,6 +15,7 @@ import pdfplumber
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.db import connection, transaction
+from django.utils import timezone
 
 from ai.calendar_pdf import AiError, read_calendar_pdf
 from availability.models import Availability, AvailabilityLink
@@ -693,6 +694,27 @@ def add_manual_date(date_text, hours_text, is_closure, stage_class_text):
         calendar.rows = _dump_rows("calendar", rows)
         calendar.save(update_fields=["rows", "updated_at"])
     return date
+
+
+# --- purge of abandoned uploads ------------------------------------------------
+
+
+def purge_parked_uploads(max_age_hours, dry_run=False):
+    """Delete parked uploads whose `updated_at` is older than `max_age_hours`.
+
+    Takes the setup advisory lock, so it never races a save or a replace.
+    Touches only ParkedUpload. Returns the file types (sorted) of the stale
+    rows; with `dry_run` nothing is deleted.
+    """
+    cutoff = timezone.now() - datetime.timedelta(hours=max_age_hours)
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", [SETUP_LOCK_ID])
+        stale = ParkedUpload.objects.filter(updated_at__lt=cutoff)
+        file_types = sorted(stale.values_list("file_type", flat=True))
+        if file_types and not dry_run:
+            stale.delete()
+    return file_types
 
 
 # --- save ---------------------------------------------------------------------
