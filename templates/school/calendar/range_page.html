@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Applica a un intervallo{% endblock %}
+{% block content %}
+<p><a href="{% url 'calendar_month' %}">&larr; Calendario</a></p>
+{% include "school/calendar/_range_form.html" %}
+{% endblock %}

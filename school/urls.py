@@ -104,6 +104,11 @@ urlpatterns = [
     ),
     path("dati-scuola/calendario/", calendar.calendar_month, name="calendar_month"),
     path(
+        "dati-scuola/calendario/intervallo/",
+        calendar.calendar_range,
+        name="calendar_range",
+    ),
+    path(
         "dati-scuola/calendario/nuova/",
         calendar.calendar_create,
         name="calendar_create",

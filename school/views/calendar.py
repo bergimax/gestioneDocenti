@@ -11,7 +11,7 @@ from projects.permissions import (
     permission_required,
 )
 
-from ..forms import CalendarEntryForm
+from ..forms import CalendarEntryForm, CalendarRangeForm
 from ..models import CalendarEntry
 from ..selectors import current_school, day_label, month_view, resolve_month
 
@@ -57,8 +57,12 @@ def _form_response(request, template, context, status=200):
 
 def _done(request, school, entry, message):
     """Flash and show the month of `entry` (it may differ from the one open)."""
+    return _done_on(request, school, entry.date, message)
+
+
+def _done_on(request, school, day, message):
     messages.add_message(request, messages.SUCCESS, message)
-    first = entry.date.replace(day=1)
+    first = day.replace(day=1)
     if _is_htmx(request):
         return _section(request, school, first, flash=True)
     return redirect(f"{reverse('calendar_month')}?mese={first:%Y-%m}")
@@ -153,3 +157,27 @@ def calendar_delete(request, pk):
         )
     context = {"school": school, "entry": entry}
     return _form_response(request, TPL + "delete_page.html", context)
+
+
+@permission_required(can_edit_school_data)
+@require_http_methods(["GET", "POST"])
+def calendar_range(request):
+    school = current_school()
+    if school is None:
+        return _no_school(request)
+    if request.method == "POST":
+        form = CalendarRangeForm(request.POST, school=school)
+        if form.is_valid():
+            count = form.apply()
+            if count is not None:
+                start, end = form.cleaned_data["start"], form.cleaned_data["end"]
+                return _done_on(
+                    request,
+                    school,
+                    start,
+                    f"Applicate {count} righe dal {start:%d/%m/%Y} al {end:%d/%m/%Y}.",
+                )
+    else:
+        form = CalendarRangeForm(school=school)
+    context = {"school": school, "range_form": form, "form": None}
+    return _form_response(request, TPL + "range_page.html", context)

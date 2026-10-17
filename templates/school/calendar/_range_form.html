@@ -1,0 +1,21 @@
+<form method="post" class="form-panel" novalidate
+      action="{% url 'calendar_range' %}"
+      hx-post="{% url 'calendar_range' %}"
+      hx-target="#calendar-section" hx-swap="outerHTML">
+  {% csrf_token %}
+  <h2>Applica a un intervallo</h2>
+  <p class="hint">Crea una riga per ogni giorno da lunedì a venerdì tra le due date, estremi inclusi. Se una riga esiste già, non viene scritto nulla.</p>
+  {% if range_form.errors %}<p class="form-error" role="alert">Controlla i campi evidenziati.</p>{% endif %}
+  {% for field in range_form.visible_fields %}
+  <div class="field{% if field.errors %} has-error{% endif %}">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.help_text %}<p class="hint" id="{{ field.id_for_label }}-hint">{{ field.help_text }}</p>{% endif %}
+    {% if field.errors %}<p class="field-error" id="{{ field.id_for_label }}-error">{{ field.errors|join:" " }}{% if range_form.conflict_entry and field.name == "start" %} <a href="{% url 'calendar_edit' range_form.conflict_entry.pk %}">Apri la riga esistente</a>{% endif %}</p>{% endif %}
+  </div>
+  {% endfor %}
+  <p>
+    <button type="submit">Applica</button>
+    <a href="{% url 'calendar_month' %}">Annulla</a>
+  </p>
+</form>

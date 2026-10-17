@@ -1,1 +1,1 @@
-{% if form %}{% include "school/calendar/_form.html" %}{% else %}{% include "school/calendar/_delete.html" %}{% endif %}
+{% if range_form %}{% include "school/calendar/_range_form.html" %}{% elif form %}{% include "school/calendar/_form.html" %}{% else %}{% include "school/calendar/_delete.html" %}{% endif %}

@@ -1,3 +1,5 @@
+import datetime
+
 from django import forms
 from django.db import IntegrityError, transaction
 from django.db.models import Q
@@ -519,6 +521,7 @@ class CalendarEntryForm(_AriaForm, forms.ModelForm):
     """
 
     duplicate_of = None
+    checked_data = None  # the cleaned values when a duplicate removed some
 
     date = forms.DateField(
         label="Data",
@@ -650,6 +653,7 @@ class CalendarEntryForm(_AriaForm, forms.ModelForm):
     def _check_duplicate(self, data):
         existing = self._duplicates(data).first()
         if existing is not None:
+            self.checked_data = dict(data)
             self._report_duplicate(existing, data)
 
     def _report_duplicate(self, existing, data):
@@ -677,6 +681,234 @@ class CalendarEntryForm(_AriaForm, forms.ModelForm):
             data = self.cleaned_data
             self._report_duplicate(self._duplicates(data).first(), data)
             return None
+
+
+class _LooseChoiceField(forms.ChoiceField):
+    """A menu whose value is validated by the form, only when its Tipo needs it."""
+
+    def validate(self, value):
+        pass
+
+
+RANGE_KINDS = [
+    ("closure", "Chiusura"),
+    ("short", "Giornata corta"),
+    ("group_stage", "Stage di gruppo"),
+    ("class_stage", "Stage di una classe"),
+    ("start_hour", "Ora minima di inizio"),
+]
+
+
+class CalendarRangeForm(_AriaForm, forms.Form):
+    """Apply one kind of calendar row to every Mon-Fri day of a date range.
+
+    The per-row rules are those of CalendarEntryForm, run on the first working
+    day (the other days differ only by date, which is checked here). Duplicates
+    are looked up with one query; nothing is written when any exists.
+    """
+
+    MAX_LISTED = 10
+    conflict_entry = None
+    rows = ()
+
+    start = forms.DateField(
+        label="Data inizio",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        error_messages={
+            "required": "Inserisci la data di inizio.",
+            "invalid": "Inserisci una data valida (AAAA-MM-GG).",
+        },
+    )
+    end = forms.DateField(
+        label="Data fine",
+        widget=forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+        error_messages={
+            "required": "Inserisci la data di fine.",
+            "invalid": "Inserisci una data valida (AAAA-MM-GG).",
+        },
+    )
+    group = forms.ChoiceField(
+        label="Gruppo",
+        required=False,
+        choices=[("", "Tutta la scuola")] + list(Group.choices),
+        error_messages={
+            "invalid_choice": "Scegli un gruppo valido: scelta non valida."
+        },
+    )
+    kind = forms.ChoiceField(
+        label="Tipo",
+        choices=RANGE_KINDS,
+        widget=forms.RadioSelect,
+        error_messages={
+            "required": "Scegli il tipo di riga.",
+            "invalid_choice": "Scegli il tipo di riga: scelta non valida.",
+        },
+    )
+    max_hours = _LooseChoiceField(
+        label="Ore massime (giornata corta)",
+        required=False,
+        choices=[("4", "4"), ("5", "5")],
+    )
+    stage_class = _LooseChoiceField(
+        label="Classe (stage di una classe)", required=False
+    )
+    start_hour_min = _LooseChoiceField(
+        label="Ora minima di inizio",
+        required=False,
+        choices=[("", "-")] + [(str(h), str(h)) for h in START_HOUR_CHOICES],
+    )
+
+    def __init__(self, *args, school, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.school = school
+        self.fields["stage_class"].choices = [("", "Nessuna classe")] + [
+            (str(c.pk), c.name) for c in _by_name(Class, school)
+        ]
+        self._init_hints()
+
+    def _days(self, start, end):
+        count = (end - start).days + 1
+        days = (start + datetime.timedelta(days=n) for n in range(count))
+        return [day for day in days if day.weekday() < 5]
+
+    def clean(self):
+        data = super().clean()
+        if self.errors:
+            return data
+        start, end = data["start"], data["end"]
+        first, last = self.school.year_start, self.school.year_end
+        if not (first <= start <= last):
+            self.add_error("start", self._year_message())
+        if not (first <= end <= last):
+            self.add_error("end", self._year_message())
+        if "start" not in self.errors and "end" not in self.errors and end < start:
+            self.add_error("end", "La data di fine non può precedere l'inizio.")
+        if self.errors:
+            return data
+        days = self._days(start, end)
+        if not days:
+            self.add_error(
+                "start", "L'intervallo non contiene giorni da lunedì a venerdì."
+            )
+            return data
+        entry = self._entry_form(days[0], data)
+        if not self._take_entry_errors(entry):
+            cleaned = entry.checked_data or entry.cleaned_data
+            self._check_conflicts(days, cleaned)
+            if not self.errors:
+                self.rows = [self._row(day, cleaned) for day in days]
+        return data
+
+    def _year_message(self):
+        return (
+            f"La data deve essere compresa tra il {self.school.year_start:%d/%m/%Y} "
+            f"e il {self.school.year_end:%d/%m/%Y}."
+        )
+
+    def _entry_form(self, day, data):
+        kind = data["kind"]
+        raw = {"date": day.isoformat()}
+        if kind in ("closure", "short", "group_stage", "class_stage", "start_hour"):
+            raw["group"] = data["group"]
+        if kind == "closure":
+            raw["is_closure"] = "on"
+        elif kind == "short":
+            raw["max_hours"] = data["max_hours"]
+        elif kind == "group_stage":
+            raw["is_group_stage"] = "on"
+        elif kind == "class_stage":
+            raw["stage_class"] = data["stage_class"]
+        else:
+            raw["start_hour_min"] = data["start_hour_min"]
+        entry = CalendarEntryForm(raw, school=self.school)
+        entry.is_valid()
+        return entry
+
+    def _take_entry_errors(self, entry):
+        """Copy the single-date form's errors onto this form's fields."""
+        kind = self.cleaned_data["kind"]
+        extra = {}
+        if kind == "short" and self.cleaned_data["max_hours"] not in ("4", "5"):
+            extra["max_hours"] = ["Scegli 4 o 5 ore: scelta non valida."]
+        if kind == "start_hour" and not self.cleaned_data["start_hour_min"]:
+            extra["start_hour_min"] = ["Scegli l'ora minima di inizio."]
+        if kind == "class_stage" and not self.cleaned_data["stage_class"]:
+            extra["stage_class"] = ["Scegli la classe."]
+        names = {"is_group_stage": "group", "is_closure": "kind", "date": "start"}
+        for name, messages in entry.errors.items():
+            if entry.duplicate_of is not None:
+                break
+            extra.setdefault(names.get(name, name), list(messages))
+        for name, messages in extra.items():
+            for message in messages:
+                self.add_error(name, message)
+        return bool(self.errors)
+
+    def _row(self, day, cleaned):
+        return CalendarEntry(
+            school=self.school,
+            date=day,
+            group=cleaned["group"],
+            max_hours=cleaned["max_hours"],
+            is_closure=cleaned["is_closure"],
+            start_hour_min=cleaned["start_hour_min"],
+            stage_class=cleaned["stage_class"],
+            is_group_stage=cleaned["is_group_stage"],
+        )
+
+    def _existing(self, days, cleaned):
+        rows = CalendarEntry.objects.filter(
+            school=self.school, date__gte=days[0], date__lte=days[-1]
+        )
+        if cleaned.get("stage_class"):
+            rows = rows.filter(stage_class=cleaned["stage_class"])
+        else:
+            rows = rows.filter(stage_class__isnull=True)
+            if cleaned.get("group"):
+                rows = rows.filter(group=cleaned["group"])
+            else:
+                rows = rows.filter(group__isnull=True)
+        return rows.order_by("date", "pk")
+
+    def _check_conflicts(self, days, cleaned):
+        found = list(self._existing(days, cleaned))
+        working = set(days)
+        found = [e for e in found if e.date in working]
+        if found:
+            self._report_conflicts(found)
+
+    def _report_conflicts(self, found):
+        self.conflict_entry = found[0]
+        listed = ", ".join(f"{e.date:%d/%m/%Y}" for e in found[: self.MAX_LISTED])
+        more = len(found) - self.MAX_LISTED
+        if more > 0:
+            listed += f" e altre {more}"
+        self.add_error(
+            "start",
+            f"Esistono già righe per queste date: {listed}. Nessuna riga è stata "
+            "applicata.",
+        )
+
+    def apply(self):
+        """Create every row or none; returns the number created, or None."""
+        try:
+            with transaction.atomic():
+                return len(CalendarEntry.objects.bulk_create(self.rows))
+        except IntegrityError:
+            found = list(self._existing(self._days(*self._span()), self._shape()))
+            if found:
+                self._report_conflicts(found)
+            else:
+                self.add_error("start", "Impossibile applicare l'intervallo: riprova.")
+            self._link_errors()
+            return None
+
+    def _span(self):
+        return self.cleaned_data["start"], self.cleaned_data["end"]
+
+    def _shape(self):
+        row = self.rows[0]
+        return {"group": row.group, "stage_class": row.stage_class}
 
 
 class SetupSaveForm(forms.Form):

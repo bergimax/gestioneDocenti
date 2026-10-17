@@ -17,7 +17,8 @@
     {% if next_month %}<a href="{% url 'calendar_month' %}?mese={{ next_month }}" hx-get="{% url 'calendar_month' %}?mese={{ next_month }}" hx-target="#calendar-section" hx-swap="outerHTML" hx-push-url="true">Mese successivo &rarr;</a>{% endif %}
   </div>
   {% if can_edit %}
-  <p><a class="button" href="{% url 'calendar_create' %}" hx-get="{% url 'calendar_create' %}" hx-target="#calendar-form-area" hx-swap="innerHTML">Aggiungi riga</a></p>
+  <p><a class="button" href="{% url 'calendar_create' %}" hx-get="{% url 'calendar_create' %}" hx-target="#calendar-form-area" hx-swap="innerHTML">Aggiungi riga</a>
+  <a href="{% url 'calendar_range' %}" hx-get="{% url 'calendar_range' %}" hx-target="#calendar-form-area" hx-swap="innerHTML">Applica a un intervallo</a></p>
   {% endif %}
   <div id="calendar-form-area" aria-live="polite"></div>
   {% if not has_entries %}<p>Nessuna riga di calendario per questo mese.</p>{% endif %}
