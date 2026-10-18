@@ -647,3 +647,15 @@ def test_docs_mention_offsite_line():
     for name in ("backup-offsite.sh", "backup-status.sh"):
         assert "set -euo pipefail" in (DEPLOY / name).read_text()
         assert subprocess.run(["bash", "-n", str(DEPLOY / name)]).returncode == 0
+
+
+@pytest.mark.parametrize("remote", ["", REMOTE])
+def test_status_multiline_local_marker_still_accepted(env, remote):
+    write_marker(env, 5)
+    marker = env["backups"] / "last-success"
+    marker.write_text(marker.read_text() + "extra line\n")
+    write_offsite(env, 5)
+    r = run(env, "backup-status.sh", OFFSITE_RCLONE_REMOTE=remote)
+    assert r.returncode == 0, r.stderr
+    assert "last backup: 5 hours ago" in r.stdout
+    assert "no valid backup marker" not in r.stderr

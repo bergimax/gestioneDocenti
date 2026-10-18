@@ -21,9 +21,10 @@ fi
 
 dir="$(backup_dir)"
 
-# check MARKER_NAME INVALID_WORD LINE_LABEL THRESHOLD: print the age line, return 0/1/2.
+# check MARKER_NAME INVALID_WORD LINE_LABEL THRESHOLD SINGLE_LINE: print the age line, return 0/1/2.
+# SINGLE_LINE=1 (off-site marker only) also rejects a marker with more than one line.
 check() {
-    local marker="$dir/$1" word="$2" label="$3" limit="$4"
+    local marker="$dir/$1" word="$2" label="$3" limit="$4" single="$5"
     local line stamp dump then_s now_s hours ago
     local re='^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) (gestione-docenti-[^ /]+\.dump)$'
     if [ -f "$marker" ]; then
@@ -31,8 +32,8 @@ check() {
     else
         line=""
     fi
-    if [ -f "$marker" ] && [ "$(wc -l < "$marker" 2> /dev/null || echo 0)" -le 1 ] \
-        && [[ "$line" =~ $re ]]; then
+    if [ -f "$marker" ] && [[ "$line" =~ $re ]] \
+        && { [ "$single" != 1 ] || [ "$(wc -l < "$marker" 2> /dev/null || echo 0)" -le 1 ]; }; then
         stamp="${BASH_REMATCH[1]}"
         dump="${BASH_REMATCH[2]}"
         if then_s="$(date -u -d "$stamp" +%s 2> /dev/null)"; then
@@ -60,10 +61,10 @@ check() {
 }
 
 rc=0
-check last-success backup "last backup" "$threshold" || rc=$?
+check last-success backup "last backup" "$threshold" 0 || rc=$?
 if [ -n "$(setting OFFSITE_RCLONE_REMOTE)" ]; then
     off=0
-    check last-offsite-success off-site "last off-site copy" "$offsite_threshold" || off=$?
+    check last-offsite-success off-site "last off-site copy" "$offsite_threshold" 1 || off=$?
     [ "$off" -le "$rc" ] || rc="$off"
 fi
 exit "$rc"
