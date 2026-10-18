@@ -1,5 +1,6 @@
 import datetime
 import json
+from html.parser import HTMLParser
 
 import pytest
 from django.db import connection
@@ -201,3 +202,68 @@ def test_admin_screen_still_edits_approved_week(school, teacher, user):
     )
     assert r.status_code == 200
     assert Availability.objects.get().slots == all_off()
+
+
+class _Rows(HTMLParser):
+    """Direct children (tag, classes, text) of each .av-public-row."""
+
+    VOID = {"input", "br", "img", "hr"}
+
+    def __init__(self):
+        super().__init__()
+        self.rows = []
+        self.stack = []
+        self.depth = None
+
+    def handle_starttag(self, tag, attrs):
+        classes = (dict(attrs).get("class") or "").split()
+        if self.depth is not None and len(self.stack) == self.depth + 1:
+            self.rows[-1][1].append(
+                {"classes": classes, "text": "", "attrs": dict(attrs)}
+            )
+        if tag in self.VOID:
+            return
+        self.stack.append(tag)
+        if "av-public-row" in classes and self.depth is None:
+            self.depth = len(self.stack) - 1
+            self.rows.append((classes, []))
+
+    def handle_endtag(self, tag):
+        if tag in self.VOID:
+            return
+        self.stack.pop()
+        if self.depth is not None and len(self.stack) == self.depth:
+            self.depth = None
+
+    def handle_data(self, data):
+        if self.depth is not None and self.rows[-1][1]:
+            self.rows[-1][1][-1]["text"] += data
+
+
+def _rows(body):
+    parser = _Rows()
+    parser.feed(body)
+    heads = [kids for classes, kids in parser.rows if "av-public-head" in classes]
+    days = [kids for classes, kids in parser.rows if "av-public-head" not in classes]
+    assert len(heads) == 1
+    return heads[0], days
+
+
+def _assert_head_aligned(body):
+    hours = [s["ora_inizio"] for s in g.default_grid()["lunedi"]]
+    head, days = _rows(body)
+    assert len(head) == 1 + len(hours) == 7
+    assert "av-public-corner" in head[0]["classes"]
+    assert "Giorno" in head[0]["text"]
+    assert [c["text"].strip() for c in head[1:]] == hours
+    assert not [c for c in head if "visually-hidden" in c["classes"]]
+    assert len(days) == 5
+    assert all(len(d) == len(head) for d in days)
+    return head, days
+
+
+def test_read_only_hour_headers_sit_above_their_columns(client, school, teacher, clock):
+    _, token = links.create_link(teacher, W1, None)
+    approved(school)
+    body = client.get(f"/l/{token}/").content.decode()
+    _assert_head_aligned(body)

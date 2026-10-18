@@ -7,7 +7,7 @@
 <p class="av-message av-message-error" role="alert">{{ approved_notice }}</p>
 <div class="av-public-grid" role="group" aria-label="Disponibilita settimanale">
   <div class="av-public-row av-public-head">
-    <span class="visually-hidden">Giorno</span>
+    <span class="av-public-corner"><span class="visually-hidden">Giorno</span></span>
     {% for h in hours %}<span>{{ h }}</span>{% endfor %}
   </div>
   {% for day in days %}
@@ -26,7 +26,7 @@
   <input type="hidden" name="grid" :value="JSON.stringify(grid)">
   <div class="av-public-grid" role="group" aria-label="Disponibilita settimanale">
     <div class="av-public-row av-public-head">
-      <span class="visually-hidden">Giorno</span>
+      <span class="av-public-corner"><span class="visually-hidden">Giorno</span></span>
       {% for h in hours %}<span>{{ h }}</span>{% endfor %}
     </div>
     {% for day in days %}
