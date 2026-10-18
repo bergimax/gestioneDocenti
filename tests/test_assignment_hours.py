@@ -97,6 +97,14 @@ def test_adjust_writes_one_entry_with_delta(assignment, admin_user):
     assert audit_mock.call_args.args[2] is None
     params = audit_mock.call_args.args[3]
     assert params["assegnazione"] == assignment.pk and params["ore"] == 5
+    assert params == {
+        "assegnazione": assignment.pk,
+        "voce": entry.pk,
+        "ore_erogate_prima": 0,
+        "ore_erogate_dopo": 5,
+        "ore": 5,
+    }
+    assert "carryover" not in str(params)
 
 
 def test_adjust_negative_delta_and_above_total(assignment, admin_user):

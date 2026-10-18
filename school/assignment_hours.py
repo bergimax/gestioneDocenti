@@ -76,7 +76,7 @@ def adjust_delivered_hours(assignment, new_delivered, user, reason):
             raise NegativeDelivered(new_delivered)
         if not reason:
             raise AdjustmentReasonRequired
-        LedgerEntry.objects.create(
+        ledger_entry = LedgerEntry.objects.create(
             assignment_id=assignment.pk,
             hours=delta,
             kind=EntryKind.ADJUSTMENT,
@@ -89,10 +89,10 @@ def adjust_delivered_hours(assignment, new_delivered, user, reason):
             None,
             {
                 "assegnazione": assignment.pk,
+                "voce": ledger_entry.pk,
                 "ore_erogate_prima": current,
                 "ore_erogate_dopo": new_delivered,
                 "ore": delta,
-                "motivo": reason,
             },
         )
         return result

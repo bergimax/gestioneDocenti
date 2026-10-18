@@ -53,10 +53,10 @@ def regenerate(school, kind, pk, user):
             return None
         feed.token = new_token()
         feed.save(update_fields=["token"])
-        name = feed.teacher.name if kind == KIND_TEACHER else feed.school_class.name
-        # never the token itself
+        target = feed.teacher_id if kind == KIND_TEACHER else feed.school_class_id
+        # ids only, never the token itself nor a name
         audit.record_audit(
-            audit.FEED_REGENERATED, user, None, {"tipo": kind, "nome": name}
+            audit.FEED_REGENERATED, user, None, {"tipo": kind, "id": target}
         )
         return feed
 

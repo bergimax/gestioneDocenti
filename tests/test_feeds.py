@@ -313,10 +313,14 @@ def test_regenerate_replaces_only_that_token_and_audits(w):
     assert new != old and Client().get(f"/feeds/{new}.ics").status_code == 200
     assert Client().get(f"/feeds/{other}.ics").status_code == 200
     entry = AuditLog.objects.get(action=audit.FEED_REGENERATED)
-    assert entry.details == {"tipo": "teacher", "nome": "ROSSI MARIO"}
+    assert entry.details == {"tipo": "teacher", "id": w.rossi.pk}
     assert old not in str(entry.details) and new not in str(entry.details)
+    assert "ROSSI" not in str(entry.details)
     assert c.post(f"/feeds/rigenera/class/{w.c1a.pk}/").status_code == 302
     assert AuditLog.objects.filter(action=audit.FEED_REGENERATED).count() == 2
+    class_entry = AuditLog.objects.filter(action=audit.FEED_REGENERATED).first()
+    assert class_entry.details == {"tipo": "class", "id": w.c1a.pk}
+    assert w.c1a.name not in str(class_entry.details)
     assert c.post("/feeds/rigenera/class/99999/").status_code == 404
     assert c.post("/feeds/rigenera/boh/1/").status_code == 404
     page = c.get("/audit/").content.decode()
