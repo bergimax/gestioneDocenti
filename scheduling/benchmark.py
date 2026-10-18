@@ -9,6 +9,7 @@ it, so the solver always has at least one complete solution to find.
 
 from __future__ import annotations
 
+import dataclasses
 import random
 import resource
 import sys
@@ -155,7 +156,29 @@ def run_benchmark(
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict:
     """Generate the week, solve it as in production and return the numbers."""
-    ctx = generate_context(n_classes, seed, timeout_seconds)
+    return _solve_and_measure(generate_context(n_classes, seed, timeout_seconds))
+
+
+def run_benchmark_week(week_start, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS):
+    """Solve a real week of the configured database and return the numbers.
+
+    The context is the one generate uses (current school, no derogations). The
+    report holds counts and numbers only, never names or ids.
+    """
+    # Lazy: the generated path must stay free of Django models.
+    from scheduling.context import build_week_context
+    from school.selectors import current_school
+
+    school = current_school()
+    if school is None:
+        raise ValueError("nessuna scuola configurata")
+    ctx = build_week_context(week_start, school)
+    if not ctx.assignments:
+        raise ValueError("nessuna assegnazione per la settimana")
+    return _solve_and_measure(dataclasses.replace(ctx, timeout_seconds=timeout_seconds))
+
+
+def _solve_and_measure(ctx: ScheduleContext) -> dict:
     started = time.perf_counter()
     result = solve(ctx)
     elapsed = time.perf_counter() - started
