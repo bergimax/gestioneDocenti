@@ -170,6 +170,9 @@ class ScheduleContext:
     # falls back to its text.
     class_names: dict[Id, str] = field(default_factory=dict)
     teacher_names: dict[Id, str] = field(default_factory=dict)
+    # Subject display names for the H10 conflict text; a missing id falls back
+    # to its text.
+    subject_names: dict[Id, str] = field(default_factory=dict)
     current_lessons: list[Lesson] | None = None
     blocked_cells: dict[Id, frozenset[tuple[int, int]]] = field(default_factory=dict)
 

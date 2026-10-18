@@ -154,7 +154,7 @@ def build_week_context(week_start, school=None, derogations=()):
             stage_days[school_class.pk] = stage
 
     delivered = assignment_hours.delivered_hours_map(school)
-    assignments, targets, sources = [], {}, {}
+    assignments, targets, sources, subject_names = [], {}, {}, {}
     weeks_left = max(1, (school.year_end - week_start).days // 7)
     for a in (
         Assignment.objects.filter(school=school, teacher__active=True)
@@ -162,6 +162,7 @@ def build_week_context(week_start, school=None, derogations=()):
         .order_by("pk")
     ):
         remaining = a.ore_totali - delivered.get(a.pk, 0)
+        subject_names[a.subject_id] = a.subject.name
         assignments.append(
             SolverAssignment(
                 id=a.pk,
@@ -208,4 +209,5 @@ def build_week_context(week_start, school=None, derogations=()):
         derogations=list(derogations),
         class_names={c.pk: c.name for c in classes},
         teacher_names={t.pk: t.name for t in teachers},
+        subject_names=subject_names,
     )

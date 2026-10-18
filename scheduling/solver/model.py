@@ -890,8 +890,9 @@ def _conflict(rec, lessons, ctx) -> Conflict:
         action = AUTHORIZE_FRIDAY_LATE_START
     elif kind == "H10":
         subject_id, minblock = rec[5], rec[6]
+        subject = ctx.subject_names.get(subject_id, str(subject_id))
         desc = (
-            f"Le ore di pratica di {subject_id} per la classe {class_id} {where} "
+            f"Le ore di pratica di {subject} per la classe {class_id} {where} "
             f"non formano un unico blocco di almeno {minblock} ore"
         )
         action = AUTHORIZE_SHORT_PRATICA_BLOCK

@@ -35,6 +35,7 @@ TEXTS = {
     "single_classe_day": "Il docente {t} passa la giornata lunedì con la sola classe {c}",
     "H4": "Il docente {t} ha una lezione con la classe {c} LUNEDI alle 09:00 ma non è disponibile",
     "H9": "La classe {c} non inizia alle 08:00 il venerdì (il blocco di lezioni dovrebbe iniziare alle 8:00)",
+    "H10": "Le ore di pratica di Laboratorio di cucina per la classe {c} LUNEDI non formano un unico blocco di almeno 3 ore",
     "H11": "Il docente {t} ha 4 ore con la classe {c} LUNEDI, oltre il massimo di 3",
 }
 
