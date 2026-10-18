@@ -87,6 +87,25 @@ def test_two_subjects_same_day_each_conflict_has_its_own_name():
     assert "LAB" not in text
 
 
+def test_same_class_and_teacher_two_subjects_one_item_with_both_names():
+    ctx = make(
+        [
+            A(1, "P", "A", 2, "LAB1", PRATICA),
+            A(2, "P", "A", 2, "LAB2", PRATICA),
+            A(3, "TT", "A", 2, "TEO"),
+        ],
+        {"A": day_cap(MON, 6)},
+        {"P": ASSUNTO, "TT": CONTRATTO},
+        availability={"TT": cells(MON, [2, 3])},
+        subject_names={"LAB1": "Cucina", "LAB2": "Sala"},
+    )
+    items = [i for i in solve(ctx).conflict_items if i["kind"] == "H10"]
+    (item,) = items
+    assert "di Cucina per" in item["description"]
+    assert "di Sala per" in item["description"]
+    assert "LAB" not in item["description"]
+
+
 # ------------------------------------------------------------ Django level
 
 WEEK = datetime.date(2026, 10, 12)

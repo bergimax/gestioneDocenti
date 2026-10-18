@@ -80,8 +80,8 @@ def _describe(p: Penalty, quasi: dict, ctx, lessons, assigned) -> str:
     at = "" if p.hour is None else f" alle {_clock(p.hour)}"
     c, t = p.class_id, p.teacher_id
     q = quasi.get((p.kind, c, t, p.day, p.hour))
-    if q is not None:
-        return q.description
+    if q:
+        return "; ".join(dict.fromkeys(x.description for x in q))
     if p.kind == CLASSE_UNFILLED:
         if p.hour is None:
             return f"{p.value} ore non coperte per la classe {c}{where}"
@@ -145,7 +145,11 @@ def build_conflict_items(
     ``ore`` (hours involved) appears for penalties that count hours without a
     single slot; ``ore_slot`` (hour index 0-5) for those tied to one slot.
     """
-    quasi = {(c.kind, c.class_id, c.teacher_id, c.day, c.hour): c for c in conflicts}
+    quasi: dict[tuple, list[Conflict]] = {}
+    for c in conflicts:
+        quasi.setdefault((c.kind, c.class_id, c.teacher_id, c.day, c.hour), []).append(
+            c
+        )
     assigned: dict = {}
     for le in lessons:
         assigned[le.assignment_id] = assigned.get(le.assignment_id, 0) + 1
