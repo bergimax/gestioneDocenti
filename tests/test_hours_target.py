@@ -76,3 +76,22 @@ def test_helper_imports_nothing():
     assert not [
         n for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))
     ]
+
+
+def test_stage_weeks_default_changes_nothing():
+    assert weekly_hours_target(60, start(30), END, "ASSUNTO", stage_weeks=0) == (
+        weekly_hours_target(60, start(30), END, "ASSUNTO")
+    )
+
+
+def test_stage_weeks_are_not_counted_in_weeks_left():
+    assert weekly_hours_target(60, start(30), END, "ASSUNTO", stage_weeks=8) == (
+        60 // (30 - 8)
+    )
+
+
+@pytest.mark.parametrize("stage_weeks", [30, 31, 100])
+def test_stage_weeks_never_divide_by_less_than_one(stage_weeks):
+    assert (
+        weekly_hours_target(7, start(30), END, "ASSUNTO", stage_weeks=stage_weeks) == 7
+    )

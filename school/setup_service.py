@@ -40,7 +40,6 @@ from .importers import (
 from .importers.parsers import (
     FILE_TYPES,
     GROUPS,
-    MAX_HOURS_VALUES,
     STAGE_ORE_GIORNATA,
     TRUE_VALUES,
     calendar_hours_error,
@@ -113,9 +112,9 @@ PARSERS = {
     "assignments": parse_assignments,
     "pairings": parse_pairings,
 }
-# Rows read from a PDF or by the AI may carry 0 or 8 hours, which the CSV
-# parser refuses; when the shared hours rule accepts such a value it is replaced
-# by this placeholder only to re-parse the row's other cells.
+# Rows read from a PDF or by the AI may carry 0 hours on a lesson row, which the
+# CSV parser refuses; when the shared hours rule accepts such a value it is
+# replaced by this placeholder only to re-parse the row's other cells.
 _PLACEHOLDER_HOURS = "6"
 _INT_MAX = 2_147_483_647
 _DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
@@ -331,6 +330,19 @@ def _structured_hours_error(row):
         chiusura=bool(row.get("flag_chiusura")),
         stage=bool(row.get("flag_stage_gruppo")),
         structured=True,
+        stage_class=bool(row.get("stage_classe_id")),
+    )
+
+
+def _csv_hours_error(row):
+    """The hours rule as the CSV parser applies it to this row."""
+    return calendar_hours_error(
+        row.get("ore_max_giornata"),
+        gruppo=row.get("gruppo"),
+        chiusura=bool(row.get("flag_chiusura")),
+        stage=False,
+        structured=False,
+        stage_class=bool(row.get("stage_classe_id")),
     )
 
 
@@ -596,7 +608,7 @@ def _csv_text(file_type, rows, edited_index, field, value):
         fields = [_cell(row.get(c)) for c in columns]
         if (
             file_type == "calendar"
-            and row.get("ore_max_giornata") not in MAX_HOURS_VALUES
+            and _csv_hours_error(row)
             and _structured_hours_error(row) is None
         ):
             fields[columns.index("ore_max_giornata")] = _PLACEHOLDER_HOURS
@@ -666,6 +678,8 @@ def apply_correction(file_type, row_number, field, value):
                 problems,
             )
         rows[index] = {**old, field: parsed[field]}
+        if file_type == "calendar":
+            rows[index]["flag_stage_gruppo"] = parsed["flag_stage_gruppo"]
         upload.rows = _dump_rows(file_type, rows)
         upload.save(update_fields=["rows", "updated_at"])
     return upload
@@ -689,8 +703,16 @@ def add_manual_date(date_text, hours_text, is_closure, stage_class_text):
         hours = None
     else:
         hours = int(hours_text)
-    if hours not in MAX_HOURS_VALUES:
-        raise SetupError("Le ore massime devono essere 4, 5 o 6.")
+    if text := calendar_hours_error(
+        hours if hours is not None else hours_text,
+        gruppo=None,
+        chiusura=bool(is_closure),
+        stage=False,
+        structured=False,
+        stage_class=bool(stage_class_text.strip()),
+        shown=hours_text,
+    ):
+        raise SetupError(text)
     with transaction.atomic():
         calendar = (
             ParkedUpload.objects.select_for_update()

@@ -38,6 +38,7 @@ def test_valid_calendar_row():
             "flag_chiusura": False,
             "stage_classe_id": None,
             "gruppo": "PRIME",
+            "flag_stage_gruppo": False,
             "row": 2,
         },
         {
@@ -46,6 +47,7 @@ def test_valid_calendar_row():
             "flag_chiusura": True,
             "stage_classe_id": "1A",
             "gruppo": None,
+            "flag_stage_gruppo": False,
             "row": 3,
         },
     ]

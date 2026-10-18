@@ -21,7 +21,10 @@ def html(response):
 
 
 def message(value):
-    return f"ore_max_giornata '{value}' non valido: ammessi 4, 5 o 6"
+    return (
+        f"ore_max_giornata '{value}' non valido: ammessi 4, 5 o 6 "
+        "(0 solo su una riga di chiusura, 8 solo per lo stage di un gruppo)"
+    )
 
 
 def others(admin):
@@ -119,11 +122,15 @@ def test_stage_flag_with_wrong_hours_is_an_error(admin):
     assert save(admin).status_code == 422
 
 
-@pytest.mark.parametrize("hours", [0, 8])
-def test_csv_still_refuses_zero_and_eight(admin, hours):
-    result = parse_calendar(csv_calendar(hours))
-    assert [m.text for m in result.messages] == [message(hours)]
+def test_csv_zero_on_a_lesson_row_is_refused(admin):
+    result = parse_calendar(csv_calendar(0))
+    assert [m.text for m in result.messages] == [message(0)]
     assert [r["ore_max_giornata"] for r in result.rows] == [6]
+
+
+def test_csv_eight_without_group_is_refused(admin):
+    result = parse_calendar(csv_calendar(8))
+    assert [m.text for m in result.messages] == [message(8)]
 
 
 def test_csv_closure_with_normal_hours_passes():
@@ -132,9 +139,9 @@ def test_csv_closure_with_normal_hours_passes():
 
 
 @pytest.mark.parametrize("hours", ["0", "8"])
-def test_manual_date_still_refuses_zero_and_eight(admin, hours):
+def test_manual_date_refuses_zero_without_closure_and_eight(admin, hours):
     upload(admin, "calendar", CSVS["calendar"])
-    r = admin.post("/setup/add-date/", {"date": "2026-10-01", "hours": hours}, **HX)
+    r = admin.post("/setup/add-date/", {"date": "2026-10-01", "max_hours": hours}, **HX)
     assert r.status_code == 422
     assert len(calendar_upload().rows) == 3
 
@@ -150,6 +157,9 @@ def test_rule_function_cases():
     assert err(8, gruppo="PRIME", stage=True) is None
     assert err(8, gruppo="PRIME") == message(8)
     assert err(0, structured=False, gruppo="PRIME") == message(0)
+    assert err(0, structured=False, chiusura=True) is None
+    assert err(8, structured=False, gruppo="PRIME") is None
+    assert err(8, structured=False) == message(8)
     assert err(6, gruppo="PRIME", stage=True) == "lo stage di gruppo richiede 8 ore"
 
 

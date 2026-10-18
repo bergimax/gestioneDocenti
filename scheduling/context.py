@@ -6,6 +6,8 @@ never writes (not even the inherited availability).
 
 import datetime
 
+from django.db.models import Q
+
 from availability import grid as grid_logic
 from availability.models import Availability
 from scheduling.derogations import REDUCE_CONTRACT_HOURS
@@ -87,6 +89,42 @@ def _is_stage(rows, day, school_class):
     )
 
 
+def _stage_weeks(school, week_start, classes):
+    """Per class id, the number of future weeks (after `week_start`, before the
+    end of the year) in stage on all five weekdays, by a `stage_class` row or a
+    group-stage row of the class's group. One query for the whole school."""
+    by_class, by_group = {}, {}
+    for date, class_id, group, group_stage in CalendarEntry.objects.filter(
+        Q(is_group_stage=True) | Q(stage_class__isnull=False),
+        school=school,
+        date__gte=week_start + datetime.timedelta(days=7),
+        date__lt=school.year_end,
+    ).values_list("date", "stage_class_id", "group", "is_group_stage"):
+        if date.weekday() >= DAYS:
+            continue
+        monday = date - datetime.timedelta(days=date.weekday())
+        if class_id is not None:
+            by_class.setdefault((class_id, monday), set()).add(date)
+        elif group_stage:
+            by_group.setdefault((group or None, monday), set()).add(date)
+    result = {}
+    for school_class in classes:
+        group = school_class.group or None
+        mondays = {m for (c, m) in by_class if c == school_class.pk}
+        mondays |= {m for (g, m) in by_group if g == group}
+        result[school_class.pk] = sum(
+            1
+            for monday in mondays
+            if monday < school.year_end
+            and len(
+                by_class.get((school_class.pk, monday), set())
+                | by_group.get((group, monday), set())
+            )
+            == DAYS
+        )
+    return result
+
+
 def _reduces(derogations, assignment):
     """The `reduce_contract_hours` derogations covering the assignment."""
     return [
@@ -155,7 +193,8 @@ def build_week_context(week_start, school=None, derogations=()):
 
     delivered = assignment_hours.delivered_hours_map(school)
     assignments, targets, sources, subject_names = [], {}, {}, {}
-    weeks_left = max(1, (school.year_end - week_start).days // 7)
+    calendar_weeks = (school.year_end - week_start).days // 7
+    stage_weeks = _stage_weeks(school, week_start, classes)
     for a in (
         Assignment.objects.filter(school=school, teacher__active=True)
         .select_related("subject", "teacher")
@@ -183,9 +222,11 @@ def build_week_context(week_start, school=None, derogations=()):
             a.teacher.type,
             reduce_contract_hours=bool(reducing),
             max_hours=reducing[0].max_hours if reducing else None,
+            stage_weeks=stage_weeks[a.school_class_id],
         )
         if target is not None:
             targets[a.pk] = target
+            weeks_left = max(1, calendar_weeks - stage_weeks[a.school_class_id])
             sources[a.pk] = f"residuo {remaining} ore su {weeks_left} settimane"
             if reducing and a.teacher.type == TeacherType.CONTRATTO:
                 sources[a.pk] += ", ridotto per deroga"

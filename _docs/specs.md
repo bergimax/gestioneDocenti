@@ -101,7 +101,7 @@ Tutti gli id sono stringhe UUID (`str(uuid4())`) tranne `scuola.id`, che in v1 v
 | `materia` | `id`, `scuola_id` FK, `nome` (255), `tipo` Enum(`TEORIA`,`PRATICA`), `peso_cognitivo` Enum(`ALTO`,`MEDIO`,`BASSO`) |
 | `assegnazione` | `id`, `scuola_id`, `docente_id` FK, `classe_id` FK, `materia_id` FK |
 | `monte_ore_annuale` | `id`, `scuola_id`, `classe_id`, `materia_id`, `docente_id` (FK), `ore_totali` (int NN), `ore_erogate` (int, def 0). **Residuo = `ore_totali − ore_erogate`** (vedi §8) |
-| `calendario_annuale` | `id`, `scuola_id`, `data` (Date NN), `gruppo` (50, null = riga valida per tutta la scuola), `ore_max_giornata` (int, def 6; valori 4/5/6, 8 = stage), `ora_inizio_min` (int 8-13, null), `flag_chiusura` (bool), `flag_stage_classe_id` (FK classe, null), `flag_stage_gruppo` (bool) |
+| `calendario_annuale` | `id`, `scuola_id`, `data` (Date NN), `gruppo` (50, null = riga valida per tutta la scuola), `ore_max_giornata` (int, def 6; valori 4/5/6, 0 su una riga di chiusura, 8 = stage di gruppo con `gruppo`), `ora_inizio_min` (int 8-13, null), `flag_chiusura` (bool), `flag_stage_classe_id` (FK classe, null), `flag_stage_gruppo` (bool) |
 | `disponibilita_settimanale` | `id`, `scuola_id`, `docente_id`, `settimana_inizio` (Date), `giorni_fasce` (JSON, §6), `created_at`, `updated_at` |
 | `classe_accoppiata` | `id`, `scuola_id`, `classe_a_id`, `classe_b_id`, `materia_id` (FK), `docente_id` (FK, null), `note` (Text) |
 | `orario_settimanale` | `id`, `scuola_id`, `settimana_inizio` (Date), `stato` Enum(`BOZZA`,`APPROVATO`) def BOZZA, `quality_score` (Float 0-100), `quality_level` Enum(`A`,`B`,`C`), `n_conflitti_soft` (int), `approved_at` |
@@ -175,7 +175,7 @@ La cache è per-processo: un riavvio del backend a metà setup la perde.
 
 | File | Endpoint upload | Colonne |
 |---|---|---|
-| Calendario | `POST /calendar/upload` (CSV o PDF) | `data` (YYYY-MM-DD), `ore_max_giornata` (**4/5/6**, altro = errore), `flag_chiusura` (true/1/yes), opz. `stage_classe_id`, `gruppo` |
+| Calendario | `POST /calendar/upload` (CSV o PDF) | `data` (YYYY-MM-DD), `ore_max_giornata` (**4/5/6**; **0** solo su una riga di chiusura; **8** = stage di un gruppo, solo con `gruppo` e senza chiusura né `stage_classe_id`; altro = errore), `flag_chiusura` (true/1/yes), opz. `stage_classe_id`, `gruppo` |
 | Docenti | `POST /teachers/upload` | `nome`, `email` (opz.), `tipo` (`ASSUNTO`/`CONTRATTO`) |
 | Classi | `POST /classes/upload` | `nome`, `n_studenti` (opz.), `gruppo` (opz., es. `PRIME`) |
 | Materie | `POST /subjects/upload` | `nome`, `tipo` (`TEORIA`/`PRATICA`), `peso_cognitivo` (`ALTO`/`MEDIO`/`BASSO`) |
@@ -203,6 +203,9 @@ crea una riga `{data, gruppo, ore_max_giornata, flag_chiusura=false, stage_class
   (nel PDF dell'agenzia le note a piè pagina riportano gli intervalli, es. «tirocinio classi IV dal 5/10 al 22/12»);
 - i giorni lavorativi (lun-ven) compresi tra la prima e l'ultima data letta ma assenti dal PDF diventano righe
   `gruppo=null, ore_max_giornata=0, flag_chiusura=true` (chiusure/festività).
+Anche il CSV (§5.1) esprime questi valori: 0 su una riga di chiusura e 8 con `gruppo` (nessuna colonna
+`flag_stage_gruppo`: `flag_stage_gruppo = true` deriva dalle 8 ore, una riga per gruppo e data); la regola delle ore è
+la stessa per CSV, PDF/AI, data manuale (che non ha il gruppo: niente 8) e correzione di cella.
 Se non si riconosce nessuna riga il parser solleva un errore («serve un parser diverso per un altro template»).
 Un template diverso richiede di aggiornare le coordinate.
 
@@ -309,7 +312,9 @@ I giorni di stage di una classe compaiono nelle celle di stage (`stage_cells`, �
 - **Correzione manuale** (solo ADMIN): la pagina «Assegnazioni» ha un modulo che prende il nuovo totale di ore erogate e un
   motivo, e scrive una voce `ADJUSTMENT` con la differenza (motivo e utente). Rifiuta un totale negativo; se il totale non
   cambia non scrive nulla; l'audit riceve `HOURS_ADJUSTED`. Le ore erogate non si modificano direttamente.
-- **Target settimanale** per assegnazione: `settimane_rimaste = max(1, (data_fine_anno − week_start).days // 7)`,
+- **Target settimanale** per assegnazione: `settimane_rimaste = max(1, (data_fine_anno − week_start).days // 7 − settimane_di_stage)`, dove
+  `settimane_di_stage` sono le settimane future in cui la classe è in stage in tutti e cinque i giorni lun-ven (stage di
+  classe o di gruppo); le settimane di chiusura non si tolgono; una settimana con stage solo in alcuni giorni è normale,
   `ore_target = max(1, ore_residue // settimane_rimaste)`. Nessun target se `ore_residue ≤ 0` o se la classe non ha ore
   di lezione in tutta la settimana (es. tutta la settimana in stage). Deroga `reduce_contract_hours` (solo contrattisti):
   `ore_target = max(1, min(target, max_hours))`, oppure `max(1, target // 2)` se `max_hours` non è dato.

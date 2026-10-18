@@ -174,16 +174,22 @@ def _name(raw, col, errors):
 
 def hours_message(shown):
     """The one error text for a calendar hours value, whatever the source."""
-    return f"ore_max_giornata '{shown}' non valido: ammessi 4, 5 o 6"
+    return (
+        f"ore_max_giornata '{shown}' non valido: ammessi 4, 5 o 6 "
+        "(0 solo su una riga di chiusura, 8 solo per lo stage di un gruppo)"
+    )
 
 
-def calendar_hours_error(hours, *, gruppo, chiusura, stage, structured, shown=None):
+def calendar_hours_error(
+    hours, *, gruppo, chiusura, stage, structured, stage_class=False, shown=None
+):
     """The one rule for a calendar row's hours; the error text, or None.
 
-    Lesson days carry 4, 5 or 6. Rows read from a PDF or by the AI
-    (`structured`) may also carry 0 (an empty group cell, or a whole-school
-    closure) and 8 (a group stage, only with `gruppo` and `stage` set).
-    CSV and the manual date form are never structured.
+    Lesson days carry 4, 5 or 6. A closure row also accepts 0. 8 is a group
+    stage: only with `gruppo`, no closure and no `stage_class`; the CSV and the
+    manual form derive the stage from the 8, rows read from a PDF or by the AI
+    (`structured`) must also carry `stage` and may carry 0 for an empty group
+    cell. The manual date form has no group, so it never accepts 8.
     """
     shown = hours if shown is None else shown
     bad = hours_message(shown)
@@ -191,9 +197,15 @@ def calendar_hours_error(hours, *, gruppo, chiusura, stage, structured, shown=No
         return bad
     if hours in MAX_HOURS_VALUES:
         pass
-    elif structured and hours == 0 and (gruppo or (chiusura and not gruppo)):
+    elif hours == 0 and (chiusura or (structured and gruppo)):
         pass
-    elif structured and hours == STAGE_ORE_GIORNATA and gruppo and stage:
+    elif (
+        hours == STAGE_ORE_GIORNATA
+        and gruppo
+        and not chiusura
+        and not stage_class
+        and (stage or not structured)
+    ):
         pass
     else:
         return bad
@@ -214,12 +226,15 @@ def _build_calendar(raw):
         errors.append(f"data '{raw['data']}' is not a valid YYYY-MM-DD date")
     group = _choice(raw, "gruppo", GROUPS, errors, required=False)
     hours = _to_int(raw["ore_max_giornata"])
+    closure = raw.get("flag_chiusura", "").lower() in TRUE_VALUES
+    stage_class = raw.get("stage_classe_id") or None
     problem = calendar_hours_error(
         hours,
         gruppo=group,
-        chiusura=False,
+        chiusura=closure,
         stage=False,
         structured=False,
+        stage_class=bool(stage_class),
         shown=raw["ore_max_giornata"],
     )
     if problem:
@@ -228,9 +243,10 @@ def _build_calendar(raw):
     row = {
         "data": date,
         "ore_max_giornata": hours,
-        "flag_chiusura": raw.get("flag_chiusura", "").lower() in TRUE_VALUES,
-        "stage_classe_id": raw.get("stage_classe_id") or None,
+        "flag_chiusura": closure,
+        "stage_classe_id": stage_class,
         "gruppo": group,
+        "flag_stage_gruppo": hours == STAGE_ORE_GIORNATA,
     }
     return row, errors
 
