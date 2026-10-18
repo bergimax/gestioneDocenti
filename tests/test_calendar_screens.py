@@ -10,6 +10,8 @@ from django.test.utils import CaptureQueriesContext
 
 from accounts.models import User
 from school import calendar as calendar_rules
+from school import forms, setup_service
+from school.importers.parsers import parse_calendar
 from school.models import CalendarEntry, Class, School
 
 PW = "correct-horse"
@@ -463,8 +465,189 @@ def test_create_class_stage(school, classes, admin):
 def test_closure_without_hours(school, classes, admin):
     admin.post(CREATE, valid(is_closure="on", max_hours=""))
     e = CalendarEntry.objects.get()
-    assert e.is_closure and e.max_hours == 6
+    assert e.is_closure and e.max_hours == 0
     assert cell(page(admin), "Lunedì 12 ottobre")[0] == "cal-closure"
+
+
+@pytest.mark.parametrize("group", ["", "TERZE"])
+@pytest.mark.parametrize("hours", ["", "5"])
+def test_closure_stores_zero_hours(school, classes, admin, group, hours):
+    r = admin.post(CREATE, valid(is_closure="on", group=group, max_hours=hours))
+    assert r.status_code == 302
+    e = CalendarEntry.objects.get()
+    assert e.is_closure and e.max_hours == 0 and (e.group or "") == group
+    e.full_clean()
+    if not group:
+        assert cell(page(admin), "Lunedì 12 ottobre")[0] == "cal-closure"
+
+
+@pytest.mark.parametrize("hours", ["6", "4", ""])
+def test_group_stage_stores_eight_hours(school, classes, admin, hours):
+    r = admin.post(CREATE, valid(group="TERZE", is_group_stage="on", max_hours=hours))
+    assert r.status_code == 302
+    e = CalendarEntry.objects.get()
+    assert e.is_group_stage and e.max_hours == 8 and e.group == "TERZE"
+    e.full_clean()
+    assert "Stage" in cell(page(admin), "Lunedì 12 ottobre")[1]
+
+
+@pytest.mark.parametrize("posted,stored", [("4", 4), ("5", 5), ("6", 6), ("", 6)])
+def test_lesson_row_hours_as_posted(school, classes, admin, posted, stored):
+    admin.post(CREATE, valid(max_hours=posted))
+    assert CalendarEntry.objects.get().max_hours == stored
+
+
+@pytest.mark.parametrize("bad", ["0", "8", "7", "abc"])
+def test_lesson_row_refuses_other_hours(school, classes, admin, bad):
+    r = admin.post(CREATE, valid(max_hours=bad))
+    assert r.status_code == 200
+    assert "Scegli 4, 5 o 6 ore: scelta non valida." in htmllib.unescape(
+        r.content.decode()
+    )
+    assert CalendarEntry.objects.count() == 0
+
+
+def test_closure_and_stage_conflict_is_linked_to_the_stage_field(
+    school, classes, admin
+):
+    r = admin.post(CREATE, valid(group="TERZE", is_closure="on", is_group_stage="on"))
+    html = r.content.decode()
+    msg = "Chiusura e stage di gruppo non possono coesistere."
+    assert html.count(msg) == 1
+    assert 'id="id_is_group_stage-error"' in html
+    tag = re.search(r'<input[^>]*name="is_group_stage"[^>]*>', html).group(0)
+    assert 'aria-invalid="true"' in tag
+    assert "id_is_group_stage-error" in tag
+    assert CalendarEntry.objects.count() == 0
+
+
+def test_stage_without_group_keeps_its_message(school, classes, admin):
+    r = admin.post(CREATE, valid(is_group_stage="on"))
+    assert "Lo stage di gruppo richiede un gruppo." in r.content.decode()
+    assert "coesistere" not in r.content.decode()
+
+
+def test_class_stage_keeps_posted_hours(school, classes, admin):
+    admin.post(CREATE, valid(stage_class=classes["TERZE"].pk, max_hours="4"))
+    assert CalendarEntry.objects.get().max_hours == 4
+
+
+def test_form_calls_the_shared_rule(school, classes, admin, monkeypatch):
+    calls = []
+    real = forms.calendar_hours_error
+
+    def spy(hours, **kw):
+        calls.append((hours, kw["chiusura"], kw["stage"]))
+        return real(hours, **kw)
+
+    monkeypatch.setattr("school.forms.calendar_hours_error", spy)
+    admin.post(CREATE, valid(date="2026-10-12", is_closure="on"))
+    admin.post(CREATE, valid(date="2026-10-13", group="TERZE", is_group_stage="on"))
+    admin.post(CREATE, valid(date="2026-10-14", max_hours="5"))
+    assert calls == [(0, True, False), (8, False, True), (5, False, False)]
+
+
+def test_form_reports_a_rule_error_on_the_flag_or_the_hours(school, monkeypatch):
+    monkeypatch.setattr("school.forms.calendar_hours_error", lambda h, **kw: "no")
+    f = forms.CalendarEntryForm(valid(), school=school)
+    assert not f.is_valid() and f.errors == {"max_hours": ["no"]}
+    f = forms.CalendarEntryForm(
+        valid(group="TERZE", is_group_stage="on"), school=school
+    )
+    assert not f.is_valid() and f.errors == {"is_group_stage": ["no"]}
+
+
+def test_form_has_no_literal_hours_comparison():
+    body = pathlib.Path(forms.__file__).read_text()
+    start = body.index("class CalendarEntryForm")
+    mine = body[start : body.index("class CalendarRangeForm")]
+    assert not re.search(r"(==|!=)\s*[08]\b", mine)
+    assert "STAGE_ORE_GIORNATA" in mine and "CLOSURE_HOURS" in mine
+
+
+def test_hours_help_text_on_create_and_edit(school, classes, admin):
+    e = entry(school, 12, max_hours=4)
+    for url in (CREATE, edit(e)):
+        html = htmllib.unescape(admin.get(url).content.decode())
+        assert "Per una chiusura la riga salva 0 ore e per uno stage di gruppo" in html
+        tag = re.search(r'<select[^>]*name="max_hours"[^>]*>', html).group(0)
+        assert 'aria-describedby="id_max_hours-hint"' in tag
+        assert 'id="id_max_hours-hint"' in html
+    html = admin.get(CREATE).content.decode()
+    block = re.search(r'<select[^>]*name="max_hours".*?</select>', html, re.S).group(0)
+    assert re.findall(r'<option value="(\d+)"', block) == ["4", "5", "6"]
+
+
+def selected(html):
+    block = re.search(r'<select[^>]*name="max_hours".*?</select>', html, re.S).group(0)
+    return re.findall(r'<option value="(\d+)" selected', block)
+
+
+@pytest.mark.parametrize(
+    "kw,flag,saved",
+    [
+        ({"is_closure": True, "max_hours": 6}, "is_closure", 0),
+        ({"is_closure": True, "max_hours": 0}, "is_closure", 0),
+        (
+            {"is_group_stage": True, "group": "TERZE", "max_hours": 5},
+            "is_group_stage",
+            8,
+        ),
+        (
+            {"is_group_stage": True, "group": "TERZE", "max_hours": 8},
+            "is_group_stage",
+            8,
+        ),
+    ],
+)
+def test_edit_round_trip_of_closure_and_stage_rows(
+    school, classes, admin, kw, flag, saved
+):
+    e = entry(school, 12, **kw)
+    html = admin.get(edit(e)).content.decode()
+    assert "importato" not in html
+    assert selected(html) == ["6"]
+    assert re.search(rf'<input[^>]*name="{flag}"[^>]*checked', html)
+    data = valid(group=kw.get("group", ""), **{flag: "on"})
+    assert admin.post(edit(e), data).status_code == 302
+    e.refresh_from_db()
+    assert e.max_hours == saved and getattr(e, flag)
+
+
+def test_unticking_closure_saves_a_lesson_row(school, classes, admin):
+    e = entry(school, 12, is_closure=True, max_hours=0)
+    assert admin.post(edit(e), valid()).status_code == 302
+    e.refresh_from_db()
+    assert not e.is_closure and e.max_hours == 6
+
+
+def test_legacy_eight_hours_group_row_resaves_unchanged(school, classes, admin):
+    e = entry(school, 12, group="TERZE", max_hours=8)
+    assert "8 (importato)" in admin.get(edit(e)).content.decode()
+    assert admin.post(edit(e), valid(group="TERZE", max_hours="8")).status_code == 302
+    e.refresh_from_db()
+    assert e.max_hours == 8 and not e.is_group_stage
+
+
+def test_equivalent_to_the_setup_flow_rows(school, classes, admin):
+    admin.post(CREATE, valid(date="2026-10-12", is_closure="on"))
+    admin.post(CREATE, valid(date="2026-10-13", group="TERZE", is_group_stage="on"))
+    mine = {
+        e.date.day: (e.is_closure, e.is_group_stage, e.max_hours)
+        for e in CalendarEntry.objects.all()
+    }
+    CalendarEntry.objects.all().delete()
+    rows = parse_calendar(
+        "data,gruppo,ore_max_giornata,flag_chiusura,stage_classe_id\n"
+        "2026-10-12,,0,true,\n"
+        "2026-10-13,TERZE,8,false,\n"
+    )
+    assert not rows.messages
+    made = setup_service._create_calendar(school, rows.rows, {})
+    theirs = {e.date.day: (e.is_closure, e.is_group_stage, e.max_hours) for e in made}
+    assert mine == theirs == {12: (True, False, 0), 13: (False, True, 8)}
+    for e in made:
+        assert calendar_rules.resolve_hours([e], e.date, 0, "TERZE") == 0
 
 
 def test_class_stage_next_to_school_row_and_two_classes(school, classes, admin):
@@ -499,6 +682,11 @@ ERR = "Esiste già una riga per questa data"
         ({"max_hours": "7"}, "Scegli 4, 5 o 6 ore"),
         ({"max_hours": "abc"}, "Scegli 4, 5 o 6 ore"),
         ({"max_hours": "8"}, "Scegli 4, 5 o 6 ore"),
+        ({"max_hours": "0"}, "Scegli 4, 5 o 6 ore"),
+        (
+            {"group": "TERZE", "is_group_stage": "on", "is_closure": "on"},
+            "Chiusura e stage di gruppo non possono coesistere.",
+        ),
         ({"start_hour_min": "7"}, "da 8 a 13"),
         ({"start_hour_min": "14"}, "da 8 a 13"),
         ({"group": "XX"}, "Scegli un gruppo valido"),

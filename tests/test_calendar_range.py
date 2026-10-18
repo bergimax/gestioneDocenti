@@ -122,6 +122,25 @@ def test_group_stage_fifteen_rows(school, admin):
     assert "Stage" in page(admin, "?mese=2026-10")
 
 
+@pytest.mark.parametrize(
+    "extra, hours",
+    [
+        ({"kind": "closure", "group": ""}, 0),
+        ({"kind": "closure", "group": "TERZE"}, 0),
+        ({"kind": "group_stage", "group": "QUARTE"}, 8),
+        ({"kind": "short", "group": "", "max_hours": "4"}, 4),
+        ({"kind": "short", "group": "", "max_hours": "5"}, 5),
+        ({"kind": "start_hour", "group": "", "start_hour_min": "10"}, 6),
+    ],
+)
+def test_range_hours_by_kind(school, admin, extra, hours):
+    assert post(admin, start="2026-10-12", end="2026-10-14", **extra).status_code == 302
+    rows = CalendarEntry.objects.all()
+    assert len(rows) == 3 and {e.max_hours for e in rows} == {hours}
+    if extra["kind"] == "group_stage":
+        assert all(e.is_group_stage for e in rows)
+
+
 def test_cross_month_plain_and_htmx(school, admin):
     r = post(admin, start="2026-10-26", end="2026-11-06", kind="closure", group="")
     assert r["Location"] == f"{MONTH}?mese=2026-10"
@@ -196,7 +215,7 @@ def test_irrelevant_fields_are_ignored(school, classes, admin):
     )
     assert r.status_code == 302
     e = CalendarEntry.objects.get()
-    assert e.is_closure and e.max_hours == 6 and e.stage_class is None
+    assert e.is_closure and e.max_hours == 0 and e.stage_class is None
 
 
 def test_one_day_and_weekend_ranges(school, admin):

@@ -5,6 +5,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.db.models.functions import Lower
 
+from .importers.parsers import STAGE_ORE_GIORNATA, calendar_hours_error
 from .models import (
     Assignment,
     CalendarEntry,
@@ -509,6 +510,7 @@ class PairingForm(_AriaForm, forms.ModelForm):
 
 
 HOURS_CHOICES = (4, 5, 6)
+CLOSURE_HOURS = 0  # what a closure row stores, as the CSV, the PDF and the AI do
 START_HOUR_CHOICES = range(8, 14)
 
 
@@ -544,6 +546,10 @@ class CalendarEntryForm(_AriaForm, forms.ModelForm):
         required=False,
         choices=[(h, str(h)) for h in HOURS_CHOICES],
         initial=6,
+        help_text=(
+            "Per una chiusura la riga salva 0 ore e per uno stage di gruppo "
+            "8 ore: questo campo conta solo per i giorni di lezione."
+        ),
         error_messages={"invalid_choice": "Scegli 4, 5 o 6 ore: scelta non valida."},
     )
     is_closure = forms.BooleanField(label="Chiusura", required=False)
@@ -584,7 +590,12 @@ class CalendarEntryForm(_AriaForm, forms.ModelForm):
         self.instance.school = school
         self.fields["stage_class"].queryset = _by_name(Class, school)
         stored = self.instance.max_hours if self.instance.pk else None
-        if stored is not None and stored not in HOURS_CHOICES:
+        if self.instance.pk and (
+            self.instance.is_closure or self.instance.is_group_stage
+        ):
+            # the stored 0/8 (or a legacy 4/5/6) is derived from the flag
+            self.initial["max_hours"] = self.fields["max_hours"].initial
+        elif stored is not None and stored not in HOURS_CHOICES:
             self.fields["max_hours"].choices = list(
                 self.fields["max_hours"].choices
             ) + [(stored, f"{stored} (importato)")]
@@ -635,9 +646,37 @@ class CalendarEntryForm(_AriaForm, forms.ModelForm):
                 "Per lo stage di una classe non indicare gruppo, chiusura "
                 "o ora minima.",
             )
+        if group_stage and data.get("is_closure"):
+            self.add_error(
+                "is_group_stage", "Chiusura e stage di gruppo non possono coesistere."
+            )
+        if not self.errors:
+            self._derive_hours(data)
         if not self.errors:
             self._check_duplicate(data)
         return data
+
+    def _derive_hours(self, data):
+        """Closure and group stage store their own hours; the rule checks them."""
+        group_stage = data.get("is_group_stage")
+        if data.get("is_closure"):
+            data["max_hours"] = CLOSURE_HOURS
+        elif group_stage:
+            data["max_hours"] = STAGE_ORE_GIORNATA
+        hours = data["max_hours"]
+        legacy = hours not in HOURS_CHOICES and hours == self.instance.max_hours
+        if legacy and not (data.get("is_closure") or group_stage):
+            return  # an imported row re-saved unchanged keeps its stored hours
+        problem = calendar_hours_error(
+            hours,
+            gruppo=data.get("group"),
+            chiusura=data.get("is_closure"),
+            stage=group_stage,
+            structured=False,
+            stage_class=bool(data.get("stage_class")),
+        )
+        if problem:
+            self.add_error("is_group_stage" if group_stage else "max_hours", problem)
 
     def _duplicates(self, data):
         rows = CalendarEntry.objects.filter(

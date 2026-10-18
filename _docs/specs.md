@@ -205,7 +205,9 @@ crea una riga `{data, gruppo, ore_max_giornata, flag_chiusura=false, stage_class
   `gruppo=null, ore_max_giornata=0, flag_chiusura=true` (chiusure/festività).
 Anche il CSV (§5.1) esprime questi valori: 0 su una riga di chiusura e 8 con `gruppo` (nessuna colonna
 `flag_stage_gruppo`: `flag_stage_gruppo = true` deriva dalle 8 ore, una riga per gruppo e data); la regola delle ore è
-la stessa per CSV, PDF/AI, data manuale (che non ha il gruppo: niente 8) e correzione di cella.
+la stessa per CSV, PDF/AI, data manuale (che non ha il gruppo: niente 8) e correzione di cella. Anche il form del calendario nelle pagine dati
+(e la pagina intervallo) salva 0 ore su una chiusura e 8 ore su uno stage di gruppo, derivati dalle caselle «Chiusura»
+e «Stage di gruppo», con la stessa regola.
 Se non si riconosce nessuna riga il parser solleva un errore («serve un parser diverso per un altro template»).
 Un template diverso richiede di aggiornare le coordinate.
 
