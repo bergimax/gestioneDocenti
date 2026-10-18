@@ -12,8 +12,8 @@ def weekly_hours_target(
 ):
     """Hours to schedule in the week, or None when nothing remains.
 
-    `stage_weeks` future weeks entirely in stage for the class are not counted
-    in the weeks left (specs 8).
+    `stage_weeks` future weeks without any lesson day for the class (stage or
+    closure on all five weekdays) are not counted in the weeks left (specs 8).
     """
     if remaining <= 0:
         return None

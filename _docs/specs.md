@@ -312,9 +312,10 @@ I giorni di stage di una classe compaiono nelle celle di stage (`stage_cells`, �
 - **Correzione manuale** (solo ADMIN): la pagina «Assegnazioni» ha un modulo che prende il nuovo totale di ore erogate e un
   motivo, e scrive una voce `ADJUSTMENT` con la differenza (motivo e utente). Rifiuta un totale negativo; se il totale non
   cambia non scrive nulla; l'audit riceve `HOURS_ADJUSTED`. Le ore erogate non si modificano direttamente.
-- **Target settimanale** per assegnazione: `settimane_rimaste = max(1, (data_fine_anno − week_start).days // 7 − settimane_di_stage)`, dove
-  `settimane_di_stage` sono le settimane future in cui la classe è in stage in tutti e cinque i giorni lun-ven (stage di
-  classe o di gruppo); le settimane di chiusura non si tolgono; una settimana con stage solo in alcuni giorni è normale,
+- **Target settimanale** per assegnazione: `settimane_rimaste = max(1, (data_fine_anno − week_start).days // 7 − settimane_senza_lezione)`, dove
+  `settimane_senza_lezione` sono le settimane future in cui la classe, in tutti e cinque i giorni lun-ven, è in stage (di
+  classe o di gruppo) oppure ha una riga di chiusura (della scuola o del suo gruppo); una settimana è contata una sola volta
+  anche se mescola stage e chiusura; una settimana con almeno un giorno di lezione (anche solo uno, anche per giorno senza riga) è normale,
   `ore_target = max(1, ore_residue // settimane_rimaste)`. Nessun target se `ore_residue ≤ 0` o se la classe non ha ore
   di lezione in tutta la settimana (es. tutta la settimana in stage). Deroga `reduce_contract_hours` (solo contrattisti):
   `ore_target = max(1, min(target, max_hours))`, oppure `max(1, target // 2)` se `max_hours` non è dato.

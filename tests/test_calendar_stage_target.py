@@ -296,10 +296,191 @@ def test_partial_stage_week_is_a_normal_week(school, subject, teacher):
     assert build_week_context(MON, school).targets[a.pk] == 60 // 10
 
 
-def test_closure_week_is_not_excluded(school, subject, teacher):
-    a = assign(school, teacher, klass(school, "1A", "PRIME"), subject)
-    stage_week(school, 1, is_closure=True, max_hours=0)
+def closed(school, week, days=range(5), group=None, **kw):
+    kw = {"is_closure": True, "max_hours": 0, **kw}
+    for i in days:
+        CalendarEntry.objects.create(
+            school=school,
+            date=MON + datetime.timedelta(weeks=week, days=i),
+            group=group,
+            **kw,
+        )
+
+
+def one(school, teacher, subject, group="PRIME", hours=60):
+    return assign(school, teacher, klass(school, "1A", group), subject, hours)
+
+
+def test_closure_week_is_removed(school, subject, teacher):
+    a = one(school, teacher, subject)
+    closed(school, 1)
+    ctx = build_week_context(MON, school)
+    assert ctx.targets[a.pk] == 60 // 9
+    assert ctx.target_sources[a.pk] == "residuo 60 ore su 9 settimane"
+
+
+def test_two_closure_weeks(school, subject, teacher):
+    a = one(school, teacher, subject)
+    closed(school, 1)
+    closed(school, 5)
+    ctx = build_week_context(MON, school)
+    assert ctx.targets[a.pk] == 60 // 8
+    assert ctx.target_sources[a.pk] == "residuo 60 ore su 8 settimane"
+
+
+def test_four_closed_days_of_five_stay_counted(school, subject, teacher):
+    a = one(school, teacher, subject)
+    closed(school, 1, days=range(4))
     assert build_week_context(MON, school).targets[a.pk] == 60 // 10
+
+
+def test_closure_with_one_lesson_row_stays_counted(school, subject, teacher):
+    a = one(school, teacher, subject)
+    closed(school, 1, days=range(4))
+    CalendarEntry.objects.create(
+        school=school, date=MON + datetime.timedelta(weeks=1, days=4), max_hours=6
+    )
+    assert build_week_context(MON, school).targets[a.pk] == 60 // 10
+
+
+def test_weekend_closure_rows_never_remove_a_week(school, subject, teacher):
+    a = one(school, teacher, subject)
+    closed(school, 1, days=(5, 6))
+    assert build_week_context(MON, school).targets[a.pk] == 60 // 10
+
+
+def test_weekend_lesson_row_does_not_prevent_removal(school, subject, teacher):
+    a = one(school, teacher, subject)
+    closed(school, 1)
+    CalendarEntry.objects.create(
+        school=school, date=MON + datetime.timedelta(weeks=1, days=5), max_hours=6
+    )
+    assert build_week_context(MON, school).targets[a.pk] == 60 // 9
+
+
+def test_group_closure_removes_the_week_for_that_group_only(school, subject, teacher):
+    a = one(school, teacher, subject)
+    b = assign(school, teacher, klass(school, "2A", "SECONDE"), subject)
+    closed(school, 1, group="PRIME")
+    ctx = build_week_context(MON, school)
+    assert ctx.targets[a.pk] == 60 // 9
+    assert ctx.targets[b.pk] == 60 // 10
+
+
+def test_group_lesson_row_overrides_the_school_closure(school, subject, teacher):
+    a = one(school, teacher, subject)
+    b = assign(school, teacher, klass(school, "2A", "SECONDE"), subject)
+    closed(school, 1)
+    CalendarEntry.objects.create(
+        school=school,
+        date=MON + datetime.timedelta(weeks=1, days=2),
+        group="PRIME",
+        max_hours=6,
+    )
+    ctx = build_week_context(MON, school)
+    assert ctx.targets[a.pk] == 60 // 10
+    assert ctx.targets[b.pk] == 60 // 9
+
+
+def test_zero_hours_without_closure_flag_is_a_lesson_day(school, subject, teacher):
+    a = one(school, teacher, subject)
+    closed(school, 1, is_closure=False)
+    assert build_week_context(MON, school).targets[a.pk] == 60 // 10
+
+
+def test_stage_row_of_another_class_closes_nothing(school, subject, teacher):
+    a = one(school, teacher, subject)
+    other = klass(school, "1B", "PRIME")
+    stage_week(school, 1, stage_class=other)
+    assert build_week_context(MON, school).targets[a.pk] == 60 // 10
+
+
+def test_school_closure_and_group_stage_on_same_days_count_once(
+    school, subject, teacher
+):
+    a = one(school, teacher, subject)
+    closed(school, 1)
+    stage_week(school, 1, is_group_stage=True, group="PRIME", max_hours=8)
+    assert build_week_context(MON, school).targets[a.pk] == 60 // 9
+
+
+def test_stage_and_closure_mix_is_removed_once(school, subject, teacher):
+    c = klass(school, "1A", "PRIME")
+    a = assign(school, teacher, c, subject)
+    stage_week(school, 1, days=2, stage_class=c)
+    closed(school, 1, days=(2, 3, 4))
+    assert build_week_context(MON, school).targets[a.pk] == 60 // 9
+
+
+def test_stage_closure_and_a_day_without_row_stays_counted(school, subject, teacher):
+    c = klass(school, "1A", "PRIME")
+    a = assign(school, teacher, c, subject)
+    stage_week(school, 1, days=3, stage_class=c)
+    closed(school, 1, days=(3,))
+    assert build_week_context(MON, school).targets[a.pk] == 60 // 10
+
+
+def test_stage_closure_and_mixed_weeks_combine(school, subject, teacher):
+    c = klass(school, "1A", "PRIME")
+    a = assign(school, teacher, c, subject)
+    for week in (1, 2, 3, 4):
+        stage_week(school, week, is_group_stage=True, group="PRIME", max_hours=8)
+    closed(school, 5)
+    closed(school, 6)
+    stage_week(school, 7, days=2, stage_class=c)
+    closed(school, 7, days=(2, 3, 4))
+    ctx = build_week_context(MON, school)
+    assert ctx.targets[a.pk] == 60 // 3
+    assert ctx.target_sources[a.pk] == "residuo 60 ore su 3 settimane"
+
+
+def test_all_remaining_weeks_closed_leaves_one_week(school, subject, teacher):
+    a = one(school, teacher, subject)
+    for week in range(1, 10):
+        closed(school, week)
+    ctx = build_week_context(MON, school)
+    assert ctx.targets[a.pk] == 60 // 1
+    assert ctx.target_sources[a.pk] == "residuo 60 ore su 1 settimane"
+
+
+def test_current_week_closed_has_no_target_and_future_count_is_unchanged(
+    school, subject, teacher
+):
+    from scheduling.context import _stage_weeks
+
+    c = klass(school, "1A", "PRIME")
+    a = assign(school, teacher, c, subject)
+    closed(school, 0)
+    assert a.pk not in build_week_context(MON, school).targets
+    assert _stage_weeks(school, MON, [c]) == {c.pk: 0}
+    closed(school, 1)
+    assert _stage_weeks(school, MON, [c]) == {c.pk: 1}
+
+
+def test_closure_block_equals_a_calendar_with_fewer_weeks(school, subject, teacher):
+    a = one(school, teacher, subject, hours=47)
+    for week in (1, 2, 3):
+        closed(school, week)
+    with_closure = build_week_context(MON, school)
+    school.year_end = END - datetime.timedelta(weeks=3)
+    school.save()
+    CalendarEntry.objects.all().delete()
+    shorter = build_week_context(MON, school)
+    assert with_closure.targets[a.pk] == shorter.targets[a.pk]
+    assert with_closure.target_sources[a.pk] == "residuo 47 ore su 7 settimane"
+
+
+def test_closure_rows_do_not_add_queries(school, subject, teacher):
+    def queries(n):
+        for i in range(n):
+            assign(school, teacher, klass(school, f"C{n}{i}", "PRIME"), subject)
+        with CaptureQueriesContext(connection) as ctx:
+            build_week_context(MON, school)
+        return len(ctx)
+
+    closed(school, 1)
+    closed(school, 2, group="PRIME")
+    assert queries(4) == queries(2)
 
 
 def test_current_week_in_stage_still_has_no_target(school, subject, teacher):

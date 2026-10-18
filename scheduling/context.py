@@ -91,36 +91,55 @@ def _is_stage(rows, day, school_class):
 
 def _stage_weeks(school, week_start, classes):
     """Per class id, the number of future weeks (after `week_start`, before the
-    end of the year) in stage on all five weekdays, by a `stage_class` row or a
-    group-stage row of the class's group. One query for the whole school."""
-    by_class, by_group = {}, {}
-    for date, class_id, group, group_stage in CalendarEntry.objects.filter(
-        Q(is_group_stage=True) | Q(stage_class__isnull=False),
+    end of the year) without any lesson day: on all five weekdays the class is
+    in stage (`stage_class` row or group-stage row of its group) or closed (the
+    row of its group, else the whole-school row, is a closure; specs 7). A week
+    is counted once whatever mixes it. One query for the whole school."""
+    class_stage, group_stage, group_rows, school_rows = set(), set(), {}, {}
+    for date, class_id, group, is_group_stage, closure in CalendarEntry.objects.filter(
+        Q(stage_class__isnull=False) | Q(is_closure=True) | Q(group__isnull=False),
         school=school,
         date__gte=week_start + datetime.timedelta(days=7),
         date__lt=school.year_end,
-    ).values_list("date", "stage_class_id", "group", "is_group_stage"):
+    ).values_list("date", "stage_class_id", "group", "is_group_stage", "is_closure"):
         if date.weekday() >= DAYS:
             continue
-        monday = date - datetime.timedelta(days=date.weekday())
         if class_id is not None:
-            by_class.setdefault((class_id, monday), set()).add(date)
-        elif group_stage:
-            by_group.setdefault((group or None, monday), set()).add(date)
+            class_stage.add((class_id, date))
+        elif is_group_stage:
+            group_stage.add((group, date))
+        elif group is not None:
+            group_rows[(group, date)] = closure
+        else:
+            school_rows[date] = closure
+    mondays = {
+        date - datetime.timedelta(days=date.weekday())
+        for date in (
+            {d for _, d in class_stage}
+            | {d for _, d in group_stage}
+            | {d for _, d in group_rows}
+            | set(school_rows)
+        )
+    }
+
+    def idle(class_id, group, date):
+        if (class_id, date) in class_stage or (group, date) in group_stage:
+            return True
+        if (group, date) in group_rows:
+            return group_rows[(group, date)]
+        return school_rows.get(date, False)
+
     result = {}
     for school_class in classes:
         group = school_class.group or None
-        mondays = {m for (c, m) in by_class if c == school_class.pk}
-        mondays |= {m for (g, m) in by_group if g == group}
         result[school_class.pk] = sum(
             1
             for monday in mondays
             if monday < school.year_end
-            and len(
-                by_class.get((school_class.pk, monday), set())
-                | by_group.get((group, monday), set())
+            and all(
+                idle(school_class.pk, group, monday + datetime.timedelta(days=i))
+                for i in range(DAYS)
             )
-            == DAYS
         )
     return result
 
