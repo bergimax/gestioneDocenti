@@ -178,6 +178,7 @@ There is no email. The age of the last successful backup is visible in two place
   `Backup non aggiornato` when stale and `Backup non verificabile` when the
   marker cannot be read. `docker-compose.yml` mounts `BACKUP_DIR` read-only into
   `web` and sets `BACKUP_MARKER_FILE=/backups/last-success`.
+- Off-site: see "Off-site copy" below for the second status line.
 - When it says STALE: read the last lines of `backups/cron.log` for the
   `backup FAILED` reason, check free disk and that the `postgres` container is
   running, run `deploy/backup.sh` by hand, then `deploy/backup-status.sh` again.
@@ -194,6 +195,23 @@ host, nothing else is installed or added to the image). It prints
 `..._SECRET_ACCESS_KEY`, `..._ENDPOINT`). They are passed to rclone through
 its environment, never on a command line. A missing `rclone`, a failed copy
 or an empty `BACKUP_DIR` exits non-zero.
+
+**Is the off-site copy still running?** Only when `OFFSITE_RCLONE_REMOTE` is set
+(otherwise nothing below exists). After `rclone` reports success the script
+atomically writes `BACKUP_DIR/last-offsite-success`, one line
+`<UTC timestamp> <dump file name>`; skipped, missing `rclone`, no dump or a failed
+copy leave an existing marker untouched, and retention never deletes it. If the
+copy succeeded but the marker cannot be written the script exits non-zero.
+`deploy/backup-status.sh` then prints a second line,
+`last off-site copy: 70 hours ago (<dump>)`, or `..., STALE (threshold 192 h)`
+when older than `OFFSITE_STALE_HOURS` (default 192, positive integer). Exit 0
+fresh, 1 stale, 2 no valid off-site marker (`no valid off-site marker in <dir>`)
+or a bad threshold; with two lines the exit is the worst of the two. Right after
+enabling off-site, the check reports "no valid off-site marker" until the first
+run (Sunday 03:30): expected. Administrators also see
+`Ultima copia off-site: N ore fa` on the overview page, with
+`Copia off-site non aggiornata` or `Copia off-site non verificabile`; the marker
+is read from the same mounted directory as `last-success`.
 
 **The bucket must be private**: the dumps contain personal data of teachers.
 Expiry of old off-site copies is set with a lifecycle rule on the bucket.

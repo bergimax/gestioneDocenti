@@ -9,7 +9,8 @@
 30 3 * * 0 cd /opt/gestione-docenti && deploy/backup-offsite.sh >> backups/cron.log 2>&1
 #
 # Daily check at 08:00: prints the age of the last backup, and STALE (exit 1) if it
-# is older than BACKUP_STALE_HOURS. Look for it in backups/cron.log.
+# is older than BACKUP_STALE_HOURS. When OFFSITE_RCLONE_REMOTE is set it also prints a
+# second line, the age of the last off-site copy (STALE after OFFSITE_STALE_HOURS). Look for it in backups/cron.log.
 0 8 * * * cd /opt/gestione-docenti && deploy/backup-status.sh >> backups/cron.log 2>&1
 #
 # Daily purge at 04:15: deletes stale parked setup uploads and dead availability

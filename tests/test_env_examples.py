@@ -105,6 +105,7 @@ def test_production_allow_list_is_really_absent():
         ("OFFSITE_RCLONE_REMOTE", "off-site"),
         ("BACKUP_STALE_HOURS", "STALE"),
         ("BACKUP_MARKER_FILE", "marker"),
+        ("OFFSITE_STALE_HOURS", "off-site"),
     ],
 )
 def test_backup_comments_name_their_own_variable(variable, word):
@@ -118,6 +119,7 @@ def test_backup_variables_keep_their_order():
         "OFFSITE_RCLONE_REMOTE",
         "BACKUP_STALE_HOURS",
         "BACKUP_MARKER_FILE",
+        "OFFSITE_STALE_HOURS",
         "OFFSITE_RCLONE_CONFIG",
     ]
     assert [v for v in order if v in wanted] == wanted

@@ -29,6 +29,14 @@ dir="$(backup_dir)"
 newest="$(list_dumps "$dir" 2> /dev/null | head -n 1 || true)"
 [ -n "$newest" ] || fail "no dump found in $dir: run deploy/backup.sh first"
 
+marker="$dir/last-offsite-success"
+marker_tmp="$dir/.last-offsite-success.tmp.$$"
+trap 'rm -f "$marker_tmp"' EXIT
+
 rclone copyto "$newest" "${remote%/}/$(basename "$newest")" \
     || fail "rclone could not copy $(basename "$newest") to the destination"
+# Only now, after rclone reported success: record it (atomically; -T so a directory in the way fails).
+printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$(basename "$newest")" > "$marker_tmp" \
+    && mv -fT "$marker_tmp" "$marker" \
+    || fail "the copy succeeded but the marker $marker could not be written"
 echo "$(date '+%Y-%m-%d %H:%M:%S') off-site copy done: $(basename "$newest")"

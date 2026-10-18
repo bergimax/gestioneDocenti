@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django.conf import settings
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
@@ -17,6 +19,12 @@ def home(request):
         context["backup"] = read_backup_status(
             settings.BACKUP_MARKER_FILE, settings.BACKUP_STALE_HOURS
         )
+        if settings.OFFSITE_CONFIGURED:
+            marker = settings.BACKUP_MARKER_FILE
+            context["offsite"] = read_backup_status(
+                str(Path(marker).with_name("last-offsite-success")) if marker else "",
+                settings.OFFSITE_STALE_HOURS,
+            )
     return render(request, "overview.html", context)
 
 

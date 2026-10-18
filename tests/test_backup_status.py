@@ -115,3 +115,105 @@ def test_env_examples_document_settings():
     prod = (ROOT / "deploy" / "env.production.example").read_text()
     assert "# BACKUP_STALE_HOURS=" in env and "# BACKUP_MARKER_FILE=" in env
     assert "# BACKUP_STALE_HOURS=" in prod
+
+
+# --- off-site line (#85) ---------------------------------------------------
+
+REMOTE = "secret-remote:private-bucket/path"
+
+
+def offsite_setup(tmp_path, settings, hours_ago=None, content=None, remote=True):
+    """BACKUP_MARKER_FILE in tmp_path, a fresh last-success, an off-site marker."""
+    settings.BACKUP_MARKER_FILE = str(fresh_marker(tmp_path, 1))
+    settings.OFFSITE_CONFIGURED = remote
+    marker = tmp_path / "last-offsite-success"
+    if content is not None:
+        marker.write_text(content)
+    elif hours_ago is not None:
+        when = datetime.now(UTC) - timedelta(hours=hours_ago, minutes=1)
+        marker.write_text(f"{when:%Y-%m-%dT%H:%M:%SZ} {DUMP}\n")
+    return marker
+
+
+@pytest.mark.django_db
+def test_admin_sees_offsite_fresh(tmp_path, settings):
+    offsite_setup(tmp_path, settings, 70)
+    html = client_for("ADMIN").get("/").content.decode()
+    assert "Ultima copia off-site: 70 ore fa" in html
+    assert "Copia off-site non aggiornata" not in html
+    assert "Ultimo backup: 1 ore fa" in html
+
+
+@pytest.mark.django_db
+def test_admin_sees_offsite_stale_as_warning(tmp_path, settings):
+    offsite_setup(tmp_path, settings, 200)
+    html = client_for("ADMIN").get("/").content.decode()
+    assert re.search(
+        r'<p class="message message-warning"[^>]*>Ultima copia off-site: 200 ore fa'
+        r".*Copia off-site non aggiornata</p>",
+        html,
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "case", ["absent", "garbage", "future", "two-lines", "marker-unset"]
+)
+def test_admin_sees_offsite_unverifiable(tmp_path, settings, case):
+    content = {"garbage": "garbage\n", "two-lines": f"2026-01-01T00:00:00Z {DUMP}\nx\n"}
+    marker = offsite_setup(tmp_path, settings, content=content.get(case))
+    if case == "future":
+        offsite_setup(tmp_path, settings, -5)
+    if case == "marker-unset":
+        offsite_setup(tmp_path, settings, 5)
+        settings.BACKUP_MARKER_FILE = ""
+    assert marker.parent == tmp_path
+    html = client_for("ADMIN").get("/").content.decode()
+    assert "Copia off-site non verificabile" in html
+    assert "Ultima copia off-site" not in html
+
+
+@pytest.mark.django_db
+def test_offsite_threshold_comes_from_settings(tmp_path, settings):
+    offsite_setup(tmp_path, settings, 30)
+    settings.OFFSITE_STALE_HOURS = 24
+    assert (
+        "Copia off-site non aggiornata" in client_for("ADMIN").get("/").content.decode()
+    )
+
+
+@pytest.mark.django_db
+def test_no_offsite_text_when_remote_not_configured(tmp_path, settings):
+    offsite_setup(tmp_path, settings, 70, remote=False)
+    admin = client_for("ADMIN")
+    html = admin.get("/").content.decode()
+    assert "off-site" not in html.lower()
+    assert "Ultimo backup: 1 ore fa" in html
+    (tmp_path / "last-offsite-success").unlink()  # marker-less, still silent
+    assert "off-site" not in admin.get("/").content.decode().lower()
+
+
+@pytest.mark.django_db
+def test_segreteria_and_anonymous_see_no_offsite(tmp_path, settings):
+    marker = offsite_setup(tmp_path, settings, 70)
+    settings.OFFSITE_RCLONE_REMOTE = REMOTE
+    seg = client_for("SEGRETERIA").get("/")
+    anon = client_for(None).get("/")
+    assert seg.status_code == 200 and anon.status_code == 302
+    for html in (seg.content.decode(), anon.content.decode()):
+        for text in ("off-site", DUMP, str(marker), REMOTE, "private-bucket"):
+            assert text not in html
+
+
+@pytest.mark.django_db
+def test_admin_html_never_holds_the_remote(tmp_path, settings):
+    offsite_setup(tmp_path, settings, 70)
+    settings.OFFSITE_RCLONE_REMOTE = REMOTE
+    html = client_for("ADMIN").get("/").content.decode()
+    for text in (REMOTE, "private-bucket", DUMP, str(tmp_path)):
+        assert text not in html
+
+
+def test_env_examples_document_offsite_threshold():
+    for name in (".env.example", "deploy/env.production.example"):
+        assert "# OFFSITE_STALE_HOURS=192" in (ROOT / name).read_text()

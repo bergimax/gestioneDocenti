@@ -7,6 +7,10 @@
 {% if not backup.ok %}<p class="message message-warning" role="status">Backup non verificabile</p>
 {% else %}<p class="{% if backup.stale %}message message-warning{% endif %}" role="status">Ultimo backup: {{ backup.hours }} ore fa{% if backup.stale %} &mdash; Backup non aggiornato{% endif %}</p>
 {% endif %}{% endif %}
+{% if offsite %}
+{% if not offsite.ok %}<p class="message message-warning" role="status">Copia off-site non verificabile</p>
+{% else %}<p class="{% if offsite.stale %}message message-warning{% endif %}" role="status">Ultima copia off-site: {{ offsite.hours }} ore fa{% if offsite.stale %} &mdash; Copia off-site non aggiornata{% endif %}</p>
+{% endif %}{% endif %}
 <ul class="cards">
   {% for item in nav_items %}{% if not item.active %}
   <li><a href="{% url item.url_name %}">{{ item.label }}</a></li>

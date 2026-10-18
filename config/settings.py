@@ -93,6 +93,10 @@ TRUSTED_PROXY_COUNT = get_non_negative_int(os.environ, "TRUSTED_PROXY_COUNT", 0)
 # Marker written by deploy/backup.sh, as the web process sees it (empty: unknown).
 BACKUP_MARKER_FILE = get_optional_str(os.environ, "BACKUP_MARKER_FILE")
 BACKUP_STALE_HOURS = get_positive_int(os.environ, "BACKUP_STALE_HOURS", 30)
+# The off-site copy is monitored only when a remote is configured; the remote string
+# itself stays out of settings consumers (it may hold a bucket name).
+OFFSITE_CONFIGURED = bool(get_optional_str(os.environ, "OFFSITE_RCLONE_REMOTE"))
+OFFSITE_STALE_HOURS = get_positive_int(os.environ, "OFFSITE_STALE_HOURS", 192)
 
 INSTALLED_APPS = [
     "django.contrib.admin",

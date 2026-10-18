@@ -379,3 +379,271 @@ def test_status_script_is_strict_and_cron_runs_it():
     assert "set -euo pipefail" in path.read_text()
     assert subprocess.run(["bash", "-n", str(path)]).returncode == 0
     assert "deploy/backup-status.sh" in (DEPLOY / "cron.example").read_text()
+
+
+# --- off-site marker and status line (#85) ---------------------------------
+
+OFFSITE_RE = r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ gestione-docenti-.*\.dump$"
+OLD_OFFSITE = "2026-01-01T00:00:00Z gestione-docenti-1-2-3.dump\n"
+REMOTE = "secret-remote:private-bucket/path"
+
+
+def offsite_marker(env):
+    return env["backups"] / "last-offsite-success"
+
+
+def two_dumps(env):
+    env["backups"].mkdir(exist_ok=True)
+    (env["backups"] / "gestione-docenti-20200101-000001-1.dump").write_text("old")
+    (env["backups"] / "gestione-docenti-20200102-000001-1.dump").write_text("new")
+
+
+def test_offsite_success_writes_marker(env):
+    import re
+    from datetime import UTC, datetime
+
+    script(env["bin"] / "rclone", FAKE_RCLONE)
+    two_dumps(env)
+    r = run(env, "backup-offsite.sh", OFFSITE_RCLONE_REMOTE=REMOTE)
+    assert r.returncode == 0, r.stderr
+    text = offsite_marker(env).read_text()
+    assert text.count("\n") == 1
+    assert re.match(OFFSITE_RE, text.rstrip("\n"))
+    stamp, name = text.split()
+    assert name == "gestione-docenti-20200102-000001-1.dump"
+    written = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    assert abs((datetime.now(UTC) - written).total_seconds()) < 60
+    assert not list(env["backups"].glob("*last-offsite-success.tmp*"))
+    assert not list(env["backups"].glob(".*tmp*"))
+
+
+def offsite_failure_cases(env):
+    """Yield (id, extra env, setup) for every run that must not touch the marker."""
+    return {
+        "unset": {},
+        "no-rclone": {"OFFSITE_RCLONE_REMOTE": "r:b", "PATH": "/usr/bin:/bin"},
+        "rclone-fails": {"OFFSITE_RCLONE_REMOTE": "r:b", "FAKE_RCLONE_FAIL": "1"},
+        "no-dump": {"OFFSITE_RCLONE_REMOTE": "r:b"},
+    }
+
+
+@pytest.mark.parametrize("case", ["unset", "no-rclone", "rclone-fails", "no-dump"])
+@pytest.mark.parametrize("existed", [False, True])
+def test_offsite_marker_untouched_when_nothing_was_copied(env, case, existed):
+    if case == "no-rclone" and Path("/usr/bin/rclone").exists():
+        pytest.skip("a real rclone is installed")
+    if case != "no-rclone":
+        script(env["bin"] / "rclone", FAKE_RCLONE)
+    env["backups"].mkdir()
+    if case != "no-dump":
+        two_dumps(env)
+    if existed:
+        offsite_marker(env).write_text(OLD_OFFSITE)
+    r = run(env, "backup-offsite.sh", **offsite_failure_cases(env)[case])
+    if case == "unset":
+        assert r.returncode == 0
+        assert r.stdout.strip() == "off-site not configured, skipped"
+    else:
+        assert r.returncode != 0
+    if case == "rclone-fails":
+        assert "FAILED" in r.stderr
+    if existed:
+        assert offsite_marker(env).read_text() == OLD_OFFSITE
+    else:
+        assert not offsite_marker(env).exists()
+    assert not list(env["backups"].glob(".*tmp*"))
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores permissions")
+def test_offsite_marker_not_writable_fails_after_copy(env):
+    # rclone itself makes the directory read-only, i.e. after the dump is placed
+    script(
+        env["bin"] / "rclone",
+        f'#!/usr/bin/env bash\nchmod 555 "{env["backups"]}"\n',
+    )
+    two_dumps(env)
+    try:
+        r = run(env, "backup-offsite.sh", OFFSITE_RCLONE_REMOTE=REMOTE)
+    finally:
+        env["backups"].chmod(0o755)
+    assert r.returncode != 0
+    assert "marker" in r.stderr and "could not be written" in r.stderr
+    assert not offsite_marker(env).exists()
+    assert not list(env["backups"].glob(".*tmp*"))
+
+
+def test_offsite_marker_path_is_a_directory_fails(env):
+    script(env["bin"] / "rclone", FAKE_RCLONE)
+    two_dumps(env)
+    offsite_marker(env).mkdir()
+    r = run(env, "backup-offsite.sh", OFFSITE_RCLONE_REMOTE=REMOTE)
+    assert r.returncode != 0
+    assert "could not be written" in r.stderr
+    assert list(offsite_marker(env).iterdir()) == []
+    assert not list(env["backups"].glob(".*tmp*"))
+
+
+def test_retention_keeps_offsite_marker(env):
+    env["backups"].mkdir()
+    offsite_marker(env).write_text(OLD_OFFSITE)
+    for _ in range(3):
+        assert run(env, "backup.sh", BACKUP_KEEP="1").returncode == 0
+    assert len(dumps(env)) == 1
+    assert offsite_marker(env).read_text() == OLD_OFFSITE
+    listed = subprocess.run(
+        ["bash", "-c", f'source {DEPLOY}/lib.sh; list_dumps "{env["backups"]}"'],
+        env={**os.environ, "ENV_FILE": "/nonexistent"},
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "last-offsite-success" not in listed
+
+
+def write_offsite(env, hours_ago, content=None):
+    from datetime import UTC, datetime, timedelta
+
+    env["backups"].mkdir(exist_ok=True)
+    when = datetime.now(UTC) - timedelta(hours=hours_ago, minutes=1)
+    name = "gestione-docenti-20261017-023012-1-2.dump"
+    offsite_marker(env).write_text(
+        content if content is not None else f"{when:%Y-%m-%dT%H:%M:%SZ} {name}\n"
+    )
+
+
+def status(env, **extra):
+    extra.setdefault("OFFSITE_RCLONE_REMOTE", REMOTE)
+    r = run(env, "backup-status.sh", **extra)
+    for secret in ("s3cret", REMOTE, "private-bucket"):
+        assert secret not in r.stdout + r.stderr
+    return r
+
+
+def test_status_without_remote_is_unchanged(env):
+    write_marker(env, 5)
+    write_offsite(env, 500)  # ignored: not configured
+    r = run(env, "backup-status.sh")
+    assert r.returncode == 0
+    assert r.stdout.count("\n") == 1 and "off-site" not in r.stdout + r.stderr
+    write_marker(env, 52)
+    r = run(env, "backup-status.sh")
+    assert r.returncode == 1 and "off-site" not in r.stdout
+    (env["backups"] / "last-success").write_text("garbage\n")
+    r = run(env, "backup-status.sh")
+    assert r.returncode == 2 and "off-site" not in r.stdout + r.stderr
+
+
+def test_status_offsite_fresh(env):
+    write_marker(env, 5)
+    write_offsite(env, 70)
+    r = status(env)
+    assert r.returncode == 0
+    lines = r.stdout.splitlines()
+    assert lines[0].startswith("last backup: 5 hours ago")
+    assert lines[1].startswith("last off-site copy: 70 hours ago (gestione-docenti-")
+
+
+@pytest.mark.parametrize("hours,code", [(192, 0), (193, 1)])
+def test_status_offsite_default_boundary(env, hours, code):
+    write_marker(env, 5)
+    write_offsite(env, hours)
+    r = status(env)
+    assert r.returncode == code
+    if code:
+        assert (
+            f"last off-site copy: {hours} hours ago, STALE (threshold 192 h)"
+            in r.stdout
+        )
+
+
+def test_status_offsite_custom_threshold_and_under_one_hour(env):
+    write_marker(env, 5)
+    write_offsite(env, 30)
+    r = status(env, OFFSITE_STALE_HOURS="24")
+    assert r.returncode == 1
+    assert "STALE (threshold 24 h)" in r.stdout
+    write_offsite(env, 0, "")  # replaced below with a minutes-old marker
+    from datetime import UTC, datetime, timedelta
+
+    when = datetime.now(UTC) - timedelta(minutes=5)
+    offsite_marker(env).write_text(
+        f"{when:%Y-%m-%dT%H:%M:%SZ} gestione-docenti-20261017-023012-1-2.dump\n"
+    )
+    r = status(env)
+    assert r.returncode == 0 and "last off-site copy: less than 1 hour ago" in r.stdout
+
+
+@pytest.mark.parametrize(
+    "content", [None, "", "garbage\n", "FUTURE", "two\nlines\n"], ids=repr
+)
+def test_status_offsite_invalid_marker(env, content):
+    write_marker(env, 5)
+    if content == "FUTURE":
+        write_offsite(env, -3)
+    elif content is not None:
+        write_offsite(env, 0, content)
+    r = status(env)
+    assert r.returncode == 2
+    assert f"no valid off-site marker in {env['backups']}" in r.stderr
+    assert "last off-site copy" not in r.stdout
+    assert "last backup: 5 hours ago" in r.stdout
+
+
+def test_status_combined_exit_codes(env):
+    write_marker(env, 52)  # stale local
+    write_offsite(env, 5)
+    r = status(env)
+    assert r.returncode == 1
+    assert "STALE" in r.stdout and "last off-site copy: 5 hours ago" in r.stdout
+    write_marker(env, 5)  # fresh local, invalid off-site
+    write_offsite(env, 0, "garbage\n")
+    assert status(env).returncode == 2
+    write_marker(env, 52)  # stale local, invalid off-site: worst is 2
+    assert status(env).returncode == 2
+    (env["backups"] / "last-success").write_text("garbage\n")  # invalid local
+    write_offsite(env, 5)
+    r = status(env)
+    assert r.returncode == 2
+    assert "no valid backup marker" in r.stderr
+    assert "last off-site copy: 5 hours ago" in r.stdout
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "abc"])
+@pytest.mark.parametrize("remote", [REMOTE, ""])
+def test_status_bad_offsite_threshold(env, value, remote):
+    write_marker(env, 1)
+    write_offsite(env, 1)
+    r = status(env, OFFSITE_STALE_HOURS=value, OFFSITE_RCLONE_REMOTE=remote)
+    assert r.returncode == 2
+    assert "OFFSITE_STALE_HOURS" in r.stderr
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "abc"])
+def test_django_rejects_bad_offsite_threshold(value):
+    root = DEPLOY.parent
+    r = subprocess.run(
+        [
+            "python",
+            "-c",
+            "import django.conf as c; c.settings.OFFSITE_STALE_HOURS",
+        ],
+        cwd=root,
+        env={
+            **os.environ,
+            "DJANGO_SETTINGS_MODULE": "config.settings_test",
+            "OFFSITE_STALE_HOURS": value,
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert r.returncode != 0
+    assert "OFFSITE_STALE_HOURS must be a positive integer" in r.stderr
+
+
+def test_docs_mention_offsite_line():
+    assert "off-site" in (DEPLOY / "cron.example").read_text()
+    readme = (DEPLOY / "README.md").read_text()
+    for text in ("last-offsite-success", "OFFSITE_STALE_HOURS", "no valid off-site"):
+        assert text in readme
+    for name in ("backup-offsite.sh", "backup-status.sh"):
+        assert "set -euo pipefail" in (DEPLOY / name).read_text()
+        assert subprocess.run(["bash", "-n", str(DEPLOY / name)]).returncode == 0
