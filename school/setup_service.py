@@ -881,19 +881,41 @@ def _create_assignments(school, rows, teachers, classes, subjects):
     return objs
 
 
-def _create_pairings(school, rows, classes, subjects):
+def _pairing_teacher(assignments, a, b, subject):
+    """The one teacher who teaches `subject` in both classes, or None."""
+
+    def teachers(klass):
+        return {
+            x.teacher_id
+            for x in assignments
+            if x.school_class_id == klass.pk and x.subject_id == subject.pk
+        }
+
+    common = teachers(a) & teachers(b)
+    return common.pop() if len(common) == 1 else None
+
+
+def _create_pairings(school, rows, classes, subjects, assignments, teachers):
     objs = []
+    teachers_by_pk = {t.pk: t for t in teachers.values()}
     for r in rows:
         a = classes[normalize_name(r["classe_a"])]
         b = classes[normalize_name(r["classe_b"])]
         if a.pk > b.pk:
             a, b = b, a
+        subject = subjects[normalize_name(r["materia_nome"])]
+        teacher_id = _pairing_teacher(assignments, a, b, subject)
+        if teacher_id is None:
+            raise SetupError(
+                f"Accoppiamenti riga {r['row']}: serve un solo docente che "
+                f"insegni {subject} sia in {a} sia in {b}."
+            )
         obj = ClassPairing(
             school=school,
             class_a=a,
             class_b=b,
-            subject=subjects[normalize_name(r["materia_nome"])],
-            teacher=None,
+            subject=subject,
+            teacher=teachers_by_pk[teacher_id],
             note=r["note"] or "",
         )
         _full_clean(obj, "Accoppiamenti", r["row"])
@@ -944,7 +966,9 @@ def save_setup(name, year, start, end, confirm_name=None, user=None):
         assignments = _create_assignments(
             school, rows["assignments"], teachers, classes, subjects
         )
-        pairings = _create_pairings(school, rows["pairings"], classes, subjects)
+        pairings = _create_pairings(
+            school, rows["pairings"], classes, subjects, assignments, teachers
+        )
         if uploads["calendar"].source == "ai":
             Draft.objects.filter(
                 kind=Draft.Kind.CALENDAR_ROWS, status=Draft.Status.DRAFT

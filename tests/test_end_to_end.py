@@ -34,8 +34,7 @@ SETUP = {
     "assignments": "docente_nome,classe_nome,materia_nome,ore_anno\n"
     "ROSSI MARIO,1A,Matematica,4\nROSSI MARIO,2A,Matematica,4\n"
     "BIANCHI LUCA,1A,Laboratorio,3\nBIANCHI LUCA,2A,Laboratorio,3\n",
-    # header only: a CSV pairing has no teacher and the solver refuses it (issue #172)
-    "pairings": "classe_a,classe_b,materia_nome,note\n",
+    "pairings": "classe_a,classe_b,materia_nome,note\n1A,2A,Matematica,insieme\n",
 }
 
 
@@ -100,8 +99,9 @@ def test_setup_to_approved_timetable_and_export(browser):
     assert timetable.state == TimetableState.BOZZA
     slots = Slot.objects.filter(timetable=timetable)
     assert slots.exists()
-    booked = [(s.teacher_id, s.day, s.start_hour) for s in slots]
-    assert len(booked) == len(set(booked))
+    # a paired lesson is one lesson in two classes: same teacher and subject
+    booked = {(s.teacher_id, s.day, s.start_hour, s.subject_id) for s in slots}
+    assert len(booked) == len({b[:3] for b in booked})
     grid_page = browser.get(f"/orario/{WEEK}/griglia/")
     assert grid_page.status_code == 200
     assert "ROSSI" in grid_page.content.decode()
