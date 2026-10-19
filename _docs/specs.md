@@ -1,193 +1,198 @@
-# Specifiche di Progetto: Piattaforma Gestione e Ottimizzazione Orari Scolastici
+# Project Specifications: School Timetable Management and Optimization Platform
 
-Documento di riferimento **riproducibile**: descrive il sistema così com'è implementato in questo repository
-(backend `app/`, frontend `frontend/`, deploy `deploy/`), con formati, formule, pesi e regole abbastanza precisi da
-poterlo ricostruire. Dove una funzione è prevista ma non implementata lo si dice esplicitamente (§17).
+**Reproducible** reference document for the domain: formats, formulas, weights and rules precise enough to rebuild the
+system. It was written from the first implementation (FastAPI backend `app/`, Node frontend `frontend/`); this
+repository is the Django rebuild described in `architecture.md`. The domain rules (constraints, weights, calendar
+resolution, permission matrix) apply unchanged; where the stack or layout differs (framework, routes, file paths,
+frontend), `architecture.md` and the code win. Where a feature is planned but not implemented, this is stated
+explicitly (§17).
 
-Convenzioni: i nomi di tabelle, campi, endpoint e costanti sono quelli del codice; le date sono ISO `YYYY-MM-DD`; i
-giorni nei dati sono `LUNEDI…VENERDI` (maiuscolo, senza accento) nel database e nelle API dell'orario, `lunedi…venerdi`
-(minuscolo) nelle griglie di disponibilità; le ore di lezione sono le fasce `8..13` (08:00-14:00).
+Conventions: table, field, endpoint and constant names are the ones used in the code; dates are ISO `YYYY-MM-DD`; days
+in the data are `LUNEDI…VENERDI` (uppercase, no accent) in the database and in the timetable APIs, `lunedi…venerdi`
+(lowercase) in the availability grids; lesson hours are the slots `8..13` (08:00-14:00). The application UI is in
+Italian: user-facing strings are quoted verbatim in Italian, with an English gloss in parentheses on first use.
 
 ---
 
-## 1. Visione, ambito e glossario
+## 1. Vision, scope and glossary
 
-Piattaforma web per generare, rivedere e pubblicare l'**orario scolastico settimanale** di un ente di formazione
-(Agenzia Formativa, istituti superiori / IeFP). Un solver a vincoli (Google OR-Tools CP-SAT) produce l'orario di una
-settimana alla volta partendo da: calendario annuale, anagrafiche, assegnazioni docente-classe-materia, monte ore
-residuo e disponibilità dei docenti. L'amministratore rivede il risultato, risolve i conflitti, lo approva e lo esporta
-come tabellone PDF/Excel.
+Web platform to generate, review and publish the **weekly school timetable** of a training institution
+(Agenzia Formativa, upper secondary schools / IeFP vocational courses). A constraint solver (Google OR-Tools CP-SAT)
+produces the timetable one week at a time starting from: the annual calendar, master data, teacher-class-subject
+assignments, remaining hours budget and teacher availability. The administrator reviews the result, resolves
+conflicts, approves it and exports it as a PDF/Excel board.
 
-**Ambito v1 (implementato):** una sola scuola (single-tenant, `scuola_id = "sch_1"`), accesso con login (ruoli
-ADMIN e SEGRETERIA), setup guidato da file, disponibilità docenti, generazione/modifica/approvazione dell'orario,
-esportazione PDF ed Excel, apprendimento dei pesi dalle valutazioni dell'amministratore, deploy su una VM con Docker.
+**v1 scope (implemented):** a single school (single-tenant, `scuola_id = "sch_1"`), login access (roles
+ADMIN and SEGRETERIA, i.e. secretariat), file-driven guided setup, teacher availability, timetable
+generation/editing/approval, PDF and Excel export, weight learning from the administrator's ratings, deploy on a VM
+with Docker.
 
-| Termine | Significato |
+| Term | Meaning |
 |---|---|
-| Classe | Gruppo di studenti, nome `"<numero romano> <corso>"`, es. `II ELETTRICISTI`, `I I.T.C.` |
-| Gruppo | Coorte per anno: `PRIME`, `SECONDE`, `TERZE`, `QUARTE`, `PRIMA4+2` (la classe `I I.T.C.`, corso "4+2") |
-| Assegnazione | Terna docente + classe + materia (una riga di `assegnazione`) con il suo monte ore |
-| Docente ASSUNTO | Sempre disponibile 8-14 dal lunedì al venerdì (non vincolato da griglia) |
-| Docente CONTRATTO | Disponibile solo nelle fasce segnate nella griglia della settimana |
-| Ora buca (docente) | Ora libera di un docente tra due sue lezioni nello stesso giorno |
-| Stage / tirocinio | La classe/gruppo è fuori sede: zero lezioni, nell'orario compare "STAGE" |
-| Deroga / quick action | Rilassamento esplicito, per una sola rigenerazione, di una regola quasi-rigida |
-| Settimana | Lunedì-venerdì, identificata dalla data del lunedì (`week_start`) |
+| Classe (class) | Group of students, name `"<roman numeral> <course>"`, e.g. `II ELETTRICISTI`, `I I.T.C.` |
+| Gruppo (group) | Cohort by year: `PRIME` (first years), `SECONDE` (second), `TERZE` (third), `QUARTE` (fourth), `PRIMA4+2` (the class `I I.T.C.`, course "4+2") |
+| Assegnazione (assignment) | Triple teacher + class + subject (one row of `assegnazione`) with its hours budget |
+| Docente ASSUNTO (permanent teacher) | Always available 8-14 from Monday to Friday (not constrained by a grid) |
+| Docente CONTRATTO (contract teacher) | Available only in the slots marked in the week's grid |
+| Ora buca (gap hour, teacher) | Free hour of a teacher between two of their lessons on the same day |
+| Stage / tirocinio (work placement) | The class/group is off-site: zero lessons, the timetable shows "STAGE" |
+| Deroga / quick action (waiver) | Explicit relaxation, for a single regeneration, of a near-hard rule |
+| Settimana (week) | Monday-Friday, identified by the Monday date (`week_start`) |
 
 ---
 
-## 2. Architettura e stack
+## 2. Architecture and stack
 
 ```
 Browser ──HTTPS──> Caddy ──/api/*, /health, /docs, /openapi.json, /redoc──> backend (FastAPI :8000) ──> PostgreSQL
-                      └────────── tutto il resto ───────────────────────> frontend (Node :3000, SSR)
+                      └────────── everything else ──────────────────────> frontend (Node :3000, SSR)
 ```
 
-| Componente | Tecnologia (versioni da `requirements.txt` / `package.json`) |
+| Component | Technology (versions from `requirements.txt` / `package.json`) |
 |---|---|
-| Backend | Python 3.13, FastAPI ≥0.104, Uvicorn, SQLAlchemy 2.0 (non 2.1), Pydantic 2 + pydantic-settings, psycopg2 |
+| Backend | Python 3.13, FastAPI ≥0.104, Uvicorn, SQLAlchemy 2.0 (not 2.1), Pydantic 2 + pydantic-settings, psycopg2 |
 | Solver | `ortools` ≥ 9.12 (CP-SAT) |
-| PDF | WeasyPrint ≥ 60 (richiede Pango/Cairo; font: Liberation/DejaVu) |
+| PDF | WeasyPrint ≥ 60 (requires Pango/Cairo; fonts: Liberation/DejaVu) |
 | Excel | openpyxl ≥ 3.1 |
-| Lettura PDF in ingresso | pdfplumber ≥ 0.11 |
-| LLM (copilota, oggi disattivato) | `anthropic` SDK, tool-use |
-| Frontend | React 19, TanStack Start/Router/Query, Tailwind CSS 4, Vite, build nitro `node-server` |
-| Database | PostgreSQL 15 (produzione); SQLite per sviluppo e test |
-| Reverse proxy | Caddy 2 (HTTPS automatico Let's Encrypt) |
+| Incoming PDF reading | pdfplumber ≥ 0.11 |
+| LLM (copilot, currently disabled) | `anthropic` SDK, tool-use |
+| Frontend | React 19, TanStack Start/Router/Query, Tailwind CSS 4, Vite, nitro `node-server` build |
+| Database | PostgreSQL 15 (production); SQLite for development and tests |
+| Reverse proxy | Caddy 2 (automatic Let's Encrypt HTTPS) |
 
-Struttura del repository:
+Repository structure:
 
 ```
-app/main.py            FastAPI app, CORS, create_all + migrazione colonna admin.role
+app/main.py            FastAPI app, CORS, create_all + admin.role column migration
 app/config.py          Settings (env): DATABASE_URL, CORS_ORIGINS, SOLVER_TIMEOUT_SECONDS, ANTHROPIC_API_KEY, TEMP_DIR…
 app/database.py        engine, SessionLocal, Base, get_db, ensure_admin_role_column()
-app/models.py          modelli SQLAlchemy (§3)
-app/schemas.py         modelli Pydantic di richiesta/risposta
-app/security.py        hash password, sessioni, guardie di ruolo (§4)
+app/models.py          SQLAlchemy models (§3)
+app/schemas.py         Pydantic request/response models
+app/security.py        password hashing, sessions, role guards (§4)
 app/routes/            auth, setup, availability, schedule, chat, dati, soft_weights
-app/services/          logica applicativa (schedule, setup, availability, dati, feedback, soft_weights, chat)
-app/repositories/      accesso DB (schedule: contesto settimanale, celle di stage; setup; availability)
-app/domain/            logica pura: solver.py, parser.py, validator.py, soft_weights.py, nlp.py
+app/services/          application logic (schedule, setup, availability, dati, feedback, soft_weights, chat)
+app/repositories/      DB access (schedule: weekly context, stage cells; setup; availability)
+app/domain/            pure logic: solver.py, parser.py, validator.py, soft_weights.py, nlp.py
 scripts/               create_admin.py, import_documenti.py, rederive_monte_ore_and_pairings.py,
                        set_contratto_availability.py, infer_availability_from_calendars.py
 frontend/src/routes/   index (login), menu, setup, disponibilita, orario, dati.*, account
-frontend/src/lib/api.ts client HTTP con token Bearer
+frontend/src/lib/api.ts HTTP client with Bearer token
 deploy/                docker compose, Caddyfile, update.sh, backup, create-admin.sh
-tests/                 pytest (SQLite temporaneo)
-Documenti/             PDF reali di esempio (calendario annuale, orari di esempio)
+tests/                 pytest (temporary SQLite)
+Documenti/             real sample PDFs (annual calendar, sample timetables)
 ```
 
-Configurazione (`.env`, vedi `.env.example`): `DATABASE_URL`, `API_TITLE`, `API_VERSION`, `DEBUG`,
+Configuration (`.env`, see `.env.example`): `DATABASE_URL`, `API_TITLE`, `API_VERSION`, `DEBUG`,
 `SOLVER_TIMEOUT_SECONDS=60`, `ANTHROPIC_API_KEY`, `USE_S3`, `S3_BUCKET`, `TEMP_DIR=/tmp/calendariodocenti`,
-`CORS_ORIGINS` (lista JSON; default `["*"]`, l'auth è un header Bearer, non un cookie, quindi CORS senza credenziali).
+`CORS_ORIGINS` (JSON list; default `["*"]`, auth is a Bearer header, not a cookie, hence CORS without credentials).
 
-All'avvio `app/main.py` esegue `Base.metadata.create_all` e `ensure_admin_role_column()`: `create_all` non altera tabelle
-esistenti, quindi aggiunge `admin.role` ai database precedenti ai ruoli (`ALTER TABLE admin ADD COLUMN role VARCHAR(20)
-NOT NULL DEFAULT 'ADMIN'`). Non esiste un sistema di migrazioni (Alembic): ogni nuova colonna richiede una
-funzione di migrazione analoga.
+At startup `app/main.py` runs `Base.metadata.create_all` and `ensure_admin_role_column()`: `create_all` does not alter
+existing tables, so it adds `admin.role` to databases that predate roles (`ALTER TABLE admin ADD COLUMN role VARCHAR(20)
+NOT NULL DEFAULT 'ADMIN'`). There is no migration system (Alembic): every new column requires a similar migration
+function.
 
 ---
 
-## 3. Modello dati
+## 3. Data model
 
-Tutti gli id sono stringhe UUID (`str(uuid4())`) tranne `scuola.id`, che in v1 vale `"sch_1"`. `created_at` è
-`DateTime server_default now()`. Le enumerazioni sono `Enum` SQLAlchemy.
+All ids are UUID strings (`str(uuid4())`) except `scuola.id`, which in v1 is `"sch_1"`. `created_at` is
+`DateTime server_default now()`. Enumerations are SQLAlchemy `Enum`s.
 
-| Tabella | Colonne (tipo, vincoli) |
+| Table | Columns (type, constraints) |
 |---|---|
-| `scuola` | `id`, `nome` (255, NN), `anno_formativo` (50, NN, es. `2026-2027`), `data_inizio_anno` (Date, NN), `data_fine_anno` (Date, NN) |
+| `scuola` | `id`, `nome` (255, NN), `anno_formativo` (50, NN, e.g. `2026-2027`), `data_inizio_anno` (Date, NN), `data_fine_anno` (Date, NN) |
 | `classe` | `id`, `scuola_id` FK, `nome` (50, NN), `n_studenti` (int, def 0), `gruppo` (50, nullable) |
-| `docente` | `id`, `scuola_id` FK, `nome` (255, NN, formato **"COGNOME NOME"**), `email` (nullable), `tipo` Enum(`ASSUNTO`,`CONTRATTO`) NN, `active` (bool, def true), `first_time_this_year` (bool, def true) |
+| `docente` | `id`, `scuola_id` FK, `nome` (255, NN, format **"COGNOME NOME"**, i.e. surname first), `email` (nullable), `tipo` Enum(`ASSUNTO`,`CONTRATTO`) NN, `active` (bool, def true), `first_time_this_year` (bool, def true) |
 | `materia` | `id`, `scuola_id` FK, `nome` (255), `tipo` Enum(`TEORIA`,`PRATICA`), `peso_cognitivo` Enum(`ALTO`,`MEDIO`,`BASSO`) |
 | `assegnazione` | `id`, `scuola_id`, `docente_id` FK, `classe_id` FK, `materia_id` FK |
-| `monte_ore_annuale` | `id`, `scuola_id`, `classe_id`, `materia_id`, `docente_id` (FK), `ore_totali` (int NN), `ore_erogate` (int, def 0). **Residuo = `ore_totali − ore_erogate`** (vedi §8) |
-| `calendario_annuale` | `id`, `scuola_id`, `data` (Date NN), `gruppo` (50, null = riga valida per tutta la scuola), `ore_max_giornata` (int, def 6; valori 4/5/6, 0 su una riga di chiusura, 8 = stage di gruppo con `gruppo`), `ora_inizio_min` (int 8-13, null), `flag_chiusura` (bool), `flag_stage_classe_id` (FK classe, null), `flag_stage_gruppo` (bool) |
+| `monte_ore_annuale` | `id`, `scuola_id`, `classe_id`, `materia_id`, `docente_id` (FK), `ore_totali` (int NN), `ore_erogate` (int, def 0). **Remaining = `ore_totali − ore_erogate`** (see §8) |
+| `calendario_annuale` | `id`, `scuola_id`, `data` (Date NN), `gruppo` (50, null = row valid for the whole school), `ore_max_giornata` (int, def 6; values 4/5/6, 0 on a closure row, 8 = group stage with `gruppo`), `ora_inizio_min` (int 8-13, null), `flag_chiusura` (bool), `flag_stage_classe_id` (FK classe, null), `flag_stage_gruppo` (bool) |
 | `disponibilita_settimanale` | `id`, `scuola_id`, `docente_id`, `settimana_inizio` (Date), `giorni_fasce` (JSON, §6), `created_at`, `updated_at` |
 | `classe_accoppiata` | `id`, `scuola_id`, `classe_a_id`, `classe_b_id`, `materia_id` (FK), `docente_id` (FK, null), `note` (Text) |
 | `orario_settimanale` | `id`, `scuola_id`, `settimana_inizio` (Date), `stato` Enum(`BOZZA`,`APPROVATO`) def BOZZA, `quality_score` (Float 0-100), `quality_level` Enum(`A`,`B`,`C`), `n_conflitti_soft` (int), `approved_at` |
 | `slot_lezione` | `id`, `orario_settimanale_id` FK, `classe_id`, `docente_id`, `materia_id`, `giorno` Enum(LUNEDI…VENERDI), `ora_inizio` (8-13), `ora_fine` (9-14), `accoppiata` (bool), `classe_accoppiata_id` (FK classe, null) |
 | `chat_message` | `id`, `scuola_id`, `orario_settimanale_id`, `ruolo` Enum(`ADMIN`,`AI`), `messaggio` (Text), `timestamp` |
 | `preferenze_ai_memory` | `id`, `scuola_id`, `regola` (Text), `peso` (Float, def 1.0) |
-| `conflitto_gestito` | `id`, `orario_settimanale_id` (indice), `chiave` (300), `azione` (`APPROVATO` \| `LIBERA`). Si svuota a ogni rigenerazione della settimana |
-| `orario_feedback` | `id`, `orario_settimanale_id` (indice), `admin_id`, `voto` (1-5), `motivi` (JSON lista di codici), `nota` (Text), snapshot `quality_score`/`quality_level`/`n_conflitti_soft`/`stato`. Append-only |
-| `soft_weight_adjustment` | `id`, `kind` (60, indice), `old_weight`, `new_weight`, `evidenza` (JSON), `admin_id`, `created_at`. Append-only: il peso attivo di un `kind` è il `new_weight` della riga più recente |
-| `audit_log` | `id`, `scuola_id`, `orario_settimanale_id` (null), `azione` (es. `GENERATE`, `MODIFY_SLOT`, `SCHEDULE_APPROVED`, `QUICK_ACTION`), `admin_id`, `dettagli` (JSON), `timestamp` |
-| `admin` | `id`, `scuola_id` FK, `email` (255, **unique**, indice, salvata in minuscolo), `password_hash`, `role` String(20) NN def `ADMIN` (`ADMIN` \| `SEGRETERIA`) |
-| `admin_session` | `token` (PK, opaco), `admin_id` FK, `created_at`, `expires_at` |
+| `conflitto_gestito` | `id`, `orario_settimanale_id` (index), `chiave` (300), `azione` (`APPROVATO` \| `LIBERA`). Emptied at every regeneration of the week |
+| `orario_feedback` | `id`, `orario_settimanale_id` (index), `admin_id`, `voto` (1-5), `motivi` (JSON list of codes), `nota` (Text), snapshot `quality_score`/`quality_level`/`n_conflitti_soft`/`stato`. Append-only |
+| `soft_weight_adjustment` | `id`, `kind` (60, index), `old_weight`, `new_weight`, `evidenza` (JSON), `admin_id`, `created_at`. Append-only: the active weight of a `kind` is the `new_weight` of the most recent row |
+| `audit_log` | `id`, `scuola_id`, `orario_settimanale_id` (null), `azione` (e.g. `GENERATE`, `MODIFY_SLOT`, `SCHEDULE_APPROVED`, `QUICK_ACTION`), `admin_id`, `dettagli` (JSON), `timestamp` |
+| `admin` | `id`, `scuola_id` FK, `email` (255, **unique**, index, stored lowercase), `password_hash`, `role` String(20) NN def `ADMIN` (`ADMIN` \| `SEGRETERIA`) |
+| `admin_session` | `token` (PK, opaque), `admin_id` FK, `created_at`, `expires_at` |
 
-Note di integrità:
-- Una classe accoppiata è registrata come **una riga per coppia per docente** (un gruppo di 4 classi sempre insieme =
-  più righe a coppie). `docente_id` è il docente che realmente tiene la lezione congiunta: gli altri docenti delle due
-  classi restano indipendenti.
-- Non c'è cancellazione a cascata dichiarata: i servizi `dati` rimuovono a mano le righe dipendenti.
+Integrity notes:
+- A paired class is stored as **one row per pair per teacher** (a group of 4 classes always together =
+  several rows in pairs). `docente_id` is the teacher who actually gives the joint lesson: the other teachers of the two
+  classes stay independent.
+- There is no declared cascade delete: the `dati` services remove dependent rows by hand.
 
 ---
 
-## 4. Autenticazione e ruoli
+## 4. Authentication and roles
 
-**Login:** `POST /api/auth/login {email, password}` → `{status:"ok", token, email, role}`. Errore 401 «Email o password non
-corretti». Il token è opaco (`secrets.token_urlsafe(32)`), salvato in `admin_session` con scadenza **7 giorni**; il
-client lo invia come `Authorization: Bearer <token>`. `POST /api/auth/logout` cancella la sessione (funziona anche se
-scaduta). `GET /api/auth/me` → `{email, role}`.
+**Login:** `POST /api/auth/login {email, password}` → `{status:"ok", token, email, role}`. Error 401 «Email o password non
+corretti» (wrong email or password). The token is opaque (`secrets.token_urlsafe(32)`), stored in `admin_session` with a **7-day** expiry; the
+client sends it as `Authorization: Bearer <token>`. `POST /api/auth/logout` deletes the session (works even if
+expired). `GET /api/auth/me` → `{email, role}`.
 
-**Password:** PBKDF2-HMAC-SHA256, 260 000 iterazioni, salt casuale di 16 byte; formato memorizzato
-`"<salt_hex>$<digest_hex>"`; confronto con `hmac.compare_digest`. Lunghezza minima 8 caratteri.
+**Password:** PBKDF2-HMAC-SHA256, 260 000 iterations, random 16-byte salt; stored format
+`"<salt_hex>$<digest_hex>"`; comparison with `hmac.compare_digest`. Minimum length 8 characters.
 
-**Cambio password:** `POST /api/auth/change-password {current_password, new_password}` (richiede login). 400 se la
-password attuale è errata, se la nuova ha meno di 8 caratteri o è uguale all'attuale. Dopo il cambio **tutte le altre
-sessioni dello stesso utente vengono cancellate**; quella usata resta valida.
+**Password change:** `POST /api/auth/change-password {current_password, new_password}` (requires login). 400 if the
+current password is wrong, if the new one is shorter than 8 characters or equals the current one. After the change **all other
+sessions of the same user are deleted**; the one in use stays valid.
 
-**Creazione utenti:** non esiste registrazione. Si usa `python -m scripts.create_admin <email> <password> [scuola_id]
-[ruolo]` (default `sch_1`, `ADMIN`); in produzione `deploy/create-admin.sh <email> "<password>" [ADMIN|SEGRETERIA]`.
-Se l'utente esiste ne reimposta password e ruolo.
+**User creation:** there is no sign-up. Use `python -m scripts.create_admin <email> <password> [scuola_id]
+[role]` (default `sch_1`, `ADMIN`); in production `deploy/create-admin.sh <email> "<password>" [ADMIN|SEGRETERIA]`.
+If the user exists, its password and role are reset.
 
-**Ruoli e permessi** (guardie in `app/security.py`; un ruolo mancante vale ADMIN):
+**Roles and permissions** (guards in `app/security.py`; a missing role counts as ADMIN):
 
 | Area | ADMIN | SEGRETERIA |
 |---|---|---|
-| Login, `/auth/me`, cambio password | sì | sì |
-| Lettura orario (`GET /schedule/{w}` e derivati), export PDF/Excel | sì | sì |
-| Lettura docenti (`GET /teachers`) e dati scuola (`GET /classes, /subjects, /assignments, /class-pairings, /calendar`) | sì | sì |
-| Disponibilità docenti: lettura, salvataggio, copia dalla settimana precedente, stato, elenco settimane | sì | **sì** |
-| Generare, rigenerare, modificare slot, assegnare slot, conflitti, quick action, approvare, valutare (`POST /schedule/**`) | sì | **no (403)** |
-| Setup (`/setup/**`, upload file, `/calendar/add-date-manual`) | sì | no (403) |
-| Dati scuola in scrittura (POST/PUT/DELETE su classi, materie, assegnazioni, accoppiamenti, calendario) | sì | no (403) |
-| CRUD docenti (`POST/PUT/DELETE /teachers…`) | sì | no (403) |
-| Chat copilota, pesi del solver (`/soft-weights`) | sì | no (403) |
+| Login, `/auth/me`, password change | yes | yes |
+| Reading the timetable (`GET /schedule/{w}` and derived), PDF/Excel export | yes | yes |
+| Reading teachers (`GET /teachers`) and school data (`GET /classes, /subjects, /assignments, /class-pairings, /calendar`) | yes | yes |
+| Teacher availability: read, save, copy from the previous week, status, list of weeks | yes | **yes** |
+| Generate, regenerate, edit slots, assign slots, conflicts, quick action, approve, rate (`POST /schedule/**`) | yes | **no (403)** |
+| Setup (`/setup/**`, file upload, `/calendar/add-date-manual`) | yes | no (403) |
+| School data writes (POST/PUT/DELETE on classes, subjects, assignments, pairings, calendar) | yes | no (403) |
+| Teacher CRUD (`POST/PUT/DELETE /teachers…`) | yes | no (403) |
+| Copilot chat, solver weights (`/soft-weights`) | yes | no (403) |
 
-Implementazione: `require_admin` (solo ADMIN, sui router `setup`, `chat`, `soft_weights` e sulle scritture dei
-docenti), `require_admin_for_writes` (metodi non-GET solo ADMIN, sui router `schedule` e `dati`), `get_current_admin`
-(qualunque utente loggato, sul router `availability`). Risposta 403: «Permesso negato…». Nessun token/scaduto → 401.
+Implementation: `require_admin` (ADMIN only, on the `setup`, `chat`, `soft_weights` routers and on teacher
+writes), `require_admin_for_writes` (non-GET methods ADMIN only, on the `schedule` and `dati` routers), `get_current_admin`
+(any logged-in user, on the `availability` router). 403 response: «Permesso negato…» (permission denied). No token/expired token → 401.
 
-Il frontend (§13) nasconde le funzioni vietate alla segreteria, ma l'applicazione dei permessi è sempre lato server.
+The frontend (§13) hides the functions forbidden to the secretariat, but permissions are always enforced server-side.
 
 ---
 
-## 5. Setup iniziale (caricamento dati)
+## 5. Initial setup (data loading)
 
-Flusso (pagina `/setup`): per ogni tipo di file si fa upload → il file viene letto e validato → l'admin vede l'anteprima
-ed eventuali avvisi → corregge → `POST /setup/save`. L'upload parcheggia i dati già letti in una cache in memoria del
-`SetupService` (un'istanza di modulo); `/setup/validate` con `{file_ids:[…]}` valida la coerenza incrociata; in
-alternativa accetta direttamente i contenuti CSV (`calendario, docenti, classi, materie, assegnazioni, accoppiamenti`).
-La cache è per-processo: un riavvio del backend a metà setup la perde.
+Flow (page `/setup`): for each file type, upload → the file is read and validated → the admin sees the preview
+and any warnings → corrects → `POST /setup/save`. The upload parks the already-parsed data in an in-memory cache of the
+`SetupService` (a module-level instance); `/setup/validate` with `{file_ids:[…]}` validates cross-file consistency;
+alternatively it directly accepts the CSV contents (`calendario, docenti, classi, materie, assegnazioni, accoppiamenti`).
+The cache is per-process: a backend restart in the middle of setup loses it.
 
-### 5.1 File CSV (intestazione obbligatoria, UTF-8)
+### 5.1 CSV files (header required, UTF-8)
 
-| File | Endpoint upload | Colonne |
+| File | Upload endpoint | Columns |
 |---|---|---|
-| Calendario | `POST /calendar/upload` (CSV o PDF) | `data` (YYYY-MM-DD), `ore_max_giornata` (**4/5/6**; **0** solo su una riga di chiusura; **8** = stage di un gruppo, solo con `gruppo` e senza chiusura né `stage_classe_id`; altro = errore), `flag_chiusura` (true/1/yes), opz. `stage_classe_id`, `gruppo` |
-| Docenti | `POST /teachers/upload` | `nome`, `email` (opz.), `tipo` (`ASSUNTO`/`CONTRATTO`) |
-| Classi | `POST /classes/upload` | `nome`, `n_studenti` (opz.), `gruppo` (opz., es. `PRIME`) |
-| Materie | `POST /subjects/upload` | `nome`, `tipo` (`TEORIA`/`PRATICA`), `peso_cognitivo` (`ALTO`/`MEDIO`/`BASSO`) |
-| Assegnazioni | `POST /assignments/upload` | `docente_nome`, `classe_nome`, `materia_nome`, `ore_anno` |
-| Accoppiamenti | `POST /class-pairings/upload` | `classe_a`, `classe_b`, `materia_nome`, `note` (opz.) |
+| Calendar | `POST /calendar/upload` (CSV or PDF) | `data` (YYYY-MM-DD), `ore_max_giornata` (**4/5/6**; **0** only on a closure row; **8** = group stage, only with `gruppo` and without closure or `stage_classe_id`; anything else = error), `flag_chiusura` (true/1/yes), opt. `stage_classe_id`, `gruppo` |
+| Teachers | `POST /teachers/upload` | `nome`, `email` (opt.), `tipo` (`ASSUNTO`/`CONTRATTO`) |
+| Classes | `POST /classes/upload` | `nome`, `n_studenti` (opt.), `gruppo` (opt., e.g. `PRIME`) |
+| Subjects | `POST /subjects/upload` | `nome`, `tipo` (`TEORIA`/`PRATICA`), `peso_cognitivo` (`ALTO`/`MEDIO`/`BASSO`) |
+| Assignments | `POST /assignments/upload` | `docente_nome`, `classe_nome`, `materia_nome`, `ore_anno` |
+| Pairings | `POST /class-pairings/upload` | `classe_a`, `classe_b`, `materia_nome`, `note` (opt.) |
 
-### 5.2 Calendario da PDF («CALENDARIO AF»)
+### 5.2 Calendar from PDF («CALENDARIO AF»)
 
-Il parser (`CalendarParser.parse_calendario_pdf`, pdfplumber) legge le righe della tabella principale. Geometria
-(coordinate x0 in punti PDF, costante `CALENDARIO_PDF_GRUPPI_COLONNE`):
+The parser (`CalendarParser.parse_calendario_pdf`, pdfplumber) reads the rows of the main table. Geometry
+(x0 coordinates in PDF points, constant `CALENDARIO_PDF_GRUPPI_COLONNE`):
 
-| Gruppo | x0 da | a |
+| Group | x0 from | to |
 |---|---|---|
 | PRIME | 140 | 195 |
 | SECONDE | 195 | 250 |
@@ -195,407 +200,407 @@ Il parser (`CalendarParser.parse_calendario_pdf`, pdfplumber) legge le righe del
 | QUARTE | 305 | 360 |
 | PRIMA4+2 | 360 | 410 |
 
-La colonna data è tutto ciò che sta a x0 < 140; l'area letta è ritagliata a x ≤ 410 (le tabelle laterali delle attività
-sono ignorate). Una riga data è del tipo «lunedì 14 settembre 2026» (mesi italiani). Per **ogni data e ogni gruppo** si
-crea una riga `{data, gruppo, ore_max_giornata, flag_chiusura=false, stage_classe_id=null, flag_stage_gruppo}`:
-- cella vuota → `ore_max_giornata = 0`;
-- **cella con valore ≥ 8 (`STAGE_ORE_GIORNATA`) → `flag_stage_gruppo = true`**: il gruppo è in tirocinio quel giorno
-  (nel PDF dell'agenzia le note a piè pagina riportano gli intervalli, es. «tirocinio classi IV dal 5/10 al 22/12»);
-- i giorni lavorativi (lun-ven) compresi tra la prima e l'ultima data letta ma assenti dal PDF diventano righe
-  `gruppo=null, ore_max_giornata=0, flag_chiusura=true` (chiusure/festività).
-Anche il CSV (§5.1) esprime questi valori: 0 su una riga di chiusura e 8 con `gruppo` (nessuna colonna
-`flag_stage_gruppo`: `flag_stage_gruppo = true` deriva dalle 8 ore, una riga per gruppo e data); la regola delle ore è
-la stessa per CSV, PDF/AI, data manuale (che non ha il gruppo: niente 8) e correzione di cella. Anche il form del calendario nelle pagine dati
-(e la pagina intervallo) salva 0 ore su una chiusura e 8 ore su uno stage di gruppo, derivati dalle caselle «Chiusura»
-e «Stage di gruppo», con la stessa regola.
-Se non si riconosce nessuna riga il parser solleva un errore («serve un parser diverso per un altro template»).
-Un template diverso richiede di aggiornare le coordinate.
+The date column is everything at x0 < 140; the area read is cropped at x ≤ 410 (the side activity tables
+are ignored). A date row looks like «lunedì 14 settembre 2026» (Italian months). For **each date and each group** a
+row `{data, gruppo, ore_max_giornata, flag_chiusura=false, stage_classe_id=null, flag_stage_gruppo}` is created:
+- empty cell → `ore_max_giornata = 0`;
+- **cell with value ≥ 8 (`STAGE_ORE_GIORNATA`) → `flag_stage_gruppo = true`**: the group is on work placement that day
+  (in the agency's PDF the footnotes give the ranges, e.g. «tirocinio classi IV dal 5/10 al 22/12», i.e. "year-4 classes on placement from 5/10 to 22/12");
+- working days (Mon-Fri) between the first and last date read but missing from the PDF become rows
+  `gruppo=null, ore_max_giornata=0, flag_chiusura=true` (closures/holidays).
+The CSV (§5.1) also expresses these values: 0 on a closure row and 8 with `gruppo` (there is no `flag_stage_gruppo`
+column: `flag_stage_gruppo = true` is derived from the 8 hours, one row per group and date); the hours rule is
+the same for CSV, PDF/AI, manual date (which has no group: no 8) and cell correction. The calendar form in the data pages
+(and the range page) also saves 0 hours on a closure and 8 hours on a group stage, derived from the «Chiusura» (closure)
+and «Stage di gruppo» (group stage) checkboxes, with the same rule.
+If no row is recognized the parser raises an error («serve un parser diverso per un altro template», i.e. "a different parser is needed for another template").
+A different template requires updating the coordinates.
 
-Il salvataggio (`bulk_create_calendar`) scrive `gruppo`, `ore_max_giornata`, `flag_chiusura`, `flag_stage_gruppo` e
-`flag_stage_classe_id` (accetta anche la chiave `stage_classe_id` del parser).
+Saving (`bulk_create_calendar`) writes `gruppo`, `ore_max_giornata`, `flag_chiusura`, `flag_stage_gruppo` and
+`flag_stage_classe_id` (it also accepts the parser's `stage_classe_id` key).
 
-### 5.3 Altri parser
+### 5.3 Other parsers
 
-- `SchoolRosterParser.parse_orario_settimanale_pdf`: legge un orario pubblicato («Orario scolastico dal X al Y…»;
-  righe = ore, colonne = classi, cella = cognome docente) e restituisce `classi`, `slots {classe_nome, giorno,
-  ora_inizio, docente_cognome}` e `week_label`. Serve a ricavare associazioni docente-classe e disponibilità osservate
-  (script §6.3). Il gruppo si deduce dal nome classe: numero romano → `PRIME/SECONDE/TERZE/QUARTE`; `I.T.C.` → `PRIMA4+2`.
-- `parse_elenco_docenti_pdf`: elenco docenti da PDF.
+- `SchoolRosterParser.parse_orario_settimanale_pdf`: reads a published timetable («Orario scolastico dal X al Y…», i.e. "School timetable from X to Y…";
+  rows = hours, columns = classes, cell = teacher surname) and returns `classi`, `slots {classe_nome, giorno,
+  ora_inizio, docente_cognome}` and `week_label`. It is used to derive teacher-class associations and observed
+  availability (script §6.3). The group is inferred from the class name: roman numeral → `PRIME/SECONDE/TERZE/QUARTE`; `I.T.C.` → `PRIMA4+2`.
+- `parse_elenco_docenti_pdf`: teacher list from PDF.
 
-### 5.4 Validazione (`DataValidator.validate_all_data`)
+### 5.4 Validation (`DataValidator.validate_all_data`)
 
-**Errori** (bloccano `can_proceed`): assegnazione con docente/classe/materia inesistente; accoppiamento con classe o
-materia inesistente, oppure senza una assegnazione per quella classe+materia su entrambe le classi; `stage_classe_id`
-che non è una classe nota.
-**Avvisi** (non bloccanti, correggibili): docente senza assegnazioni; classe senza assegnazioni; materia non usata.
-Correzioni in tempo reale: `POST /setup/validate-field {file_type, entity, field, new_value}` e
-`POST /setup/apply-correction {file_id, correction}`; data mancante: `POST /calendar/add-date-manual {file_id, date,
+**Errors** (block `can_proceed`): assignment with a nonexistent teacher/class/subject; pairing with a nonexistent class or
+subject, or without an assignment for that class+subject on both classes; `stage_classe_id`
+that is not a known class.
+**Warnings** (non-blocking, correctable): teacher without assignments; class without assignments; unused subject.
+Real-time corrections: `POST /setup/validate-field {file_type, entity, field, new_value}` and
+`POST /setup/apply-correction {file_id, correction}`; missing date: `POST /calendar/add-date-manual {file_id, date,
 ore_max_giornata (4/5/6), flag_chiusura, flag_stage_classe_id}`.
 
-### 5.5 Salvataggio
+### 5.5 Saving
 
-`POST /setup/save {file_ids, corrections_applied, school_name, school_year, data_inizio?, data_fine?}`. Se le date non
-sono fornite si usano min/max del calendario. Crea `scuola` (id fisso `sch_1`), classi, docenti, materie, calendario,
-assegnazioni (con relativa riga `monte_ore_annuale`) e accoppiamenti in un'unica transazione; in caso di errore rollback.
-Risposta: `{status:"setup_complete", school_id, next_page}`.
+`POST /setup/save {file_ids, corrections_applied, school_name, school_year, data_inizio?, data_fine?}`. If the dates
+are not provided, the calendar's min/max are used. It creates `scuola` (fixed id `sch_1`), classes, teachers, subjects, calendar,
+assignments (with the related `monte_ore_annuale` row) and pairings in a single transaction; on error, rollback.
+Response: `{status:"setup_complete", school_id, next_page}`.
 
-Dopo il setup si può correggere tutto dalle pagine «Dati scuola» (§13), che offrono CRUD completo.
+After setup everything can be corrected from the «Dati scuola» (school data) pages (§13), which offer full CRUD.
 
 ---
 
-## 6. Disponibilità dei docenti
+## 6. Teacher availability
 
-**Formato `giorni_fasce`** (obbligatorio, validato: tutti e 5 i giorni, ogni giorno una lista non vuota di fasce con
+**`giorni_fasce` format** (required, validated: all 5 days, each day a non-empty list of slots with
 `ora_inizio`, `ora_fine`, `disponibile`):
 
 ```json
-{"lunedi": [{"ora_inizio": "08:00", "ora_fine": "09:00", "disponibile": true}, …6 fasce 08-14…], "martedi": [...], …}
+{"lunedi": [{"ora_inizio": "08:00", "ora_fine": "09:00", "disponibile": true}, …6 slots 08-14…], "martedi": [...], …}
 ```
 
-**Lettura (`GET /availability/{week}/{teacher_id}`)**, in ordine: record della settimana; se non c'è e il docente è al
-primo anno → griglia di default (tutto disponibile 8-14, `is_default=true`); altrimenti eredita la settimana
-precedente più recente; altrimenti default. `POST /availability/{week}/{teacher_id} {giorni_fasce}` salva;
-`POST /availability/{week}/copy-from/{prev_week}` copia le griglie saltando i docenti già compilati;
+**Reading (`GET /availability/{week}/{teacher_id}`)**, in order: the week's record; if none exists and the teacher is in their
+first year → default grid (everything available 8-14, `is_default=true`); otherwise inherit the most recent
+previous week; otherwise default. `POST /availability/{week}/{teacher_id} {giorni_fasce}` saves;
+`POST /availability/{week}/copy-from/{prev_week}` copies the grids skipping teachers already filled in;
 `GET /availability/{week}/status` → `{week_complete, total_teachers, teachers_with_availability, teachers_missing,
-ready_to_generate, completion_percentage}`; `GET /availability/weeks` → `[{start, end (=venerdì), week_num}]` per ogni
-lunedì dell'anno formativo a partire dal primo lunedì ≥ `data_inizio_anno`.
+ready_to_generate, completion_percentage}`; `GET /availability/weeks` → `[{start, end (=Friday), week_num}]` for each
+Monday of the training year starting from the first Monday ≥ `data_inizio_anno`.
 
-**Uso nel solver** (`ScheduleRepository.get_week_context`): per ogni docente senza record la settimana si applica la
-stessa eredità (settimana precedente, poi default), in sola lettura, senza persistere nulla. Gli **ASSUNTI** sono sempre
-disponibili 8-14 (la griglia non li vincola); per i **CONTRATTI** vale la griglia (§9, vincolo H9). Un contrattista senza
-nessuna disponibilità registrata viene trattato come indisponibile tutta la settimana.
+**Use in the solver** (`ScheduleRepository.get_week_context`): for each teacher without a record for the week, the
+same inheritance applies (previous week, then default), read-only, persisting nothing. **ASSUNTO** teachers are always
+available 8-14 (the grid does not constrain them); for **CONTRATTO** teachers the grid applies (§9, constraint H9). A contract teacher with
+no recorded availability is treated as unavailable for the whole week.
 
-### 6.3 Script di inizializzazione dati (una tantum, non parte dell'app)
+### 6.3 Data initialization scripts (one-off, not part of the app)
 
-- `scripts/import_documenti.py`: costruisce scuola, calendario, classi, docenti e associazioni leggendo i PDF in `Documenti/`.
-- `scripts/rederive_monte_ore_and_pairings.py`: ricalcola `ore_totali` (= ore settimanali osservate × settimane rimaste)
-  e gli accoppiamenti per docente a partire dall'orario di esempio, **azzerando `ore_erogate`**. Serve solo per l'inizializzazione:
-  da quando l'approvazione scala le ore (§8) **non va più rieseguito**, altrimenti si perdono le ore già erogate e quelle da recuperare.
-- `scripts/set_contratto_availability.py`, `scripts/infer_availability_from_calendars.py`: ricavano la disponibilità dei
-  contrattisti dagli orari di esempio (giorni = ore/6 arrotondato, scelta con seme fisso; oppure unione delle ore osservate in due settimane).
-
----
-
-## 7. Calendario: come si risolve una classe in un giorno
-
-Per ogni classe e giorno il solver (e le celle di stage) usano questa precedenza (`_ore_max_for_classe_giorno_raw`):
-
-1. riga con `flag_stage_classe_id == classe` → **0 ore** (stage);
-2. riga con `gruppo == gruppo della classe` e `flag_stage_gruppo` → **0 ore** (stage di gruppo);
-3. riga con `gruppo == gruppo della classe` → `0` se `flag_chiusura`, altrimenti `ore_max_giornata`;
-4. riga con `gruppo = NULL` (tutta la scuola) → idem;
-5. nessun dato → **6**.
-
-`ore_max_giornata` è poi limitato a **6** (le variabili coprono solo 8-13). `ora_inizio_min` (8-13) vieta lezioni
-prima di quell'ora per quella classe/gruppo (ingressi scaglionati), con la stessa precedenza gruppo → scuola.
-I giorni di stage di una classe compaiono nelle celle di stage (`stage_cells`, §10) come «STAGE», senza docente.
+- `scripts/import_documenti.py`: builds school, calendar, classes, teachers and associations by reading the PDFs in `Documenti/`.
+- `scripts/rederive_monte_ore_and_pairings.py`: recomputes `ore_totali` (= observed weekly hours × remaining weeks)
+  and the per-teacher pairings from the sample timetable, **resetting `ore_erogate` to zero**. It is only for initialization:
+  since approval deducts hours (§8) it **must not be run again**, otherwise the hours already delivered and those to be recovered are lost.
+- `scripts/set_contratto_availability.py`, `scripts/infer_availability_from_calendars.py`: derive the contract teachers'
+  availability from the sample timetables (days = hours/6 rounded, chosen with a fixed seed; or union of the hours observed in two weeks).
 
 ---
 
-## 8. Monte ore e target settimanale
+## 7. Calendar: how a class is resolved on a given day
 
-- Residuo di un'assegnazione: `ore_residue = ore_totali − ore erogate` (0 se manca la riga `monte_ore_annuale`). Le ore erogate
-  non sono una colonna: sono la somma di `LedgerEntry.hours` dell'assegnazione (`delivered_hours_map`), quindi il residuo può
-  essere negativo. `ore_totali` è il monte ore da svolgere dall'inizio del periodo gestito.
-- **Scalare le ore (decisione admin 2026-10-05):** all'**approvazione** della settimana (`POST /schedule/{w}/approve`)
-  si scrive, nella stessa transazione sulla riga bloccata dell'orario, **una voce `DELIVERED` di 1 ora per ogni lezione** per
-  l'assegnazione (docente + classe + materia) della sua classe e di quella accoppiata (`paired_class_id`): in una lezione
-  accoppiata vengono scalate entrambe le assegnazioni. Poi lo stato passa a `APPROVATO`, si imposta `approved_at`, si
-  incrementa `version` e si scrive `SCHEDULE_APPROVED` nell'audit. Le ore non svolte (assenze, lezioni saltate) non vengono
-  scalate: restano nel residuo e le settimane successive le recuperano, perché **il target di ogni settimana si basa sul
-  residuo**, non sul totale. L'operazione è idempotente: riapprovare una settimana già approvata non scrive nulla
-  (`ore_scalate: 0`). Le lezioni senza assegnazione corrispondente non scrivono nulla e sono contate in `senza_monte_ore`.
-- **Annullare un'approvazione** (`POST /orario/{w}/annulla-approvazione/`, solo ADMIN): richiede un motivo (tolti gli spazi,
-  al massimo 300 caratteri) e una settimana `APPROVATO` (altrimenti 409). Nella stessa transazione, per ogni assegnazione
-  si scrive una voce `REVERSAL` pari a meno il netto di `DELIVERED` + `REVERSAL` di quell'orario (i netti zero sono saltati),
-  con motivo e utente; la settimana torna `BOZZA`, `approved_at` è azzerato, `version` incrementata e si scrive
-  `APPROVAL_UNDONE` nell'audit. Le voci non si modificano né si cancellano e le voci `ADJUSTMENT` restano intatte. Dopo
-  l'annullamento la settimana si può modificare, rigenerare e riapprovare.
-- **Correzione manuale** (solo ADMIN): la pagina «Assegnazioni» ha un modulo che prende il nuovo totale di ore erogate e un
-  motivo, e scrive una voce `ADJUSTMENT` con la differenza (motivo e utente). Rifiuta un totale negativo; se il totale non
-  cambia non scrive nulla; l'audit riceve `HOURS_ADJUSTED`. Le ore erogate non si modificano direttamente.
-- **Target settimanale** per assegnazione: `settimane_rimaste = max(1, (data_fine_anno − week_start).days // 7 − settimane_senza_lezione)`, dove
-  `settimane_senza_lezione` sono le settimane future in cui la classe, in tutti e cinque i giorni lun-ven, è in stage (di
-  classe o di gruppo) oppure ha una riga di chiusura (della scuola o del suo gruppo); una settimana è contata una sola volta
-  anche se mescola stage e chiusura; una settimana con almeno un giorno di lezione (anche solo uno, anche per giorno senza riga) è normale,
-  `ore_target = max(1, ore_residue // settimane_rimaste)`. Nessun target se `ore_residue ≤ 0` o se la classe non ha ore
-  di lezione in tutta la settimana (es. tutta la settimana in stage). Deroga `reduce_contract_hours` (solo contrattisti):
-  `ore_target = max(1, min(target, max_hours))`, oppure `max(1, target // 2)` se `max_hours` non è dato.
-- Limite rigido: un docente **ASSUNTO** non supera mai `ore_residue` per assegnazione (H8); un docente **CONTRATTO** può
-  superarlo (admin, 2026-10): è limitato solo dalla disponibilità.
+For each class and day the solver (and the stage cells) use this precedence (`_ore_max_for_classe_giorno_raw`):
+
+1. row with `flag_stage_classe_id == class` → **0 hours** (stage);
+2. row with `gruppo == class group` and `flag_stage_gruppo` → **0 hours** (group stage);
+3. row with `gruppo == class group` → `0` if `flag_chiusura`, otherwise `ore_max_giornata`;
+4. row with `gruppo = NULL` (whole school) → same;
+5. no data → **6**.
+
+`ore_max_giornata` is then capped at **6** (the variables only cover 8-13). `ora_inizio_min` (8-13) forbids lessons
+before that hour for that class/group (staggered entry), with the same group → school precedence.
+A class's stage days appear in the stage cells (`stage_cells`, §10) as «STAGE», without a teacher.
 
 ---
 
-## 9. Motore di ottimizzazione (CP-SAT)
+## 8. Hours budget and weekly target
 
-### 9.1 Modello
+- Remaining hours of an assignment: `ore_residue = ore_totali − delivered hours` (0 if the `monte_ore_annuale` row is missing). Delivered hours
+  are not a column: they are the sum of the assignment's `LedgerEntry.hours` (`delivered_hours_map`), so the remaining value can
+  be negative. `ore_totali` is the hours budget to be taught from the start of the managed period.
+- **Deducting hours (admin decision 2026-10-05):** on **approval** of the week (`POST /schedule/{w}/approve`)
+  the system writes, in the same transaction on the locked timetable row, **one `DELIVERED` entry of 1 hour for each lesson** for the
+  assignment (teacher + class + subject) of its class and of the paired one (`paired_class_id`): in a paired lesson
+  both assignments are deducted. Then the state becomes `APPROVATO`, `approved_at` is set, `version` is
+  incremented and `SCHEDULE_APPROVED` is written to the audit log. Hours not taught (absences, skipped lessons) are not
+  deducted: they stay in the remainder and later weeks recover them, because **each week's target is based on the
+  remainder**, not on the total. The operation is idempotent: re-approving an already approved week writes nothing
+  (`ore_scalate: 0`). Lessons with no matching assignment write nothing and are counted in `senza_monte_ore`.
+- **Undoing an approval** (`POST /orario/{w}/annulla-approvazione/`, ADMIN only): requires a reason (trimmed,
+  at most 300 characters) and an `APPROVATO` week (otherwise 409). In the same transaction, for each assignment
+  a `REVERSAL` entry is written equal to minus the net of `DELIVERED` + `REVERSAL` for that timetable (zero nets are skipped),
+  with reason and user; the week returns to `BOZZA`, `approved_at` is cleared, `version` incremented and
+  `APPROVAL_UNDONE` is written to the audit log. Entries are never edited or deleted and `ADJUSTMENT` entries stay intact. After
+  the undo the week can be edited, regenerated and re-approved.
+- **Manual correction** (ADMIN only): the «Assegnazioni» (assignments) page has a form that takes the new total of delivered hours and a
+  reason, and writes an `ADJUSTMENT` entry with the difference (reason and user). It rejects a negative total; if the total does not
+  change it writes nothing; the audit log receives `HOURS_ADJUSTED`. Delivered hours cannot be edited directly.
+- **Weekly target** per assignment: `settimane_rimaste = max(1, (data_fine_anno − week_start).days // 7 − settimane_senza_lezione)`, where
+  `settimane_senza_lezione` are the future weeks in which the class, on all five days Mon-Fri, is on stage (class
+  or group) or has a closure row (of the school or of its group); a week is counted only once
+  even if it mixes stage and closure; a week with at least one teaching day (even just one, even a day without a row) is normal,
+  `ore_target = max(1, ore_residue // settimane_rimaste)`. No target if `ore_residue ≤ 0` or if the class has no teaching
+  hours in the whole week (e.g. the whole week on stage). Waiver `reduce_contract_hours` (contract teachers only):
+  `ore_target = max(1, min(target, max_hours))`, or `max(1, target // 2)` if `max_hours` is not given.
+- Hard limit: an **ASSUNTO** teacher never exceeds `ore_residue` per assignment (H8); a **CONTRATTO** teacher may
+  exceed it (admin, 2026-10): they are limited only by availability.
 
-Variabili booleane `x[(assegnazione_id, giorno 0-4, ora 0-5)]` (ora 0..5 = 8..13). Una lezione = una variabile a 1.
-Funzione obiettivo: **minimizzare** `Σ peso_i · violazione_i` su tutte le penalità (`SoftPenalty`). Tempo massimo
-`SOLVER_TIMEOUT_SECONDS` (60 s). Stati: `OPTIMAL`, `FEASIBLE`, `INFEASIBLE`, `UNKNOWN`.
+---
 
-Contesto di input (`ScheduleContext`, costruito da `get_week_context`): assegnazioni con residuo, mappa disponibilità,
-calendario dei 5 giorni (mancante → 6 ore), classi accoppiate `(classe_a, classe_b, materia, docente)`, mappa
-docente→tipo, mappa classe→gruppo, `anno_fine`.
+## 9. Optimization engine (CP-SAT)
 
-### 9.2 Vincoli rigidi (sempre rispettati)
+### 9.1 Model
 
-| Id | Regola |
+Boolean variables `x[(assegnazione_id, day 0-4, hour 0-5)]` (hour 0..5 = 8..13). A lesson = a variable set to 1.
+Objective function: **minimize** `Σ weight_i · violation_i` over all penalties (`SoftPenalty`). Maximum time
+`SOLVER_TIMEOUT_SECONDS` (60 s). Statuses: `OPTIMAL`, `FEASIBLE`, `INFEASIBLE`, `UNKNOWN`.
+
+Input context (`ScheduleContext`, built by `get_week_context`): assignments with remainder, availability map,
+calendar of the 5 days (missing → 6 hours), paired classes `(classe_a, classe_b, materia, docente)`, teacher→type
+map, class→group map, `anno_fine`.
+
+### 9.2 Hard constraints (always respected)
+
+| Id | Rule |
 |---|---|
-| H1 | Un docente non è in due classi nella stessa ora (eccezione: lezione accoppiata) |
-| H1b | Una classe ha al più una lezione per ora |
-| H2 | **Capienza esatta:** ore di lezione di una classe in un giorno = ore massime del giorno (§7). Nessuna ora libera: se impossibile, la settimana è INFEASIBLE |
-| H2b | Le ore di lezione di una classe in un giorno formano **un unico blocco contiguo** (nessuna ora buca per la classe). In un giorno corto la/e ora/e libere stanno all'inizio o in fondo |
-| H2c | Nessuna lezione prima di `ora_inizio_min` della classe |
-| H3 | **Accoppiate:** per ogni coppia, il docente indicato ha la lezione nello stesso giorno/ora in entrambe le classi e il monte ore scala **una volta sola** |
-| H5 | Classi in stage: zero lezioni (§7) |
-| H6 | Docente ASSUNTO: ore settimanali per assegnazione ≤ residuo (vedi §8) |
-| H7/H8 | Esclusioni e tetti richiesti dalla chat per la sola esecuzione (giorno escluso per un docente; massimo di ore settimanali) |
+| H1 | A teacher is not in two classes in the same hour (exception: paired lesson) |
+| H1b | A class has at most one lesson per hour |
+| H2 | **Exact capacity:** lesson hours of a class in a day = the day's maximum hours (§7). No free hour: if impossible, the week is INFEASIBLE |
+| H2b | A class's lesson hours in a day form **a single contiguous block** (no gap hour for the class). On a short day the free hour(s) are at the start or at the end |
+| H2c | No lessons before the class's `ora_inizio_min` |
+| H3 | **Pairings:** for each pair, the indicated teacher has the lesson on the same day/hour in both classes and the hours budget is deducted **only once** |
+| H5 | Classes on stage: zero lessons (§7) |
+| H6 | ASSUNTO teacher: weekly hours per assignment ≤ remainder (see §8) |
+| H7/H8 | Exclusions and caps requested by the chat for that run only (day excluded for a teacher; maximum weekly hours) |
 
-### 9.3 Vincoli «quasi rigidi» (rilassabili solo a peso `RELAX_WEIGHT` = 10_000_000_000, sempre segnalati)
+### 9.3 «Near-hard» constraints (relaxable only at weight `RELAX_WEIGHT` = 10_000_000_000, always reported)
 
-Ognuno ha una variabile `override` con peso **`RELAX_WEIGHT = 10_000_000_000`**: il solver li viola solo se non esiste
-alternativa e ogni violazione compare tra i conflitti con la deroga corrispondente (nessuna violazione silenziosa).
+Each has an `override` variable with weight **`RELAX_WEIGHT = 10_000_000_000`**: the solver violates them only if no
+alternative exists and every violation appears among the conflicts with the corresponding waiver (no silent violations).
 
-| Id | Regola | Deroga che la autorizza |
+| Id | Rule | Waiver that authorizes it |
 |---|---|---|
-| H4 | **Disponibilità contrattisti**: nessuna lezione dove `disponibile=false`. In generazione è **rigido** (non si forza mai); la penalità (`RELAX_WEIGHT`, 10_000_000_000) esiste solo per modifiche manuali dell'admin (modalità *forced*, §10) | `override_availability` |
-| H9 | Venerdì: il blocco di lezioni di una classe **inizia alle 8:00** (decisione admin 2026-09-23); non applicato se la classe non ha lezioni o ha un `ora_inizio_min` | `authorize_friday_late_start` |
-| H10 | **Pratica**: le ore di una materia PRATICA formano **un blocco di almeno `min(3, capienza)` ore** nel giorno, oppure nessuna (decisione admin 2026-09-23) | `authorize_short_pratica_block` |
-| H11 | Un docente tiene al massimo **4 ore** (`MAX_HOURS_PER_CLASSE_DAY`) con la stessa classe nello stesso giorno; si applica ai docenti con ≥ 2 classi; le lezioni accoppiate contano una volta | `authorize_single_classe_day` |
+| H4 | **Contract teacher availability**: no lesson where `disponibile=false`. In generation it is **hard** (never forced); the penalty (`RELAX_WEIGHT`, 10_000_000_000) exists only for the admin's manual edits (*forced* mode, §10) | `override_availability` |
+| H9 | Friday: a class's block of lessons **starts at 8:00** (admin decision 2026-09-23); not applied if the class has no lessons or has an `ora_inizio_min` | `authorize_friday_late_start` |
+| H10 | **Practical**: the hours of a PRATICA subject form **a block of at least `min(3, capacity)` hours** in the day, or none (admin decision 2026-09-23) | `authorize_short_pratica_block` |
+| H11 | A teacher teaches at most **4 hours** (`MAX_HOURS_PER_CLASSE_DAY`) with the same class on the same day; it applies to teachers with ≥ 2 classes; paired lessons count once | `authorize_single_classe_day` |
 
-### 9.4 Preferenze (soft) e pesi
+### 9.4 Preferences (soft) and weights
 
-| Id | Regola | Peso default | Note |
+| Id | Rule | Default weight | Notes |
 |---|---|---|---|
-| S1 `classe_late_start` | Una classe inizia alle 8:00 | **500** | peso massimo tra le preferenze; inattivo se il giorno è pieno |
-| S2 `teoria_consecutive` | Max 2 ore consecutive di teoria con lo stesso docente nella stessa classe | **50** | deroga `force_3_hours_theory` alza il tetto (3 o `max_hours`) |
-| S3 `ore_target_deviation` | Ore settimanali dell'assegnazione = target (§8) | **75 + 10_000_000** per ora di scarto | 10_000_000 = `EXACT_TARGET_WEIGHT` (decisione admin 2026-10: target «esatto», cede solo per riempire un'aula). Per i contrattisti vedi 9.5 |
-| S4 `contractor_gap` | Nessuna **ora buca vera** per un contrattista (ora libera con lezione prima e dopo nello stesso giorno) | **750** per ora buca | Solo CONTRATTO: i buchi cadono quindi sugli assunti (nessuna penalità). Per i contrattisti vedi 9.5. Deroga `authorize_early_exit` la spegne |
-| S5 `single_classe_day` | Un docente con ≥2 classi non passa un'intera giornata (≥3 ore) con una sola classe | **50** | deroga `authorize_single_classe_day` |
+| S1 `classe_late_start` | A class starts at 8:00 | **500** | highest weight among the preferences; inactive if the day is full |
+| S2 `teoria_consecutive` | Max 2 consecutive hours of theory with the same teacher in the same class | **50** | waiver `force_3_hours_theory` raises the cap (3 or `max_hours`) |
+| S3 `ore_target_deviation` | Weekly hours of the assignment = target (§8) | **75 + 10_000_000** per hour of deviation | 10_000_000 = `EXACT_TARGET_WEIGHT` (admin decision 2026-10: "exact" target, yields only to fill a classroom). For contract teachers see 9.5 |
+| S4 `contractor_gap` | No **true gap hour** for a contract teacher (free hour with a lesson before and after on the same day) | **750** per gap hour | CONTRATTO only: gaps therefore fall on permanent teachers (no penalty). For contract teachers see 9.5. Waiver `authorize_early_exit` switches it off |
+| S5 `single_classe_day` | A teacher with ≥2 classes does not spend a whole day (≥3 hours) with a single class | **50** | waiver `authorize_single_classe_day` |
 
-Pesi regolabili (`DEFAULT_SOFT_WEIGHTS`, tetto `MAX_SOFT_WEIGHT = 1_000`): `classe_late_start 500`,
-`teoria_consecutive 50`, `ore_target_deviation 75`, `contractor_gap 750`, `single_classe_day 50`. Pesi fissi:
-`RELAX_WEIGHT 10_000_000_000` (vincoli quasi rigidi), **1_000_000_000_000** (`FIXED_PENALTY_WEIGHT`) per ora non
-coperta (`classe_unfilled`), ora oltre capienza (`classe_over_capacity`) e monte ore superato in modalità *forced*
-(`monte_ore_exceeded`): una classe vuota non viene mai scambiata con una preferenza. Ordine di priorità: **ore non
-coperte (1e12) > vincoli quasi rigidi (1e10) > target esatto (1e7+) > preferenze (≤ 1_000)**, a distanza di decadi.
+Adjustable weights (`DEFAULT_SOFT_WEIGHTS`, cap `MAX_SOFT_WEIGHT = 1_000`): `classe_late_start 500`,
+`teoria_consecutive 50`, `ore_target_deviation 75`, `contractor_gap 750`, `single_classe_day 50`. Fixed weights:
+`RELAX_WEIGHT 10_000_000_000` (near-hard constraints), **1_000_000_000_000** (`FIXED_PENALTY_WEIGHT`) per uncovered
+hour (`classe_unfilled`), hour over capacity (`classe_over_capacity`) and exceeded hours budget in *forced* mode
+(`monte_ore_exceeded`): an empty class is never traded for a preference. Priority order: **uncovered hours (1e12) > near-hard
+constraints (1e10) > exact target (1e7+) > preferences (≤ 1_000)**, a decade apart.
 
-Somma nel caso peggiore (una scuola: 40 classi, 5 giorni, ≤ 30 ore per classe e settimana, ≤ 100 docenti): le
-preferenze pesano al massimo `1_000 · 1.5 = 1_500` a violazione, quindi ≤ 2_000 violazioni sommano ≤ 3.0e6, meno della
-più economica ora di scarto dal target (`0.5 · 1e7 = 5.0e6`); ≤ 200 ore di scarto · ~1.5e7 = 3.0e9 < `RELAX_WEIGHT`;
-≤ 50 deroghe · 1e10 = 5.0e11 < `FIXED_PENALTY_WEIGHT`; l'obiettivo massimo (≈ 1_200 ore non coperte · 1e12 = 1.2e15)
-resta sotto 2^53 (conversione esatta in CP-SAT). Una violazione di un livello superiore non si scambia quindi mai con un
-numero realistico di violazioni dei livelli inferiori. Il punteggio di qualità (9.6) non dipende dai pesi.
+Sum in the worst case (one school: 40 classes, 5 days, ≤ 30 hours per class per week, ≤ 100 teachers): the
+preferences weigh at most `1_000 · 1.5 = 1_500` per violation, so ≤ 2_000 violations sum to ≤ 3.0e6, less than the
+cheapest hour of deviation from the target (`0.5 · 1e7 = 5.0e6`); ≤ 200 hours of deviation · ~1.5e7 = 3.0e9 < `RELAX_WEIGHT`;
+≤ 50 waivers · 1e10 = 5.0e11 < `FIXED_PENALTY_WEIGHT`; the maximum objective (≈ 1_200 uncovered hours · 1e12 = 1.2e15)
+stays below 2^53 (exact conversion in CP-SAT). A violation of a higher level is therefore never traded for a
+realistic number of violations of the lower levels. The quality score (9.6) does not depend on the weights.
 
-### 9.5 Contrattisti: scarsità di disponibilità
+### 9.5 Contract teachers: scarcity of availability
 
-Il peso di S3 e S4 per un contrattista è moltiplicato per `m = 1.5 − (ore_disponibili / 30)` (da 0.5 a 1.5):
-chi ha pochissima disponibilità ha penalità più alte (si rispetta di più il suo target e si evitano i suoi buchi,
-viene «piazzato per primo»); chi è molto disponibile ha più flessibilità. Nessuna griglia registrata → `m = 1.5`;
-deroga `override_availability` attiva per quel docente → `m = 1.0`; non-contrattisti → `m = 1.0`. Il peso risultante è
-`max(1, round(peso · m))`. Valori: gap 375…1125, scarto dal target ≈ 5_000_038…15_000_112 (calcolati da 10_000_075, se non si ritocca il peso S3).
+The weight of S3 and S4 for a contract teacher is multiplied by `m = 1.5 − (available_hours / 30)` (from 0.5 to 1.5):
+whoever has very little availability gets higher penalties (their target is respected more and their gaps are avoided,
+they are "placed first"); whoever is very available has more flexibility. No grid recorded → `m = 1.5`;
+waiver `override_availability` active for that teacher → `m = 1.0`; non-contract teachers → `m = 1.0`. The resulting weight is
+`max(1, round(weight · m))`. Values: gap 375…1125, deviation from target ≈ 5_000_038…15_000_112 (computed from 10_000_075, if the S3 weight is not tweaked).
 
-### 9.6 Punteggio di qualità
+### 9.6 Quality score
 
-`score = (penalità a valore 0 / numero di penalità) × 100`; livello **A** se > 95, **B** se > 80, altrimenti **C**.
-Se il solver non trova soluzione: score 0, livello C. `n_soft_conflicts = numero penalità violate`.
+`score = (penalties at value 0 / number of penalties) × 100`; level **A** if > 95, **B** if > 80, otherwise **C**.
+If the solver finds no solution: score 0, level C. `n_soft_conflicts = number of violated penalties`.
 
-### 9.7 Fallback e deroghe
+### 9.7 Fallback and waivers
 
-`_solve_with_fallback`: (1) modello rigido (H2 uguaglianza); se `INFEASIBLE` (2) **modalità best-effort**: le ore non
-coperte diventano penalità a `FIXED_PENALTY_WEIGHT` = 1_000_000_000_000 (`classe_unfilled`) e si restituisce il miglior orario possibile con messaggio «Nessun
-orario completo possibile…»; (3) per un orario forzato a mano (`solve_fixed` con assegnazione pinnata) ulteriore modalità
-**forced** in cui capienza, doppia prenotazione, monte ore, inizio e stage diventano conflitti segnalati invece di errori.
+`_solve_with_fallback`: (1) hard model (H2 equality); if `INFEASIBLE` (2) **best-effort mode**: uncovered hours
+become penalties at `FIXED_PENALTY_WEIGHT` = 1_000_000_000_000 (`classe_unfilled`) and the best possible timetable is returned with the message «Nessun
+orario completo possibile…» ("No complete timetable possible…"); (3) for a manually forced timetable (`solve_fixed` with a pinned assignment) a further
+**forced** mode in which capacity, double booking, hours budget, start and stage become reported conflicts instead of errors.
 
-**Quick action / deroga** (`POST /schedule/{w}/apply-quick-action {action_type, class_id?, teacher_id?, giorno?,
-max_hours?}`), valida per **una sola rigenerazione** (non persistita), con ambito classe/docente/giorno opzionale:
+**Quick action / waiver** (`POST /schedule/{w}/apply-quick-action {action_type, class_id?, teacher_id?, giorno?,
+max_hours?}`), valid for **a single regeneration** (not persisted), with optional class/teacher/day scope:
 
-| `action_type` | Effetto |
+| `action_type` | Effect |
 |---|---|
-| `force_3_hours_theory` | Tetto di ore teoria consecutive 3 (o `max_hours`) |
-| `reduce_contract_hours` | Target del contrattista ridotto (§8) |
-| `authorize_early_exit` | Niente penalità sui buchi del contrattista |
-| `override_availability` | Ignora la disponibilità registrata del docente |
-| `authorize_single_classe_day` | Disattiva H11/S5 per docente/classe/giorno |
-| `authorize_friday_late_start` | Disattiva H9 |
-| `authorize_short_pratica_block` | Disattiva H10 |
+| `force_3_hours_theory` | Cap of consecutive theory hours set to 3 (or `max_hours`) |
+| `reduce_contract_hours` | Contract teacher's target reduced (§8) |
+| `authorize_early_exit` | No penalty on the contract teacher's gaps |
+| `override_availability` | Ignores the teacher's recorded availability |
+| `authorize_single_classe_day` | Disables H11/S5 for teacher/class/day |
+| `authorize_friday_late_start` | Disables H9 |
+| `authorize_short_pratica_block` | Disables H10 |
 
-### 9.8 Conflitti
+### 9.8 Conflicts
 
-`get_conflicts()` elenca le penalità violate della soluzione, deduplicate per `(kind, classe, docente, giorno, ora)`:
+`get_conflicts()` lists the violated penalties of the solution, deduplicated by `(kind, class, teacher, day, hour)`:
 `{conflict_id, chiave, description, suggested_action {action_type, label}, classe_id, docente_id, giorno, ore?, ore_slot?}`.
-`chiave = "<kind>|<classe_id>|<docente_id>|<GIORNO>[|<ora>]"` è stabile tra ricalcoli (a differenza di `conflict_id`).
-Per `ore_target_deviation` la descrizione riporta ore assegnate/target/scarto e come è stato derivato il target; la
-deroga «Riduci ore» è suggerita solo per un contrattista **sopra** target.
+`chiave = "<kind>|<classe_id>|<docente_id>|<DAY>[|<hour>]"` is stable across recomputations (unlike `conflict_id`).
+For `ore_target_deviation` the description reports assigned hours/target/deviation and how the target was derived; the
+«Riduci ore» (reduce hours) waiver is suggested only for a contract teacher **above** target.
 
 ---
 
-## 10. Ciclo di vita dell'orario di una settimana
+## 10. Lifecycle of a week's timetable
 
-Stati: assente → `BOZZA` → `APPROVATO` (bloccato).
+States: absent → `BOZZA` (draft) → `APPROVATO` (approved, locked).
 
-| Operazione | Endpoint | Comportamento |
+| Operation | Endpoint | Behavior |
 |---|---|---|
-| Generare | `POST /schedule/generate {week_start, include_preferences=true}` | Rifiuta se la settimana è APPROVATA. Errore se non ci sono assegnazioni. Risolve (§9.7). Risposta `status`: `generated` (con `schedule_id, quality_score, quality_level, n_soft_conflicts, slots, conflicts, stage_cells, message?`), `infeasible` (con `conflicting_constraints`, `suggested_deroghe`), `timeout`, `error`. I pesi usati sono quelli attivi (default + adeguamenti appresi, §11) |
-| Rigenerare | `POST /schedule/{w}/regenerate` | Sostituisce gli slot della settimana (stesso `schedule_id`), svuota `conflitto_gestito` |
-| Leggere | `GET /schedule/{w}` | Slot, qualità, conflitti (ricalcolati a ogni lettura e filtrati dalle decisioni dell'admin), `stato`, `stage_cells`; 404 se assente |
-| Qualità | `GET /schedule/{w}/quality-score` | Score, livello, n. conflitti |
-| Spostare una lezione | `POST …/modify-slot {slot_id, changes{docente_id?, giorno?, ora_inizio?}}` | Rifiuta se APPROVATO; verifica `ora_inizio` 8-13 e giorno valido; rivaluta con `solve_fixed` (variabili pinnate) e ricalcola qualità/conflitti |
-| Assegnare un'ora libera | `GET …/assignable/{classe_id}` elenca coppie docente/materia; `POST …/assign-slot {classe_id, giorno, ora_inizio, docente_id, materia_id}` | Forzatura valutata come modifica manuale (le violazioni diventano conflitti); rifiutato solo se supera le ore massime giornaliere della classe. Un docente in lezione accoppiata viene assegnato a tutte le classi del gruppo |
-| Conflitti | `POST …/conflicts/approve {chiavi}` (il conflitto non viene più segnalato); `POST …/conflicts/reject {classe_id, giorno, ora_inizio}` (toglie la lezione e lascia l'ora libera, `azione=LIBERA`) | Decisioni in `conflitto_gestito` |
-| Deroga | `POST …/apply-quick-action` | §9.7 |
-| Approvare | `POST …/approve` | `stato=APPROVATO`, `approved_at`, **scala le ore delle lezioni dal monte ore (§8)**, voce in `audit_log` (`SCHEDULE_APPROVED` con `ore_scalate`, `assegnazioni_aggiornate`, `senza_monte_ore`); risposta `{status, schedule_id, stato, ore_scalate, assegnazioni_aggiornate, senza_monte_ore}`; da quel momento nessuna modifica/rigenerazione; idempotente |
-| Esportare | §12 | PDF ed Excel |
-| Valutare | `GET/POST …/feedback` | §11 |
+| Generate | `POST /schedule/generate {week_start, include_preferences=true}` | Rejects if the week is APPROVED. Error if there are no assignments. Solves (§9.7). Response `status`: `generated` (with `schedule_id, quality_score, quality_level, n_soft_conflicts, slots, conflicts, stage_cells, message?`), `infeasible` (with `conflicting_constraints`, `suggested_deroghe`), `timeout`, `error`. The weights used are the active ones (default + learned adjustments, §11) |
+| Regenerate | `POST /schedule/{w}/regenerate` | Replaces the week's slots (same `schedule_id`), empties `conflitto_gestito` |
+| Read | `GET /schedule/{w}` | Slots, quality, conflicts (recomputed at every read and filtered by the admin's decisions), `stato`, `stage_cells`; 404 if absent |
+| Quality | `GET /schedule/{w}/quality-score` | Score, level, number of conflicts |
+| Move a lesson | `POST …/modify-slot {slot_id, changes{docente_id?, giorno?, ora_inizio?}}` | Rejects if APPROVED; checks `ora_inizio` 8-13 and valid day; re-evaluates with `solve_fixed` (pinned variables) and recomputes quality/conflicts |
+| Assign a free hour | `GET …/assignable/{classe_id}` lists teacher/subject pairs; `POST …/assign-slot {classe_id, giorno, ora_inizio, docente_id, materia_id}` | Forcing evaluated as a manual edit (violations become conflicts); rejected only if it exceeds the class's daily maximum hours. A teacher in a paired lesson is assigned to all the classes of the group |
+| Conflicts | `POST …/conflicts/approve {chiavi}` (the conflict is no longer reported); `POST …/conflicts/reject {classe_id, giorno, ora_inizio}` (removes the lesson and leaves the hour free, `azione=LIBERA`) | Decisions in `conflitto_gestito` |
+| Waiver | `POST …/apply-quick-action` | §9.7 |
+| Approve | `POST …/approve` | `stato=APPROVATO`, `approved_at`, **deducts the lessons' hours from the hours budget (§8)**, entry in `audit_log` (`SCHEDULE_APPROVED` with `ore_scalate`, `assegnazioni_aggiornate`, `senza_monte_ore`); response `{status, schedule_id, stato, ore_scalate, assegnazioni_aggiornate, senza_monte_ore}`; from then on no edit/regeneration; idempotent |
+| Export | §12 | PDF and Excel |
+| Rate | `GET/POST …/feedback` | §11 |
 
-Ogni slot restituito ha: `slot_id, classe_id, classe_nome, docente_id, docente_nome, materia_id, materia_nome,
+Every returned slot has: `slot_id, classe_id, classe_nome, docente_id, docente_nome, materia_id, materia_nome,
 materia_tipo, giorno, ora_inizio, ora_fine, accoppiata, classe_accoppiata_id, conflitto, conflitto_chiavi, indisponibile`.
-`stage_cells`: `[{classe_id, classe_nome, giorno}]` per ogni classe in stage (di classe o di gruppo) nei 5 giorni;
-il `classe_id` in un record di stage può essere anche il **nome** della classe (viene risolto, case-insensitive, sul
-nome se non coincide con un id).
+`stage_cells`: `[{classe_id, classe_nome, giorno}]` for each class on stage (class or group) across the 5 days;
+the `classe_id` in a stage record may also be the class **name** (it is resolved, case-insensitively, by
+name if it does not match an id).
 
-Le modifiche manuali e le deroghe scrivono in `audit_log`.
-
----
-
-## 11. Valutazioni e apprendimento dei pesi
-
-- `POST /schedule/{w}/feedback {voto 1-5, motivi[], nota ≤ 2000}`: salva una riga append-only con lo snapshot di qualità.
-  Codici `motivi` (`MOTIVI`): `classe_late_start`, `friday_late_start`, `teoria_consecutive`, `pratica_block`,
-  `contractor_gap`, `single_classe_day`, `ore_target_deviation`, `classe_unfilled`, `altro`. Ognuno è collegato a una
-  penalità del solver (`MOTIVO_CONSTRAINTS`); solo cinque hanno un peso regolabile.
-- **Proposte** (`GET /soft-weights`): per un motivo con ≥ **2** valutazioni basse (voto ≤ 3) si propone di **alzare** il
-  peso: passo `+10% × gravità` (1 stella = 3, 2 = 2, 3 = 1), al massimo **+50%** per passo e mai oltre `MAX_SOFT_WEIGHT` = 1_000. Ogni
-  valutazione conta una volta (dopo un adeguamento o un reset contano solo quelle successive).
-- `POST /soft-weights/apply {kinds?}` accetta le proposte (tutte o alcune); `POST /soft-weights/reset {kind?}` ripristina il
-  default di un peso o di tutti. Ogni cambiamento è una riga in `soft_weight_adjustment` (storico). Nulla cambia da solo.
-  I pesi attivi valgono dalle generazioni successive.
+Manual edits and waivers write to `audit_log`.
 
 ---
 
-## 12. Esportazione
+## 11. Ratings and weight learning
+
+- `POST /schedule/{w}/feedback {voto 1-5, motivi[], nota ≤ 2000}`: saves an append-only row with the quality snapshot.
+  `motivi` codes (`MOTIVI`): `classe_late_start`, `friday_late_start`, `teoria_consecutive`, `pratica_block`,
+  `contractor_gap`, `single_classe_day`, `ore_target_deviation`, `classe_unfilled`, `altro` (other). Each is linked to a
+  solver penalty (`MOTIVO_CONSTRAINTS`); only five have an adjustable weight.
+- **Proposals** (`GET /soft-weights`): for a reason with ≥ **2** low ratings (score ≤ 3) it proposes to **raise** the
+  weight: step `+10% × severity` (1 star = 3, 2 = 2, 3 = 1), at most **+50%** per step and never above `MAX_SOFT_WEIGHT` = 1_000. Each
+  rating counts once (after an adjustment or a reset only the later ones count).
+- `POST /soft-weights/apply {kinds?}` accepts the proposals (all or some); `POST /soft-weights/reset {kind?}` restores the
+  default of one weight or of all. Each change is a row in `soft_weight_adjustment` (history). Nothing changes on its own.
+  The active weights apply from the next generations.
+
+---
+
+## 12. Export
 
 `GET /schedule/{w}/export-pdf` → `{status:"generated", filename, pdf_url:"/api/schedule/{w}/export-pdf/file"}`;
-`…/export-pdf/file` risponde `application/pdf` (inline, `orario_{w}.pdf`). Analogo per `export-excel`
-(`xlsx_url`, `…/export-excel/file`, `.xlsx`). I file richiedono il token Bearer (il frontend li scarica con `fetch` e li
-apre/salva come blob; `window.open` diretto darebbe 401). Si può esportare un orario in qualunque stato.
+`…/export-pdf/file` responds `application/pdf` (inline, `orario_{w}.pdf`). Similarly for `export-excel`
+(`xlsx_url`, `…/export-excel/file`, `.xlsx`). The files require the Bearer token (the frontend downloads them with `fetch` and
+opens/saves them as blobs; a direct `window.open` would give 401). A timetable can be exported in any state.
 
-**Layout (identico per PDF ed Excel), modellato su `Documenti/es_di_calendario.pdf`:**
+**Layout (identical for PDF and Excel), modeled on `Documenti/es_di_calendario.pdf`:**
 
-- **PDF:** una sola pagina **A4 orizzontale**, margini 8 mm, font Calibri/Carlito/Helvetica.
-  - Banda azzurra `#95b3d7`, testo nero grassetto 14 pt centrato: riga 1 «Agenzia Formativa don Angelo Tedoldi», riga 2
-    «Orario scolastico dal 5 al 9 Ottobre» (mesi in italiano con iniziale maiuscola; se la settimana attraversa due mesi:
+- **PDF:** a single **landscape A4** page, 8 mm margins, font Calibri/Carlito/Helvetica.
+  - Light-blue band `#95b3d7`, black bold 14 pt centered text: row 1 «Agenzia Formativa don Angelo Tedoldi», row 2
+    «Orario scolastico dal 5 al 9 Ottobre» ("School timetable from 5 to 9 October"; Italian month names with initial capital; if the week spans two months:
     «dal 28 Settembre al 2 Ottobre»).
-  - Intestazione tabella su fondo rosso `#c00000`, testo bianco grassetto: `DATA | Orario | <classi>`.
-  - **Ordine classi:** per corso `OP. INFORM.` → `ELETTRICISTI` → `ESTETISTE` → `PAN. E PAST` → `I.T.C.`, dentro il corso
-    per anno I, II, III, IV; i nomi non riconosciuti in coda, in ordine alfabetico.
-  - Cinque blocchi (lunedì…venerdì), ciascuno con la colonna `DATA` unita verticalmente e l'etichetta del giorno in
-    minuscolo ruotata di 90°, bianca corsiva su arancione `#e46c0a` (giorni 1,3,5) o blu `#0070c0` (giorni 2,4); righe
-    `8-9, 9-10, … 13-14`; tra un giorno e l'altro una striscia grigia `#d9d9d9`. Le righe finali senza alcuna lezione in
-    quel giorno (es. un venerdì corto) vengono omesse.
-  - Cella: **solo il cognome del docente** (prima parola di `docente.nome`), grassetto 5.8 pt centrato, bordo nero 0.5 pt;
-    sfondo per (corso, anno): OP. INFORM. I `#ddd9c4`, II `#f2dcdb`, III `#92d050`; ELETTRICISTI I `#ddd9c4`, II `#f2dcdb`,
+  - Table header on red `#c00000` background, white bold text: `DATA | Orario | <classes>`.
+  - **Class order:** by course `OP. INFORM.` → `ELETTRICISTI` → `ESTETISTE` → `PAN. E PAST` → `I.T.C.`, within the course
+    by year I, II, III, IV; unrecognized names last, in alphabetical order.
+  - Five blocks (Monday…Friday), each with the `DATA` column merged vertically and the day label in
+    lowercase rotated by 90°, white italic on orange `#e46c0a` (days 1,3,5) or blue `#0070c0` (days 2,4); rows
+    `8-9, 9-10, … 13-14`; between one day and the next a grey strip `#d9d9d9`. Trailing rows with no lesson at all on
+    that day (e.g. a short Friday) are omitted.
+  - Cell: **only the teacher's surname** (first word of `docente.nome`), bold 5.8 pt centered, black 0.5 pt border;
+    background by (course, year): OP. INFORM. I `#ddd9c4`, II `#f2dcdb`, III `#92d050`; ELETTRICISTI I `#ddd9c4`, II `#f2dcdb`,
     III `#ff99cc`; ESTETISTE I `#c5d9f1`, II `#fde9d9`, III `#ff99cc`; PAN. E PAST I `#c5d9f1`, II `#fde9d9`,
-    III `#92d050`; I.T.C. I `#ffff99`; IV anno e non riconosciute: bianco.
-  - Cella senza lezione: grigio `#d9d9d9`, vuota. **Cella di stage: testo «STAGE», sfondo giallo `#ffff00`, nessun docente.**
-  - Le lezioni accoppiate non si fondono: il cognome è ripetuto in ciascuna classe.
-- **Excel:** un solo foglio «Orario» con la stessa struttura (titolo unito su tutta la larghezza, intestazione rossa,
-  colonna giorno unita con testo ruotato, colori identici, colonne 15 caratteri, riquadri `freeze` su intestazione e prime
-  due colonne, pagina A4 orizzontale adattata a una pagina).
+    III `#92d050`; I.T.C. I `#ffff99`; year IV and unrecognized: white.
+  - Cell with no lesson: grey `#d9d9d9`, empty. **Stage cell: text «STAGE», yellow background `#ffff00`, no teacher.**
+  - Paired lessons are not merged: the surname is repeated in each class.
+- **Excel:** a single sheet «Orario» (timetable) with the same structure (title merged across the full width, red header,
+  merged day column with rotated text, identical colors, columns 15 characters wide, `freeze` panes on the header and first
+  two columns, landscape A4 page fitted to one page).
 
 ---
 
 ## 13. Frontend
 
-SPA React (TanStack Router, file-based routing in `frontend/src/routes/`) servita in SSR da Node; chiamate a `/api/*`
-con `fetch` e token Bearer in `sessionStorage` (`authToken`, `authRole`). Un 401 (tranne sul login) cancella il token e
-riporta al login. Pagine:
+React SPA (TanStack Router, file-based routing in `frontend/src/routes/`) served via SSR by Node; calls to `/api/*`
+with `fetch` and Bearer token in `sessionStorage` (`authToken`, `authRole`). A 401 (except on login) clears the token
+and returns to login. Pages:
 
-| Route | Contenuto |
+| Route | Content |
 |---|---|
-| `/` | Login (email, password); salva token e ruolo |
-| `/menu` | Panoramica con le schede (Setup, Disponibilità, Orario, Dati scuola) |
-| `/setup` | Upload dei file, anteprima, avvisi con correzione in tempo reale, aggiunta date, salvataggio |
-| `/disponibilita` | Selettore settimana, griglia ore × giorni per docente, «copia dalla settimana precedente», stato di completamento |
-| `/orario` | Selettore settimana; punteggio e livello; tabella classi × ore per giorno (schede lunedì-venerdì), colori teoria/pratica, conflitti evidenziati, clic su docente per evidenziarne le presenze, **Genera nuovo orario / Genera da zero / Approva settimana**, azioni rapide (deroghe), pannello conflitti/modifica a destra, valutazione a stelle con motivi e pannello «Apprendimento dai voti», **Esporta PDF / Esporta Excel** |
-| `/dati/*` | CRUD di calendario, docenti, classi, assegnazioni, accoppiamenti (il campo «Singola classe in stage» è un menu di classi) |
-| `/account` | Cambio password (attuale, nuova ≥ 8 caratteri, conferma) |
+| `/` | Login (email, password); saves token and role |
+| `/menu` | Overview with the cards (Setup, Disponibilità, Orario, Dati scuola) |
+| `/setup` | File upload, preview, warnings with real-time correction, adding dates, saving |
+| `/disponibilita` | Week selector, hours × days grid per teacher, «copia dalla settimana precedente» (copy from the previous week), completion status |
+| `/orario` | Week selector; score and level; classes × hours table per day (Monday-Friday tabs), theory/practical colors, highlighted conflicts, click on a teacher to highlight their presences, **Genera nuovo orario / Genera da zero / Approva settimana** (Generate new timetable / Generate from scratch / Approve week), quick actions (waivers), conflicts/edit panel on the right, star rating with reasons and the «Apprendimento dai voti» (learning from ratings) panel, **Esporta PDF / Esporta Excel** (Export PDF / Export Excel) |
+| `/dati/*` | CRUD of calendar, teachers, classes, assignments, pairings (the «Singola classe in stage» (single class on stage) field is a menu of classes) |
+| `/account` | Password change (current, new ≥ 8 characters, confirmation) |
 
-Interfaccia **SEGRETERIA** (`isSegreteria()`): nel menu laterale restano Panoramica, Disponibilità, Orario; la
-schermata Orario è in sola lettura (niente Genera/Approva/azioni rapide/pannello laterale, celle non cliccabili);
-etichetta utente «Segreteria / Sola lettura». In basso nel menu: «Cambia password» ed «Esci».
+**SEGRETERIA** interface (`isSegreteria()`): the side menu keeps Panoramica (overview), Disponibilità, Orario; the
+Orario screen is read-only (no Generate/Approve/quick actions/side panel, cells not clickable);
+user label «Segreteria / Sola lettura» (secretariat / read-only). At the bottom of the menu: «Cambia password» (change password) and «Esci» (log out).
 
-Colonna di stage nella tabella orario: cella gialla (`bg-yellow-300`, bordo `border-yellow-500`) con «STAGE».
+Stage column in the timetable table: yellow cell (`bg-yellow-300`, border `border-yellow-500`) with «STAGE».
 
 ---
 
-## 14. Copilota AI (chat) — funzione presente ma disattivata
+## 14. AI copilot (chat): feature present but disabled
 
-`POST /chat/send` (solo ADMIN, risposta SSE: `thinking`, `clarification`, `suggestion`, `ready`, `error`) e
-`GET /chat/history/{w}`. Il parsing usa l'API Claude con tool-use: una funzione per intento — `move_lesson`,
-`reduce_workload`, `exclude_day`, `set_soft_constraint`; chiede chiarimenti se mancano parametri. Gli intenti sono
-applicati davvero (rigenerazione in sul posto con vincoli aggiuntivi H7/H8, spostamento di lezione, tetto di ore
-consecutive teoria). Nel frontend è nascosto dal flag `COPILOT_ENABLED = false` in `orario.tsx`. Richiede
+`POST /chat/send` (ADMIN only, SSE response: `thinking`, `clarification`, `suggestion`, `ready`, `error`) and
+`GET /chat/history/{w}`. Parsing uses the Claude API with tool-use: one function per intent: `move_lesson`,
+`reduce_workload`, `exclude_day`, `set_soft_constraint`; it asks for clarification if parameters are missing. The intents are
+actually applied (in-place regeneration with additional constraints H7/H8, lesson move, cap on consecutive
+theory hours). In the frontend it is hidden by the flag `COPILOT_ENABLED = false` in `orario.tsx`. It requires
 `ANTHROPIC_API_KEY`.
 
 ---
 
-## 15. Deploy e operazioni
+## 15. Deploy and operations
 
-- **Stack:** `docker-compose.yml` con `postgres:15-alpine` (volume dati, healthcheck), `backend` (Dockerfile Python 3.13
-  con Pango/Cairo/fonts), `frontend` (Node 22, build multi-stage, `node .output/server/index.mjs`, porta 3000) e `caddy:2`
-  (80/443, `DOMAIN` da env). Solo Caddy espone porte. Il `Caddyfile` instrada `/api/*`, `/health`, `/docs`, `/openapi.json`,
-  `/redoc` al backend `:8000` e il resto al frontend.
-- **Configurazione:** `.env.production` (non versionato; da `deploy/generate-secrets.sh`): `DOMAIN`, `POSTGRES_USER`,
-  `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL`, `ANTHROPIC_API_KEY`, ecc.
-- **Primo avvio:** `deploy/up.sh`; poi creare gli utenti con `deploy/create-admin.sh` (§4); su VM con 1 GB di RAM
-  `deploy/setup-swap.sh` (4 GB di swap).
-- **Aggiornamento:** sulla VM `deploy/update.sh` (`git pull --ff-only`, `docker compose up -d --build`, `image prune`).
-  Su una VM da 1 GB la build è lenta (decine di minuti, `pip install` incluso); in alternativa costruire le immagini
-  altrove. All'avvio del backend la colonna `admin.role` viene aggiunta se manca.
-- **Backup:** `deploy/backup-db.sh` (dump locale, cron notturno), `deploy/backup-offsite.sh` (Object Storage, settimanale,
-  da configurare), `deploy/restore-db.sh`, `deploy/dump-local-db.sh`.
-- **Produzione attuale:** VM Oracle Always Free, `https://130-110-14-231.sslip.io`. `sslip.io` risolve un nome solo se
-  contiene l'IP; per un nome pulito serve un dominio proprio (record A verso l'IP) e aggiornare `DOMAIN`.
-- **Sviluppo locale:** `python -m venv .venv && .venv/bin/pip install -r requirements.txt`;
+- **Stack:** `docker-compose.yml` with `postgres:15-alpine` (data volume, healthcheck), `backend` (Python 3.13 Dockerfile
+  with Pango/Cairo/fonts), `frontend` (Node 22, multi-stage build, `node .output/server/index.mjs`, port 3000) and `caddy:2`
+  (80/443, `DOMAIN` from env). Only Caddy exposes ports. The `Caddyfile` routes `/api/*`, `/health`, `/docs`, `/openapi.json`,
+  `/redoc` to the backend `:8000` and the rest to the frontend.
+- **Configuration:** `.env.production` (not versioned; from `deploy/generate-secrets.sh`): `DOMAIN`, `POSTGRES_USER`,
+  `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL`, `ANTHROPIC_API_KEY`, etc.
+- **First start:** `deploy/up.sh`; then create the users with `deploy/create-admin.sh` (§4); on a VM with 1 GB of RAM
+  `deploy/setup-swap.sh` (4 GB of swap).
+- **Update:** on the VM `deploy/update.sh` (`git pull --ff-only`, `docker compose up -d --build`, `image prune`).
+  On a 1 GB VM the build is slow (tens of minutes, `pip install` included); alternatively build the images
+  elsewhere. At backend startup the `admin.role` column is added if missing.
+- **Backup:** `deploy/backup-db.sh` (local dump, nightly cron), `deploy/backup-offsite.sh` (Object Storage, weekly,
+  to be configured), `deploy/restore-db.sh`, `deploy/dump-local-db.sh`.
+- **Current production:** Oracle Always Free VM, `https://130-110-14-231.sslip.io`. `sslip.io` resolves a name only if it
+  contains the IP; for a clean name you need your own domain (A record to the IP) and update `DOMAIN`.
+- **Local development:** `python -m venv .venv && .venv/bin/pip install -r requirements.txt`;
   `DATABASE_URL=sqlite:///./dev.db .venv/bin/python -m uvicorn app.main:app --port 8000`; frontend
-  `cd frontend && VITE_API_BASE_URL=http://localhost:8000 npm run dev` (porta 8080). Con Anaconda l'import di `ortools`
-  può andare in segfault: usare un venv di sistema.
+  `cd frontend && VITE_API_BASE_URL=http://localhost:8000 npm run dev` (port 8080). With Anaconda the `ortools` import
+  may segfault: use a system venv.
 
 ---
 
-## 16. Test e criteri di accettazione
+## 16. Tests and acceptance criteria
 
-`pytest` (`tests/`, SQLite temporaneo, `tests/conftest.py` esclude l'autenticazione dall'API client e ricrea lo schema a
-ogni test). Copertura: solver (vincoli rigidi e soft, accoppiate, chiusure, stage, contrattisti: monte ore superabile,
-disponibilità mai violata, moltiplicatore di scarsità), parser (CSV e PDF sintetico), validazione, endpoint `/api/*`
-end-to-end, ruoli (`tests/test_roles.py`), cambio password (`tests/test_auth_password.py`), esportazione, valutazioni e
-pesi. **Stato noto:** 6 test falliscono già su un checkout pulito (accoppiate con docente condiviso, blocchi pratica,
-conflitti dettagliati, quick action `override_availability`, modifica di un solo lato di una coppia); non sono
-regressioni delle funzioni descritte qui.
+`pytest` (`tests/`, temporary SQLite, `tests/conftest.py` excludes authentication from the API client and recreates the schema at
+every test). Coverage: solver (hard and soft constraints, pairings, closures, stage, contract teachers: hours budget can be exceeded,
+availability never violated, scarcity multiplier), parser (CSV and synthetic PDF), validation, `/api/*` endpoints
+end-to-end, roles (`tests/test_roles.py`), password change (`tests/test_auth_password.py`), export, ratings and
+weights. **Known state:** 6 tests already fail on a clean checkout (pairings with a shared teacher, practical blocks,
+detailed conflicts, quick action `override_availability`, editing only one side of a pair); they are not
+regressions of the features described here.
 
-Criteri di accettazione di un orario generato (verificabili): (1) ogni classe ha esattamente le ore del giorno (o il
-conflitto `classe_unfilled` lo dice); (2) nessun docente in due classi nella stessa ora (salvo accoppiata); (3) nessuna
-lezione per classi in stage, che nell'export mostrano «STAGE» in giallo; (4) nessuna lezione di un contrattista fuori
-disponibilità; (5) le ore dell'assegnazione sono vicine al target e comunque non oltre il residuo per gli assunti;
-(6) il PDF ha la stessa struttura del modello §12.
+Acceptance criteria for a generated timetable (verifiable): (1) every class has exactly the day's hours (or the
+`classe_unfilled` conflict says so); (2) no teacher in two classes in the same hour (except pairings); (3) no
+lesson for classes on stage, which show «STAGE» in yellow in the export; (4) no lesson of a contract teacher outside
+availability; (5) the assignment's hours are close to the target and in any case not above the remainder for permanent teachers;
+(6) the PDF has the same structure as the model in §12.
 
 ---
 
-## 17. Limiti noti e non implementato
+## 17. Known limits and not implemented
 
-- **Multi-tenant e Super-Admin**: non implementati (single-tenant, `scuola_id` fisso `sch_1`).
-- **Portale docenti** (login docente, inserimento disponibilità in autonomia, «conferma orario settimana precedente»,
-  scadenza settimanale con eredità automatica lato docente): non implementato; le disponibilità le inserisce
-  l'amministratore o la segreteria. L'eredità dalla settimana precedente esiste già in lettura (§6).
-- **Sostituzioni in tempo reale per malattia**: non implementate.
-- **Memoria permanente delle preferenze** (`preferenze_ai_memory`): tabella presente ma non usata dal solver.
-- **Annullamento di un'approvazione**: vale per l'intera settimana; non esiste un annullamento parziale (per singole lezioni). Per correggere singole assegnazioni si usa la correzione manuale (§8).
-- **Nomi docente**: il cognome nel tabellone è la prima parola di «COGNOME NOME»; i cognomi composti vengono troncati.
-- **Cache del setup** in memoria del processo (si perde al riavvio).
-- **Template PDF del calendario**: il parser dipende da coordinate fisse (§5.2).
-- **Materie reali**: i dati importati usano spesso una materia segnaposto («Materia da definire»); i vincoli su teoria/pratica
-  hanno senso pieno solo con le materie reali configurate.
-- **Integrazione registri elettronici** (Spaggiari, ClasseViva, Axios): roadmap v2.
-- La generazione su VM con 1 GB di RAM è lenta sotto carico; il solver ha un timeout di 60 s.
+- **Multi-tenant and Super-Admin**: not implemented (single-tenant, `scuola_id` fixed to `sch_1`).
+- **Teacher portal** (teacher login, self-service availability entry, «confirm last week's timetable»,
+  weekly deadline with automatic inheritance on the teacher side): not implemented; availability is entered
+  by the administrator or the secretariat. Inheritance from the previous week already exists on read (§6).
+- **Real-time sick-leave substitutions**: not implemented.
+- **Permanent preference memory** (`preferenze_ai_memory`): table present but not used by the solver.
+- **Undoing an approval**: applies to the whole week; there is no partial undo (for single lessons). To fix single assignments use the manual correction (§8).
+- **Teacher names**: the surname on the board is the first word of «COGNOME NOME»; compound surnames are truncated.
+- **Setup cache** in process memory (lost on restart).
+- **Calendar PDF template**: the parser depends on fixed coordinates (§5.2).
+- **Real subjects**: the imported data often use a placeholder subject («Materia da definire», "Subject to be defined"); the theory/practical constraints
+  make full sense only with the real subjects configured.
+- **Electronic register integration** (Spaggiari, ClasseViva, Axios): v2 roadmap.
+- Generation on a 1 GB RAM VM is slow under load; the solver has a 60 s timeout.
