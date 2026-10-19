@@ -83,6 +83,8 @@ jobs:
       - name: Agent investigates and opens a fix PR
         uses: anthropics/claude-code-action@v1
         with:
+          # Pro/Max subscription token (claude setup-token) or, instead, an API key
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ github.token }}
           claude_args: --max-turns 40 --allowedTools "Bash,Read,Edit,Write,Grep,Glob"

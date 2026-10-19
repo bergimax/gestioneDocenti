@@ -66,4 +66,4 @@ with a non-empty pairings CSV).
 (`fetch-context.sh`: the alert and, if the repository secrets `GRAFANA_URL` and `GRAFANA_TOKEN` are set, the last 15
 minutes of error logs with their `trace_id`), then runs Claude Code under the role in
 [_docs/team/on-call.md](../../_docs/team/on-call.md): reproduce with a failing test, fix, run lint and the suite, open a
-pull request. It never deploys: CI and a human merge come first. Needs the repository secret `ANTHROPIC_API_KEY`.
+pull request. It never deploys: CI and a human merge come first. Needs one repository secret: `CLAUDE_CODE_OAUTH_TOKEN` (Pro/Max subscription, from `claude setup-token`) or `ANTHROPIC_API_KEY`.
