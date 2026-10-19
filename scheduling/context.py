@@ -168,6 +168,33 @@ def _excluded_days(derogations):
     return excluded
 
 
+class PairingUnresolved(ValueError):
+    """A pairing without a teacher that the assignments cannot resolve."""
+
+
+def _pairing_teacher(pairing, assignments):
+    """The pairing's teacher; when none is set, the one teacher who teaches the
+    subject in both classes. Anything else cannot be scheduled: say so."""
+    if pairing.teacher_id is not None:
+        return pairing.teacher_id
+
+    def teachers(class_id):
+        return {
+            a.teacher_id
+            for a in assignments
+            if a.class_id == class_id and a.subject_id == pairing.subject_id
+        }
+
+    common = teachers(pairing.class_a_id) & teachers(pairing.class_b_id)
+    if len(common) == 1:
+        return common.pop()
+    raise PairingUnresolved(
+        f"Accoppiamento {pairing.class_a} + {pairing.class_b} - {pairing.subject}: "
+        "serve un solo docente che insegni la materia in entrambe le classi "
+        "(oppure indica il docente nell'accoppiamento)."
+    )
+
+
 def build_week_context(week_start, school=None, derogations=()):
     """The solver input for the week starting on Monday ``week_start``.
 
@@ -251,8 +278,15 @@ def build_week_context(week_start, school=None, derogations=()):
                 sources[a.pk] += ", ridotto per deroga"
 
     pairings = [
-        Pairing(p.class_a_id, p.class_b_id, p.subject_id, p.teacher_id)
-        for p in ClassPairing.objects.filter(school=school).order_by("pk")
+        Pairing(
+            p.class_a_id,
+            p.class_b_id,
+            p.subject_id,
+            _pairing_teacher(p, assignments),
+        )
+        for p in ClassPairing.objects.filter(school=school)
+        .select_related("class_a", "class_b", "subject")
+        .order_by("pk")
     ]
     return ScheduleContext(
         assignments=assignments,

@@ -512,6 +512,8 @@ def test_building_issues_only_selects(school, klass, subject):
 def test_pairings_with_and_without_teacher(school, subject):
     a, b, c, d = (make_class(school, n) for n in ("1A", "1B", "1C", "1D"))
     t = teacher(school)
+    for klass in (c, d):  # the teacherless pairing resolves through these
+        assign(school, t, klass, subject)
     ClassPairing.objects.create(
         school=school, class_a=a, class_b=b, subject=subject, teacher=t
     )
@@ -525,7 +527,7 @@ def test_pairings_with_and_without_teacher(school, subject):
     got = {(p.class_a, p.class_b, p.subject_id, p.teacher_id) for p in ctx.pairings}
     assert got == {
         (a.pk, b.pk, subject.pk, t.pk),
-        (c.pk, d.pk, subject.pk, None),
+        (c.pk, d.pk, subject.pk, t.pk),
         (a.pk, c.pk, subject.pk, t.pk),
     }
 
@@ -594,3 +596,36 @@ def test_query_count_bounded(school, subject, django_assert_max_num_queries):
         ctx = build_week_context(MON, school)
     assert len(ctx.assignments) == 48
     assert n <= 8
+
+
+# --- pairings without a teacher -------------------------------------------------
+
+
+def _pair(school, a, b, subject, teacher=None):
+    return ClassPairing.objects.create(
+        school=school, class_a=a, class_b=b, subject=subject, teacher=teacher
+    )
+
+
+def test_teacherless_pairing_takes_the_common_teacher(school, klass, subject):
+    other = make_class(school, "2A")
+    t = teacher(school)
+    assign(school, t, klass, subject)
+    assign(school, t, other, subject)
+    _pair(school, klass, other, subject)
+    ctx = build_week_context(MON, school)
+    assert [p.teacher_id for p in ctx.pairings] == [t.pk]
+
+
+def test_teacherless_pairing_with_two_teachers_is_refused_clearly(
+    school, klass, subject
+):
+    from scheduling.context import PairingUnresolved
+
+    other = make_class(school, "2A")
+    assign(school, teacher(school), klass, subject)
+    assign(school, teacher(school, "BIANCHI"), klass, subject)
+    assign(school, teacher(school, "VERDI"), other, subject)
+    _pair(school, klass, other, subject)
+    with pytest.raises(PairingUnresolved, match="un solo docente"):
+        build_week_context(MON, school)
