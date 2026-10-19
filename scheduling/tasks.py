@@ -13,7 +13,7 @@ from opentelemetry import metrics, trace
 from school.models import Assignment, ClassPairing
 
 from . import audit
-from .context import build_week_context
+from .context import PairingUnresolved, build_week_context
 from .derogations import derogation_from_params
 from .models import (
     ConflictDecision,
@@ -230,6 +230,8 @@ def _run_job(job_id):
             error = timeout_message(settings.SOLVER_TIMEOUT_SECONDS)
     except TimetableLocked:
         error = ERROR_APPROVED
+    except PairingUnresolved as exc:
+        error = str(exc)
     except Exception as exc:
         logger.exception("Solve job %s failed", job_id)
         error = f"{ERROR_UNEXPECTED} ({exc})"
