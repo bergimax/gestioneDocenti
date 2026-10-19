@@ -1,0 +1,57 @@
+# Try the whole system on one machine, no env file, no domain, no HTTPS:
+#   docker compose -f docker-compose.local.yml up --build
+# then open http://localhost:8000/ and log in as admin@example.com / admin-password.
+# For demonstration only (DEBUG on, a throwaway password and secret key). The
+# production stack is docker-compose.yml, started with deploy/up.sh.
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: gestione
+      POSTGRES_PASSWORD: gestione
+      POSTGRES_DB: gestione_docenti
+    volumes:
+      - localdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gestione -d gestione_docenti"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build: .
+    image: gestione-docenti:local
+    environment: &local-env
+      SECRET_KEY: local-demo-secret-key-not-for-production
+      DEBUG: "true"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      DATABASE_URL: postgres://gestione:gestione@postgres:5432/gestione_docenti
+    command:
+      - sh
+      - -c
+      - >-
+        python manage.py migrate --noinput &&
+        python manage.py create_user admin@example.com --role ADMIN --password admin-password &&
+        python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    image: gestione-docenti:local
+    environment: *local-env
+    # web runs the migrations; the worker waits until they are all applied
+    command:
+      - sh
+      - -c
+      - >-
+        until python manage.py migrate --check >/dev/null 2>&1; do sleep 2; done;
+        python manage.py solve_worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  localdata:

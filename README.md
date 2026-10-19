@@ -29,9 +29,12 @@ team works: [_docs/process.md](_docs/process.md) and [_docs/team/](_docs/team/).
 
 ## How to run
 
-With Docker (database, web, worker and proxy, one command; see [deploy/README.md](deploy/README.md)):
+Everything in Docker, one command, no configuration (PostgreSQL, web, worker; demo only):
 
-    deploy/up.sh
+    docker compose -f docker-compose.local.yml up --build
+
+Open <http://localhost:8000/> and log in as `admin@example.com` / `admin-password`. Production (HTTPS, proxy, backups):
+`deploy/up.sh`, see [deploy/README.md](deploy/README.md).
 
 Locally:
 
@@ -100,10 +103,12 @@ Production containers, proxy and scripts: see [deploy/README.md](deploy/README.m
 
 ## Docker
 
+`docker-compose.local.yml` is the zero-configuration demo stack (above). The production stack is `docker-compose.yml`:
+
     cp deploy/env.production.example .env.production   # fill in the four required values
     deploy/up.sh
 
-Starts PostgreSQL, web (gunicorn), the solve worker and Caddy (HTTPS) with one command.
+It starts PostgreSQL, web (gunicorn), the solve worker and Caddy (HTTPS).
 
 ## CI/CD
 
