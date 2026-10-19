@@ -67,3 +67,20 @@ with a non-empty pairings CSV).
 minutes of error logs with their `trace_id`), then runs Claude Code under the role in
 [_docs/team/on-call.md](../../_docs/team/on-call.md): reproduce with a failing test, fix, run lint and the suite, open a
 pull request. It never deploys: CI and a human merge come first. Needs one repository secret: `CLAUDE_CODE_OAUTH_TOKEN` (Pro/Max subscription, from `claude setup-token`) or `ANTHROPIC_API_KEY`.
+
+## Evidence: one request, three signals, one trace id
+
+Captured from a real run against the stack above (a view that logs an error and raises, called once):
+
+| Signal | Where | What it shows |
+|---|---|---|
+| Trace | Tempo, `GET /api/traces/0d7549650cee75c5394b7e982262772b` | span `GET boom/`, `http.response.status_code=500`, `url.path=/boom/` |
+| Logs | Loki, `{service_name="web"} \| trace_id="0d7549650cee75c5394b7e982262772b"` | `Solve job 7 failed` and `Internal Server Error: /boom/`, both carrying that `trace_id` |
+| Metric | Prometheus, `http_server_request_duration_seconds_count{http_response_status_code=~"5.."}` | `1`, the series the 5xx alert is built on |
+
+The same line on stdout is JSON with `trace_id` and `span_id`:
+
+    {"ts": "...", "level": "ERROR", "logger": "scheduling.tasks", "service": "web", "message": "Solve job 7 failed", "trace_id": "0d7549650cee75c5394b7e982262772b", "span_id": "a685214193e75f48"}
+
+Magic-link paths appear redacted in all three (`/l/SECRET...`). Known gap: a 404 for a URL that matches no route is
+logged before the request span is active, so that one log line has no `trace_id`; errors and every handled request do.
