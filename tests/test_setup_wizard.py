@@ -444,6 +444,7 @@ def test_save_creates_everything(admin):
     assert a.ore_totali == 60
     assert Teacher.objects.get(name="BIANCHI LUCA").email == ""
     assert ClassPairing.objects.get().note == "insieme"
+    assert ClassPairing.objects.get().teacher.name == "ROSSI MARIO"
     assert CalendarEntry.objects.get(date=datetime.date(2026, 12, 25)).is_closure
     assert ParkedUpload.objects.count() == 0
     done = admin.get("/setup/completato/")
@@ -502,6 +503,21 @@ def test_rollback_on_failure_partway(admin):
     assert all(n == 0 for n in db_counts().values())
     assert ParkedUpload.objects.count() == 6
     assert save(admin).status_code == 302  # and a retry works
+
+
+def test_pairing_without_a_common_teacher_is_refused(admin):
+    # Laboratorio is taught by BIANCHI LUCA in 1A only: no teacher for the pair.
+    upload_all(
+        admin,
+        assignments="docente_nome,classe_nome,materia_nome,ore_anno\n"
+        "ROSSI MARIO,1A,Matematica,60\nROSSI MARIO,2A,Matematica,50\n"
+        "BIANCHI LUCA,1A,Laboratorio,30\n",
+        pairings="classe_a,classe_b,materia_nome,note\n1A,2A,Laboratorio,\n",
+    )
+    r = save(admin)
+    assert r.status_code == 422
+    assert "Accoppiamenti riga" in html(r)
+    assert all(n == 0 for n in db_counts().values())
 
 
 def test_rollback_on_database_rejection(admin):
