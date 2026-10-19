@@ -72,6 +72,14 @@ jobs:
             --body "Opened by the on-call agent workflow run ${{ github.run_id }}.")
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
+      - name: Collect incident context
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_TOKEN: ${{ secrets.GRAFANA_TOKEN }}
+          TITLE: ${{ github.event.client_payload.title || 'Drill' }}
+          SUMMARY: ${{ github.event.client_payload.summary || inputs.summary }}
+        run: deploy/observability/fetch-context.sh "$TITLE" "$SUMMARY" | tee incident-context.txt
+
       - name: Agent investigates and opens a fix PR
         uses: anthropics/claude-code-action@v1
         with:
@@ -79,17 +87,9 @@ jobs:
           github_token: ${{ github.token }}
           claude_args: --max-turns 40 --allowedTools "Bash,Read,Edit,Write,Grep,Glob"
           prompt: |
-            You are the on-call engineer for this Django app (read AGENTS.md first).
-            Alert: ${{ github.event.client_payload.summary || inputs.summary }}
+            You are the on-call engineer. Follow _docs/team/on-call.md exactly.
+            Alert: ${{ github.event.client_payload.title || 'Drill' }}
+            Summary: ${{ github.event.client_payload.summary || inputs.summary }}
             Incident issue: ${{ steps.incident.outputs.url }}
-
-            1. Find the cause. Look at recent commits (git log -20), the code on
-               the failing path and, if the alert names one, the failing request.
-            2. Reproduce it with a failing test in tests/ (read _docs/testing-guidelines.md).
-            3. Fix it minimally. Run `uv run ruff check . && uv run ruff format --check .`
-               and `uv run pytest`; everything must pass.
-            4. Push a branch named fix/incident-${{ github.run_id }} and open a pull
-               request that links the incident issue and states cause, fix and test.
-            If the cause is not in the code (infrastructure, data), comment that on
-            the incident issue and do not open a pull request.
-            Never touch production, secrets or _docs/. Do not log customer data.
+            Context file: incident-context.txt
+            Branch name: fix/incident-${{ github.run_id }}

@@ -37,17 +37,33 @@ or emails in spans or logs (`config/telemetry.py`, `tests/test_telemetry.py`).
 | Pages are slow for users | p95 response time above 3 s over 10 minutes (5 min) |
 | Timetable generation is crashing | a generation job ended in `outcome="error"`, an unexpected exception. An infeasible week or a timeout is `failed`: bad data, not an incident |
 
-No CPU, memory or disk alerts. All three post to the GitHub `repository_dispatch` API.
+No CPU, memory or disk alerts.
 
-Set in `.env.production`:
+## From alert to agent
 
-- `ONCALL_WEBHOOK_URL=https://api.github.com/repos/<owner>/<repo>/dispatches`
-- `ONCALL_WEBHOOK_TOKEN=<fine-grained token, Contents: read and write on this repo>`
+    Grafana alert --webhook--> oncall-relay --repository_dispatch--> GitHub Actions "On-call agent"
+
+Grafana cannot send the body GitHub requires, so `relay.py` (stdlib only, a container of the overlay, reachable only
+on the compose network) turns a firing notification into a `repository_dispatch` and drops resolved ones. It forwards
+the alert name and summary only. Verified end to end: a firing rule reaches the relay and the relay sends
+`{"event_type": "grafana-alert", "client_payload": {...}}`.
+
+Set in `.env.production`: `GITHUB_REPO=<owner>/<repo>` and `ONCALL_WEBHOOK_TOKEN=<fine-grained token, Contents: read
+and write on this repo>`.
+
+## Trigger the alert on demand
+
+    GITHUB_REPO=owner/repo GITHUB_TOKEN=... deploy/observability/trigger-alert.sh dispatch   # straight to GitHub
+    RELAY_URL=http://oncall-relay:8080/ deploy/observability/trigger-alert.sh relay           # through the relay
+
+Either starts the On-call agent workflow within seconds (Actions > On-call agent), also startable by hand with
+"Run workflow". A real trigger for "Timetable generation is crashing" exists today: issue #172 (generate after a setup
+with a non-empty pairings CSV).
 
 ## On-call agent
 
-`.github/workflows/on-call.yml` wakes on that dispatch (or manually, for a
-drill: Actions > On-call agent > Run workflow). It opens an incident issue, runs
-Claude Code against the repo with the alert as context, and opens a pull
-request with a failing test and the fix. It never deploys: CI and a human merge
-come first. Needs the repository secret `ANTHROPIC_API_KEY`.
+`.github/workflows/on-call.yml` wakes on the dispatch. It opens an incident issue, collects context
+(`fetch-context.sh`: the alert and, if the repository secrets `GRAFANA_URL` and `GRAFANA_TOKEN` are set, the last 15
+minutes of error logs with their `trace_id`), then runs Claude Code under the role in
+[_docs/team/on-call.md](../../_docs/team/on-call.md): reproduce with a failing test, fix, run lint and the suite, open a
+pull request. It never deploys: CI and a human merge come first. Needs the repository secret `ANTHROPIC_API_KEY`.

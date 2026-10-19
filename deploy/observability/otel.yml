@@ -6,13 +6,20 @@ services:
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
-      ONCALL_WEBHOOK_URL: ${ONCALL_WEBHOOK_URL:-http://localhost/unset}
-      ONCALL_WEBHOOK_TOKEN: ${ONCALL_WEBHOOK_TOKEN:-unset}
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
       - ./deploy/observability/grafana/provisioning/alerting:/otel-lgtm/grafana/conf/provisioning/alerting:ro
       - lgtm_data:/data
+  oncall-relay:
+    image: python:3.13-slim
+    restart: unless-stopped
+    command: ["python", "/relay.py"]
+    environment:
+      GITHUB_REPO: ${GITHUB_REPO:?GITHUB_REPO is required, like owner/repo}
+      ONCALL_WEBHOOK_TOKEN: ${ONCALL_WEBHOOK_TOKEN:?ONCALL_WEBHOOK_TOKEN is required}
+    volumes:
+      - ./deploy/observability/relay.py:/relay.py:ro
   web:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318

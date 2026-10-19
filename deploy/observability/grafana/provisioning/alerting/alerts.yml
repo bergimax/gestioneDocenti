@@ -6,13 +6,9 @@ contactPoints:
       - uid: oncall-agent-webhook
         type: webhook
         settings:
-          # GitHub repository_dispatch: wakes .github/workflows/on-call.yml
-          url: "${ONCALL_WEBHOOK_URL}"
+          # deploy/observability/relay.py turns it into a GitHub repository_dispatch
+          url: http://oncall-relay:8080/
           httpMethod: POST
-          authorization_scheme: Bearer
-          authorization_credentials: "${ONCALL_WEBHOOK_TOKEN}"
-          payload:
-            template: '{"event_type":"grafana-alert","client_payload":{"title":"{{ .CommonLabels.alertname }}","status":"{{ .Status }}","summary":"{{ .CommonAnnotations.summary }}"}}'
 policies:
   - orgId: 1
     receiver: oncall-agent
