@@ -192,7 +192,18 @@ LOGGING = {
     "filters": {
         "redact_link_tokens": {"()": "availability.logging.RedactLinkTokens"},
     },
+    "formatters": {"json": {"()": "config.telemetry.JsonFormatter"}},
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "json"},
+        "otel": {"()": "config.telemetry.otel_log_handler"},
+    },
+    # One JSON line per record with trace_id/span_id (telemetry.py).
+    "root": {"handlers": ["console", "otel"], "level": "INFO"},
     "loggers": {
+        # Django's own console handler would print a second, unstructured line.
+        "django": {"handlers": [], "level": "INFO"},
+        "weasyprint": {"level": "WARNING"},
+        "fontTools": {"level": "WARNING"},
         "django.request": {"filters": ["redact_link_tokens"]},
         "django.server": {"filters": ["redact_link_tokens"]},
     },

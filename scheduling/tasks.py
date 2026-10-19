@@ -3,10 +3,12 @@
 import dataclasses
 import logging
 import threading
+import time
 
 from django.conf import settings
 from django.db import transaction
 from django_tasks import task
+from opentelemetry import metrics, trace
 
 from school.models import Assignment, ClassPairing
 
@@ -27,6 +29,17 @@ from .services import TimetableLocked, apply_change
 from .solver import SolveStatus, solve
 
 logger = logging.getLogger(__name__)
+
+# Key user journey: generate a week's timetable. Counter and histogram are
+# no-ops until config.telemetry.setup_telemetry installs a provider.
+_tracer = trace.get_tracer(__name__)
+_meter = metrics.get_meter(__name__)
+_generations = _meter.create_counter(
+    "timetable.generations", description="Timetable generation jobs by outcome"
+)
+_generation_seconds = _meter.create_histogram(
+    "timetable.generation.duration", unit="s", description="Generation job duration"
+)
 
 FIRST_CLOCK_HOUR = 8
 DAYS = list(Day.values)
@@ -164,6 +177,18 @@ def finish_failed(job, error):
 
 def run_job(job_id):
     """Run one GENERATE job to DONE or FAILED. Never raises."""
+    started = time.monotonic()
+    with _tracer.start_as_current_span("timetable.generate") as span:
+        span.set_attribute("job.id", job_id)
+        _run_job(job_id)
+        job = SolveJob.objects.filter(pk=job_id).first()
+        outcome = job.status.lower() if job else "missing"
+        span.set_attribute("job.outcome", outcome)
+        _generations.add(1, {"outcome": outcome})
+        _generation_seconds.record(time.monotonic() - started, {"outcome": outcome})
+
+
+def _run_job(job_id):
     job = SolveJob.objects.filter(pk=job_id).first()
     if job is None or job.status != JobStatus.PENDING:
         logger.warning("Solve job %s is missing or not pending: skipped", job_id)

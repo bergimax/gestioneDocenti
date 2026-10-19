@@ -1,0 +1,95 @@
+name: On-call agent
+
+# Woken by the Grafana alert "Users are getting server errors" (webhook contact
+# point -> GitHub repository_dispatch, see deploy/observability/README.md).
+# The agent investigates, writes a fix with a test and opens a pull request.
+# It never deploys: CI and a human merge stand between its change and production.
+
+on:
+  repository_dispatch:
+    types: [grafana-alert]
+  workflow_dispatch:
+    inputs:
+      summary:
+        description: Alert summary (for a manual drill)
+        default: Drill - users are getting server errors
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: on-call
+  cancel-in-progress: false
+
+jobs:
+  respond:
+    if: github.event_name != 'repository_dispatch' || github.event.client_payload.status == 'firing'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: gestione_docenti
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Install WeasyPrint system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libcairo2
+
+      - uses: astral-sh/setup-uv@v6.0.1
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --frozen
+
+      - name: Open the incident issue
+        id: incident
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ github.event.client_payload.summary || inputs.summary }}
+        run: |
+          url=$(gh issue create --title "Incident: $SUMMARY" --label incident \
+            --body "Opened by the on-call agent workflow run ${{ github.run_id }}.")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Agent investigates and opens a fix PR
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          claude_args: --max-turns 40 --allowedTools "Bash,Read,Edit,Write,Grep,Glob"
+          prompt: |
+            You are the on-call engineer for this Django app (read AGENTS.md first).
+            Alert: ${{ github.event.client_payload.summary || inputs.summary }}
+            Incident issue: ${{ steps.incident.outputs.url }}
+
+            1. Find the cause. Look at recent commits (git log -20), the code on
+               the failing path and, if the alert names one, the failing request.
+            2. Reproduce it with a failing test in tests/ (read _docs/testing-guidelines.md).
+            3. Fix it minimally. Run `uv run ruff check . && uv run ruff format --check .`
+               and `uv run pytest`; everything must pass.
+            4. Push a branch named fix/incident-${{ github.run_id }} and open a pull
+               request that links the incident issue and states cause, fix and test.
+            If the cause is not in the code (infrastructure, data), comment that on
+            the incident issue and do not open a pull request.
+            Never touch production, secrets or _docs/. Do not log customer data.

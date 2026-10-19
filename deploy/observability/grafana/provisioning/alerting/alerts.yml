@@ -1,0 +1,55 @@
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: oncall-agent
+    receivers:
+      - uid: oncall-agent-webhook
+        type: webhook
+        settings:
+          # GitHub repository_dispatch: wakes .github/workflows/on-call.yml
+          url: ${ONCALL_WEBHOOK_URL}
+          httpMethod: POST
+          authorization_scheme: Bearer
+          authorization_credentials: ${ONCALL_WEBHOOK_TOKEN}
+          payload:
+            template: '{"event_type":"grafana-alert","client_payload":{"title":"{{ .CommonLabels.alertname }}","status":"{{ .Status }}","summary":"{{ .CommonAnnotations.summary }}"}}'
+policies:
+  - orgId: 1
+    receiver: oncall-agent
+groups:
+  - orgId: 1
+    name: user-impact
+    folder: Gestione docenti
+    interval: 1m
+    rules:
+      - uid: http-5xx-rate
+        title: Users are getting server errors
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: More than 5% of web requests answered 5xx over 5 minutes
+        labels:
+          severity: page
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+                / sum(rate(http_server_request_duration_seconds_count[5m]))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0.05]}

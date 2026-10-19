@@ -15,6 +15,9 @@ class Command(DbWorker):
     help = "Run the worker for timetable generation jobs (one solve at a time)"
 
     def handle(self, *args, **options):
+        from config.telemetry import setup_telemetry
+
+        setup_telemetry("worker")
         # jobs a previous, killed worker left RUNNING can never finish
         fail_stale_jobs()
         return super().handle(*args, **options)

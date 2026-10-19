@@ -97,3 +97,24 @@ A forgotten password is reset by an operator with
 ## Deploy
 
 Production containers, proxy and scripts: see [deploy/README.md](deploy/README.md).
+
+## Docker
+
+    cp deploy/env.production.example .env.production   # fill in the four required values
+    deploy/up.sh
+
+Starts PostgreSQL, web (gunicorn), the solve worker and Caddy (HTTPS) with one command.
+
+## CI/CD
+
+- `ci.yml`: ruff and the full test suite (unit and integration, against PostgreSQL) on every push and pull request.
+- `deploy.yml`: a commit on `main` that passed CI is deployed to the **dev** environment automatically over SSH
+  (`deploy/release.sh`); **production** is deployed only by running the workflow by hand, behind the required
+  reviewers of the `production` environment. Rollback: run it again with the previous commit.
+  Secrets per environment: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_PATH`.
+
+## Observability, alerting and on-call agent
+
+OpenTelemetry traces, metrics and JSON logs sharing a `trace_id`, viewable in Grafana; an alert on the 5xx rate; and an
+agent that wakes on that alert and opens a fix pull request. See
+[deploy/observability/README.md](deploy/observability/README.md).

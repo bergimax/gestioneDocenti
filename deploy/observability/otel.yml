@@ -1,0 +1,25 @@
+# Optional overlay: Grafana + Tempo + Loki + Prometheus in one container
+# (grafana/otel-lgtm). Start with deploy/observability/up.sh. Grafana: port 3000.
+services:
+  lgtm:
+    image: grafana/otel-lgtm:0.11.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      ONCALL_WEBHOOK_URL: ${ONCALL_WEBHOOK_URL:-http://localhost/unset}
+      ONCALL_WEBHOOK_TOKEN: ${ONCALL_WEBHOOK_TOKEN:-unset}
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./deploy/observability/grafana/provisioning/alerting:/otel-lgtm/grafana/conf/provisioning/alerting:ro
+      - lgtm_data:/data
+  web:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+      OTEL_SERVICE_NAME: web
+      OTEL_SEMCONV_STABILITY_OPT_IN: http
+  worker:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+volumes:
+  lgtm_data:
