@@ -32,3 +32,18 @@ def test_link_tokens_are_redacted_in_json_logs():
 def test_setup_is_a_no_op_without_endpoint(monkeypatch):
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
     assert setup_telemetry("web") is False
+
+
+def test_generation_outcome_separates_our_errors_from_bad_data():
+    from types import SimpleNamespace
+
+    from scheduling.models import JobStatus
+    from scheduling.tasks import ERROR_UNEXPECTED, _outcome, infeasible_message
+
+    def job(status, error=""):
+        return SimpleNamespace(status=status, error=error)
+
+    assert _outcome(None) == "missing"
+    assert _outcome(job(JobStatus.DONE)) == "done"
+    assert _outcome(job(JobStatus.FAILED, infeasible_message())) == "failed"
+    assert _outcome(job(JobStatus.FAILED, f"{ERROR_UNEXPECTED} (boom)")) == "error"

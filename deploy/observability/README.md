@@ -27,11 +27,17 @@ No customer data: request paths are redacted (magic-link tokens keep at most 6
 characters), query strings are dropped, there are no request bodies, user names
 or emails in spans or logs (`config/telemetry.py`, `tests/test_telemetry.py`).
 
-## Alert
+## Alerts (user impact, not resource graphs)
 
-`grafana/provisioning/alerting/alerts.yml` provisions "Users are getting server
-errors": more than 5% of requests answered 5xx over 5 minutes, for 2 minutes.
-Its contact point POSTs to the GitHub `repository_dispatch` API.
+`grafana/provisioning/alerting/alerts.yml` provisions three alerts, each one something a user feels:
+
+| Alert | Fires when |
+|---|---|
+| Users are getting server errors | more than 5% of requests answer 5xx over 5 minutes (2 min) |
+| Pages are slow for users | p95 response time above 3 s over 10 minutes (5 min) |
+| Timetable generation is crashing | a generation job ended in `outcome="error"`, an unexpected exception. An infeasible week or a timeout is `failed`: bad data, not an incident |
+
+No CPU, memory or disk alerts. All three post to the GitHub `repository_dispatch` API.
 
 Set in `.env.production`:
 

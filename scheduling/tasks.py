@@ -182,10 +182,22 @@ def run_job(job_id):
         span.set_attribute("job.id", job_id)
         _run_job(job_id)
         job = SolveJob.objects.filter(pk=job_id).first()
-        outcome = job.status.lower() if job else "missing"
+        outcome = _outcome(job)
         span.set_attribute("job.outcome", outcome)
         _generations.add(1, {"outcome": outcome})
         _generation_seconds.record(time.monotonic() - started, {"outcome": outcome})
+
+
+def _outcome(job):
+    """done, failed (no timetable for the data: infeasible, timeout, approved) or
+    error (our fault: an unexpected exception). Only `error` pages someone."""
+    if job is None:
+        return "missing"
+    if job.status == JobStatus.FAILED and (job.error or "").startswith(
+        ERROR_UNEXPECTED
+    ):
+        return "error"
+    return job.status.lower()
 
 
 def _run_job(job_id):

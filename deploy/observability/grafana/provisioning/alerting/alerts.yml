@@ -7,10 +7,10 @@ contactPoints:
         type: webhook
         settings:
           # GitHub repository_dispatch: wakes .github/workflows/on-call.yml
-          url: ${ONCALL_WEBHOOK_URL}
+          url: "${ONCALL_WEBHOOK_URL}"
           httpMethod: POST
           authorization_scheme: Bearer
-          authorization_credentials: ${ONCALL_WEBHOOK_TOKEN}
+          authorization_credentials: "${ONCALL_WEBHOOK_TOKEN}"
           payload:
             template: '{"event_type":"grafana-alert","client_payload":{"title":"{{ .CommonLabels.alertname }}","status":"{{ .Status }}","summary":"{{ .CommonAnnotations.summary }}"}}'
 policies:
@@ -34,13 +34,12 @@ groups:
           severity: page
         data:
           - refId: A
-            relativeTimeRange: {from: 300, to: 0}
+            relativeTimeRange: {from: 600, to: 0}
             datasourceUid: prometheus
             model:
               refId: A
               expr: >-
-                sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
-                / sum(rate(http_server_request_duration_seconds_count[5m]))
+                sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m])) / sum(rate(http_server_request_duration_seconds_count[5m]))
               instant: true
           - refId: B
             datasourceUid: __expr__
@@ -53,3 +52,63 @@ groups:
               expression: B
               conditions:
                 - evaluator: {type: gt, params: [0.05]}
+      - uid: pages-slow
+        title: Pages are slow for users
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: 95th percentile of page response time above 3 seconds over 10 minutes
+        labels:
+          severity: page
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[10m])))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [3]}
+      - uid: generation-errors
+        title: Timetable generation is crashing
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: A timetable generation job ended in an unexpected error (not an infeasible week) in the last 10 minutes
+        labels:
+          severity: page
+        data:
+          - refId: A
+            relativeTimeRange: {from: 600, to: 0}
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                sum(increase(timetable_generations_total{outcome="error"}[10m]))
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model: {refId: B, type: reduce, expression: A, reducer: last}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: {type: gt, params: [0]}
