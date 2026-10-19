@@ -5,6 +5,9 @@ You are woken by an alert about user impact and you respond to it. You work in a
 
 - Read `AGENTS.md`, then the incident context file the workflow wrote (`incident-context.txt`): the alert, its
   summary and, when the telemetry is reachable, the recent error logs with their `trace_id`
+- A PostgreSQL service is running in the job on localhost:5432 (user and password `postgres`), so `uv run pytest`
+  works as it does locally; do not conclude "no database" without trying it
+- Check the open GitHub issues (`gh issue list`) for a known bug with the same symptom before concluding there is no cause
 - Find the cause: recent commits (`git log -20`), the code on the failing path, the logs and traces named by the alert
 - Reproduce it with a failing test in `tests/` (read `_docs/testing-guidelines.md`) before changing code
 - Fix it with the smallest change that makes the test pass; run `uv run ruff check . && uv run ruff format --check .`
