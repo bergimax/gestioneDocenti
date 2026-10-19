@@ -30,6 +30,7 @@
 - Anything that calls the Anthropic API is mocked at the `ai/` boundary. No test touches the network.
 - Secrets and tokens: assert they are absent from logs, traces and responses where the rules say so
   (`tests/test_telemetry.py`, `tests/test_availability_link_page.py`).
+- `tests/test_end_to_end.py` is the full journey (login, setup, magic link, generation, approval, export, role checks); extend it when a step of that journey changes.
 - Solver tests use crafted small weeks with a known answer; the benchmark guards the timeout on a school-sized week.
 
 ## Before closing a task
