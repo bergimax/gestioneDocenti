@@ -1,6 +1,39 @@
 # Gestione docenti
 
+## The problem
+
+A vocational training school (IeFP / upper-secondary courses) builds a weekly timetable by hand every week: about 20
+classes, dozens of teachers (some always available, some only in the hours they declare), yearly hour targets per
+teacher-class-subject, paired classes, stages (classes out of school) and a yearly calendar of closures. Doing this in
+spreadsheets is slow, error-prone and hard to review.
+
+## What it does
+
+- **Set-up from files**: school data, classes, teachers, subjects, assignments and the yearly calendar are imported
+  from CSV/PDF and validated, or edited on data pages.
+- **Availability**: contract teachers declare their available hours through a personal link; permanent teachers are
+  always available.
+- **Generation**: a constraint solver (OR-Tools CP-SAT) builds one week at a time, running in a background worker so the
+  web page stays responsive. It respects the calendar, hour targets, pairings and availability.
+- **Review**: the admin sees conflicts with plain-language explanations, moves or reassigns lessons, applies explicit
+  one-off exceptions and approves the week.
+- **Publish**: approved weeks are exported as PDF/Excel, shown on a public read-only page and fed to calendar apps.
+- **Roles**: `ADMIN` and `SEGRETERIA`; no email, no self-registration. Every sensitive action is audited.
+
+Expected behaviour: given consistent input data, a generated week has no teacher or class double-booked, honours
+availability and the weekly hours target, and nothing is published until an admin approves it.
+
+Scope and rules: [_docs/specs.md](_docs/specs.md). Design: [_docs/architecture.md](_docs/architecture.md). Task list
+(GitHub issues, each with acceptance criteria): <https://github.com/bergimax/gestioneDocenti/issues>. How the AI agent
+team works: [_docs/process.md](_docs/process.md) and [_docs/team/](_docs/team/). Agent entry point: [AGENTS.md](AGENTS.md).
+
 ## How to run
+
+With Docker (database, web, worker and proxy, one command; see [deploy/README.md](deploy/README.md)):
+
+    deploy/up.sh
+
+Locally:
 
     uv sync
     uv run manage.py migrate
