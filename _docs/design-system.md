@@ -35,4 +35,4 @@ System font stack, 16px base.
   `hx-swap-oob`.
 - Anything a viewer may not see is filtered in the view or queryset, never hidden with CSS or in the template.
 - Destructive actions say what they will do and need an explicit confirm step.
-- No inline styles with new colors, no CSS frameworks, no icon fonts, no external CDNs (the CSP forbids them).
+- No inline styles with new colors, no CSS frameworks, no icon fonts, no external CDNs (the Caddy CSP only allows same-origin resources).
