@@ -117,6 +117,12 @@ It starts PostgreSQL, web (gunicorn), the solve worker and Caddy (HTTPS).
   (`deploy/release.sh`); **production** is deployed only by running the workflow by hand, behind the required
   reviewers of the `production` environment. Rollback: run it again with the previous commit.
   Secrets per environment: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_PATH`.
+  Setup on a VM that already runs `deploy/up.sh` (checkout in `DEPLOY_PATH`):
+
+      ssh-keygen -t ed25519 -f deploy_key -N ""            # public half goes in ~/.ssh/authorized_keys on the VM
+      ssh-keyscan -t ed25519 <host>                        # the output is DEPLOY_KNOWN_HOSTS
+      gh secret set DEPLOY_SSH_KEY --env dev < deploy_key  # repeat for each secret and for --env production
+
 
 ## Observability, alerting and on-call agent
 
