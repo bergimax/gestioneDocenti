@@ -18,6 +18,30 @@ certificate.
 For manual `docker compose` commands run `export COMPOSE_ENV_FILES=.env.production`
 first; the scripts do it themselves.
 
+## Free hosting (Oracle Cloud Always Free + DuckDNS)
+
+A free public deployment that the CD workflow can reach over SSH. Check Oracle's Always Free page for the current
+allowance first (the Ampere A1 shape is 2 to 4 OCPU and 12 to 24 GB; the stack needs about 2 GB).
+
+1. Create an Oracle Cloud account and an Ubuntu VM (Ampere A1, public IPv4). If a region has no capacity, try
+   another region or retry later. In the VCN security list open TCP 22, 80 and 443.
+2. Create a free name at <https://www.duckdns.org> (for example `docenti.duckdns.org`) and point it at the VM's IP.
+3. On the VM:
+
+       sudo apt update && sudo apt install -y docker.io docker-compose-v2 git
+       sudo usermod -aG docker "$USER"            # log out and in again
+       sudo iptables -I INPUT -p tcp -m multiport --dports 80,443 -j ACCEPT   # Oracle images block them by default
+       git clone https://github.com/bergimax/gestioneDocenti.git && cd gestioneDocenti
+       cp deploy/env.production.example .env.production   # DOMAIN=docenti.duckdns.org, ALLOWED_HOSTS the same,
+                                                          # SECRET_KEY and POSTGRES_PASSWORD from `openssl rand -hex 24`
+       deploy/up.sh
+       deploy/create-user.sh                              # the first admin
+
+   Caddy gets the HTTPS certificate by itself once the name resolves to the VM.
+4. Wire the CD workflow (README, section CI/CD): the secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`,
+   `DEPLOY_KNOWN_HOSTS`, `DEPLOY_PATH` for the `dev` environment (and for `production` if it is the same VM). Then
+   re-run the failed Deploy workflow.
+
 ## Swap file (1 GB machine)
 
 Create a swap file of 2-4 GB (4 GB recommended):
