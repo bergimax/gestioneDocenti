@@ -35,7 +35,7 @@ allowance first (the Ampere A1 shape is 2 to 4 OCPU and 12 to 24 GB; the stack n
        cp deploy/env.production.example .env.production   # DOMAIN=docenti.duckdns.org, ALLOWED_HOSTS the same,
                                                           # SECRET_KEY and POSTGRES_PASSWORD from `openssl rand -hex 24`
        deploy/up.sh
-       deploy/create-user.sh                              # the first admin
+       deploy/create-user.sh you@example.com ADMIN       # the first admin
 
    Caddy gets the HTTPS certificate by itself once the name resolves to the VM.
 4. Wire the CD workflow (README, section CI/CD): the secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`,
