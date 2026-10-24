@@ -129,3 +129,15 @@ It starts PostgreSQL, web (gunicorn), the solve worker and Caddy (HTTPS).
 OpenTelemetry traces, metrics and JSON logs sharing a `trace_id`, viewable in Grafana; an alert on the 5xx rate; and an
 agent that wakes on that alert and opens a fix pull request. See
 [deploy/observability/README.md](deploy/observability/README.md).
+
+### Evidence: the on-call agent fixed a real incident
+
+1. A Grafana alert ("a generation job ended in an unexpected error") fired and reached GitHub through the relay:
+   [On-call agent run 39273682698](https://github.com/bergimax/gestioneDocenti/actions/runs/39273682698).
+2. The agent opened incident [#178](https://github.com/bergimax/gestioneDocenti/issues/178) and commented the cause
+   (`ValueError: pairing without matching assignments`, known bug #172), the fix, the tests and the full suite result.
+3. It pushed branch `fix/incident-39273682698`; the pull request
+   [#179](https://github.com/bergimax/gestioneDocenti/pull/179) was opened from it by a human, because GitHub Actions
+   is not allowed to create pull requests in this repository. CI ran on it.
+
+The earlier drill incidents (#173-#177) show the same chain end to end.

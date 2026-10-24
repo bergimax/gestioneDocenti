@@ -82,5 +82,14 @@ The same line on stdout is JSON with `trace_id` and `span_id`:
 
     {"ts": "...", "level": "ERROR", "logger": "scheduling.tasks", "service": "web", "message": "Solve job 7 failed", "trace_id": "0d7549650cee75c5394b7e982262772b", "span_id": "a685214193e75f48"}
 
+### Screenshots (Grafana, one worker job)
+
+The same `trace_id`, `e00afbab7a12d2186981363557b1dcb0`, in the trace and in the log line of the job (a job id that
+does not exist, run through the worker of the stack above):
+
+![Trace in Tempo](screenshots/grafana-trace.jpg)
+![Log in Loki carrying the trace_id](screenshots/grafana-logs.jpg)
+![Request metric in Prometheus, by status code](screenshots/grafana-metrics.jpg)
+
 Magic-link paths appear redacted in all three (`/l/SECRET...`). Known gap: a 404 for a URL that matches no route is
 logged before the request span is active, so that one log line has no `trace_id`; errors and every handled request do.
